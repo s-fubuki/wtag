@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.5 $
+;; Version: $Revision: 1.6 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 (require 'mf-tag-write)
 (require 'wtag)
 
-(defconst taged-version "$Revision: 1.5 $")
+(defconst taged-version "$Revision: 1.6 $")
 
 (defgroup taged nil
   "Music file tag edit."
@@ -101,7 +101,7 @@ fit だとTAGウィンドウの行数が最大ウインドウサイズに満た�
   :type  '(repeat (cons regexp function))
   :group 'taged)
 
-(defcustom taged-image-auto-resize image-auto-resize
+(defcustom taged-image-auto-resize (if (boundp 'image-auto-resize) image-auto-resize t)
   "`image-auto-resize' を override."
   :type '(choice (const :tag "No resizing" nil)
                  (other :tag "Fit height and width" t)
@@ -110,7 +110,8 @@ fit だとTAGウィンドウの行数が最大ウインドウサイズに満た�
                  (number :tag "Scale factor" 1))
   :group 'taged)
 
-(defcustom taged-image-auto-resize-on-window-resize image-auto-resize-on-window-resize
+(defcustom taged-image-auto-resize-on-window-resize
+  (if (boundp 'image-auto-resize-on-window-resize) image-auto-resize-on-window-resize 1)
   "`image-auto-resize-on-window-resize' を override."
   :type '(choice (const :tag "No auto-resize on window size change" nil)
                  (integer :tag "Wait for number of seconds before resize" 1))

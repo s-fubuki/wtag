@@ -2,7 +2,7 @@
 ;; Copyright (C) 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.8 $
+;; Version: @(#)$Revision: 1.9 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -58,13 +58,22 @@
 (defvar wtag-music-copy-dst-dir nil "music copy destination work directory.")
 (make-variable-buffer-local 'wtag-music-copy-dst-dir)
 
-(defconst wtag-version "@(#)$Revision: 1.8 $")
-(defconst wtag-emacs-version "GNU Emacs 27.0.91 (build 1, x86_64-w64-mingw32) of 2020-04-20")
+(defconst wtag-version "@(#)$Revision: 1.9 $")
+(defconst wtag-emacs-version "GNU Emacs 27.1 (build 1, x86_64-w64-mingw32) of 2020-08-22")
 
 (defcustom wtag-load-without-query nil
   "*NON-NILなら新たなジャケをロードするとき問合せない.
 keep ならそれに加えて元のアートワークをファイルに保存する."
   :type  '(choice (const nil) (const t) (const keep))
+  :group 'wtag)
+
+(defcustom wtag-force-load 'query
+  "NON-NIL なら `wtag-view-mode' でも D&D でジャケの差替ができる.
+query だと問い合わせが入る.
+はじめ `wtag-load-without-query' にまとめようとしたが、
+うまくまとまらなかったのと最終的に別々の方が堅牢な動作につながるので
+敢えて専用変数にする."
+  :type '(choice (const nil) (const t) (const query))
   :group 'wtag)
 
 (defcustom wtag-no-backup t
@@ -154,9 +163,9 @@ PATH が通っていなければフルパスで."
                 (list (const 2) (symbol :tag "tag      ") (symbol :tag "for Univ.")))
   :group 'wtag)
 
-(make-obsolete-variable 'wtag-qrt "この変数は廃止されました." "@(#)$Revision: 1.8 $")
+(make-obsolete-variable 'wtag-qrt "この変数は廃止されました." "@(#)$Revision: 1.9 $")
 
-(defcustom wtag-image-auto-resize image-auto-resize
+(defcustom wtag-image-auto-resize (if (boundp 'image-auto-resize) image-auto-resize nil)
   "`image-auto-resize' を override."
   :type '(choice (const :tag "No resizing" nil)
                  (other :tag "Fit height and width" t)
@@ -221,9 +230,9 @@ PATH が通っていなければフルパスで."
 
 (defface wtag-protect-face
   '((((background light))
-     :background "grey90" :foreground "grey20" :box nil)
+     :background "grey90" :foreground "grey20" :box nil :extend t)
     (t
-     :background "grey20" :foreground "grey90" :box nil))
+     :background "grey20" :foreground "grey90" :box nil :extend t))
   "wtag-protect-face."
   :group 'wtag-faces)
 
@@ -236,12 +245,12 @@ PATH が通っていなければフルパスで."
 (defmacro wtag-asscdr (key list)
   `(cdr (assq ,key ,list)))
 
-(defun wtag-artist-name-max-width (list)
-  "アーティスト名文字列の LIST から最大`幅'を返す.
-`wtag-directory-set' が生成する list の list から 3番目の要素の一番長い長さを返す."
-  (let ((max 0))
-    (dolist (a list max)
-      (setq max (max (string-width (wtag-asscdr 'artist a)) max)))))
+(defun wtag-max-width (lst sym)
+  "SYM 文字列の LST から最大`幅'を返す.
+`wtag-directory-set' が生成する alist の束から SYM の要素の最長値を返す."
+  (let ((mx 0))
+    (dolist (a lst mx)
+      (setq mx (max (string-width (wtag-asscdr sym a)) mx)))))
 
 (defun wtag-read-size (file)
   "FILE から読み込むバイト数を返す.
@@ -262,11 +271,20 @@ PATH が通っていなければフルパスで."
   
 (defun wtag-artwork-buffer-name (str)
   "STR is index buffer name."
+  "Convert index buffer name to artwork buffer name."
   (let* ((suffix wtag-artwork-buffer-suffix)
          (len    (length suffix)))
     (if (and (<= len (length str)) (equal suffix (substring str (* (length suffix) -1))))
         str
       (concat str wtag-artwork-buffer-suffix))))
+
+(defun wtag-buffer-name (art-buff)
+  "Convert artwork buffer name to index buffer name."
+  (let* ((suffix wtag-artwork-buffer-suffix)
+         (len    (length suffix)))
+    (if (and (<= len (length art-buff)) (equal suffix (substring art-buff (* len -1))))
+        (substring art-buff 0 (* len -1))
+      art-buff)))
 
 (defun wtag-str-gets (plist symbol alias &optional ret)
   "PLIST 中のリストに SYMBOL にマッチする :tag か :dsc があればその :data を返す.
@@ -406,7 +424,8 @@ PREFIX によってソートオーダーが変わる."
 
 (defun wtag-insert-index (index directory)
   "Tag plist INDEX を取得した DIRECTORY."
-  (let* ((max-width (wtag-artist-name-max-width index))
+  (let* ((max-width-artist (wtag-max-width index 'artist))
+         (max-width-title  (wtag-max-width index 'title))
          form slash)
     (setq slash (or (string-match "/" (wtag-asscdr 'track (car index)))
                     (string-match "/" (wtag-asscdr 'disk  (car index)))))
@@ -450,12 +469,15 @@ PREFIX によってソートオーダーが変わる."
        (propertize (concat
                     (propertize (wtag-asscdr 'artist a)
                                 'mouse-face 'highlight 'face 'wtag-artist-name-face)
-                    (wtag-padding-string (wtag-asscdr 'artist a) max-width))
+                    (wtag-padding-string (wtag-asscdr 'artist a) max-width-artist))
                    'performer t)
        (propertize " " 'old-title (wtag-asscdr 'title a) 'filename (wtag-asscdr 'filename a))
        ;; Music Title.
-       (propertize
-        (wtag-asscdr 'title a) 'title t 'mouse-face 'highlight 'face 'wtag-title-face)
+       (propertize (concat
+                    (propertize (wtag-asscdr 'title a)
+                                'mouse-face 'highlight 'face 'wtag-title-face)
+                    (wtag-padding-string (wtag-asscdr 'title a) max-width-title))
+                   'title t)
        "\n"))))
 
 (defun wtag-stat (list)
@@ -588,6 +610,35 @@ BEG と END のデフォルトはポイントの行頭と行末.
   (let ((reg "[.?:*/\\~\"']"))
     (replace-regexp-in-string reg "_" str)))
 
+(defun wtag-safe-keep-name (file)
+  "FILE を元にして重複しない番号バックアップ名にして返す.
+番号は base name と extention の間にドットで切って挿入される.
+Emacs 標準のものはテキスト向けで末尾に番号を追加するので
+拡張子実行する Windows 環境だとうまくないので自前でやる.
+
+`string-version-lessp' の無い少し前の Emacs だと `string-lessp' で sort するが
+バックアップ番号が飛んでいるとか2桁もあるとかほぼ無いので問題無いはず.
+そもそも古い版だと別の箇所で wtag 自体動かないかもしれない."
+  (let* ((dir   (file-name-directory file))
+         (node  (file-name-base file))
+         (ext   (file-name-extension file))
+         (re    (concat (regexp-quote node) "\\.\\(?1:[0-9]+\\)\\." (regexp-quote ext)))
+         (found (directory-files dir nil re))
+         (cmp   (if (fboundp 'string-version-lessp)
+                   'string-version-lessp
+                 'string-lessp))
+         tmp rev)
+    (setq rev
+          (number-to-string
+           (cond
+            (found
+             (setq tmp (car (reverse (sort found cmp))))
+             (string-match re tmp)
+             (1+ (string-to-number (match-string 1 tmp))))
+            (t
+             1))))
+    (concat dir node "." rev "." ext)))
+
 (defun wtag-get-common-properties (&optional buffer)
   (save-excursion
     (save-current-buffer
@@ -697,11 +748,12 @@ PREFIX 在りだと1～2行目の共通表示と曲自体のデータが違っ�
               (and (null wtag-test) (mf-tag-write filename tags no-backup))
             (wtag-message "File error: %s" filename)))
         (forward-line)))
-    (when (and modify-cover (eq wtag-load-without-query 'keep))
+    (when (and wtag-old-cover modify-cover (eq wtag-load-without-query 'keep))
       (let* ((coding-system-for-write 'no-conversion)
              (ext  (if (eq 'png (mf-image-type wtag-old-cover)) "png" "jpg"))
-             (file (concat keep-name "." ext)))
-        (write-region wtag-old-cover nil (concat directory "/" file))))
+             (file (expand-file-name (concat keep-name "." ext) directory)))
+        (when (file-exists-p file) (rename-file file (wtag-safe-keep-name file)))
+        (write-region wtag-old-cover nil file)))
     (and (get-buffer (wtag-artwork-buffer-name (buffer-name)))
          (kill-buffer (wtag-artwork-buffer-name (buffer-name))))
     (setq buffer-read-only  nil
@@ -909,10 +961,23 @@ Line 1..2 の場合 `wtag-point-file-name-to-kill-buffer-list' の設定が使�
 
 (defun wtag-mouse-load (event)
   "画像ファイルをマウス左ボタンで Emacs にドラッグ&ドロップ.
-MP3 も M4A(MP4) もPNG 対応しているようだが JPEG を推奨."
+MP3 も M4A(MP4) もPNG 対応しているようだが JPEG を推奨.
+尚 Windows でしか使えない機能のよう."
   (interactive "e")
+  (when (and (or
+              (eq major-mode 'wtag-view-mode)
+              (eq major-mode 'wtag-image-mode))
+             (cond
+              ((eq wtag-force-load 'query)
+               (y-or-n-p "Writable Go?"))
+              (wtag-force-load
+               t)
+              (t nil)))
+    (with-current-buffer (wtag-buffer-name (buffer-name (current-buffer)))
+      (wtag-writable-tag)))
   (and (eq (mf-first event) 'drag-n-drop)
        (not (eq major-mode 'wtag-view-mode))
+       ;;(not (eq major-mode 'wtag-image-mode))
        (wtag-artwork-load (car (mf-third event)))))
 
 (defun wtag-artwork-load (file-or-object &optional name no-disp no-modified)
@@ -1310,7 +1375,7 @@ nkf は完全にあることが前提でノーチェックです."
           (define-key map "\C-c\C-c"        'wtag-kill-process)          
 	  (define-key map "q"               'quit-window)
 	  (define-key map "Q"               'wtag-exit)
-          (define-key map [drag-n-drop]     'ignore)
+          (define-key map [drag-n-drop]     'wtag-mouse-load)
 	  (define-key map "\C-x\C-q"        'wtag-writable-tag)
           (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
           (define-key menu-map [wtag-point-file-name]
@@ -1348,6 +1413,7 @@ nkf は完全にあることが前提でノーチェックです."
           (define-key map "\C-c\C-f"      'wtag-fit-artwork-toggle)
           (define-key map "f"             'wtag-fit-artwork-toggle)
           (define-key map "\C-c\C-i"      'wtag-artwork-load)
+          (define-key map "\C-c\C-c"      'ignore)
           (define-key map "Q"             'quit-window)
           (define-key map "q"             'wtag-quit)
           (define-key map [drag-n-drop]   'wtag-mouse-load)

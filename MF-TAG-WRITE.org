@@ -1,7 +1,6 @@
 #+title:  mf-tag-write.el (音楽ファイルのタグを編集する emacs の関数)
-#+date:   Sat Sep 26 08:29:41 2020
+#+date:   Wed Sep 30 09:28:48 2020
 #+AUTHOR: fubuki@frill.org
-
 * 概要
 - 音楽ファイルのタグの変更が一括処理できます。
 - m4a(mp4) mp3(ID3v2.2, ID3v2.3) oma(Atrac3Plus) flac に対応しています。
@@ -32,8 +31,7 @@
 #+END_SRC
 
 CAR がシンボルならエイリアスになり、例えば "TALB" なら album 等と書けます。
-これによってコーデックをまたいで同じシンボルが使えるようになります。
-これについては次項で述べます。
+これによってコーデックをまたいで同じシンボルが使えるようになります。 (参照: [[./alias-table.org]])
 
 #+BEGIN_SRC emacs-lisp
 (mf-tag-write "file.oma" '((album . "新アルバム") (title . "新しい曲")))

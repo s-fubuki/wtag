@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.6 $
+;; Version: @(#)$Revision: 1.7 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -113,7 +113,7 @@ PREFIX 在りで file なら タグを詳しく表示."
 (defcustom dired-image-extract-max nil
   "*抜き取る画像の最大枚数. NIL ならすべて."
   :type  '(choice (const nil) integer)
-  :group 'mf-tag)
+  :group 'music-file)
 
 (defvar dired-image-extract-max-length 32 "出力ファイル名の最大長.")
 (defvar dired-image-extract-type
@@ -394,7 +394,7 @@ IMAGE が NON-NIL ならイメージタグの内容をバッファ表示する."
               (throw 'break exe)))))))
   "この変数が非NILなら `dired-select-cover-set-put-images' で画像が縮小表示される.")
 
-(defvar mf-image-auto-resize image-auto-resize)
+(defvar mf-image-auto-resize (if (boundp 'image-auto-resize) image-auto-resize t))
 (defvar mf-image-auto-resize-on-window-resize nil)
 
 (defun mf-get-title (file &optional length image)

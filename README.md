@@ -9,7 +9,7 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 
 # このセットのバージョン
 
-1.8
+1.9
 
 
 # 基本関数(必須)
@@ -31,9 +31,10 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 # ドキュメント
 
 1.  MF-TAG-WRITE.org
-2.  WTAG.org
-3.  CHENGES.org
-4.  README.md or README.org
+2.  alias-table.org - mf-tag-write で使える TAG の alias 表.
+3.  WTAG.org
+4.  CHENGES.org
+5.  README.md or README.org
 
 
 # インストール

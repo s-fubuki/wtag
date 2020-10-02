@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.4 $
+;; Version: $Revision: 1.5 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,17 +53,12 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.4 $")
+(defconst mf-tag-write-version "$Revision: 1.5 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
 (require 'mf-lib-mp4)
 (require 'mf-lib-flac)
-
-(defgroup mf-tag nil
-  "Music file tag edit."
-  :group 'multimedia
-  :version "26.2")
 
 (defvar mf-id-to-mode
   '(("ID3\1" . id31) ("ID3\2" . id32) ("ID3\3" . id33) ("ID3\4" . id34) ("ea3\3" . oma)
