@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.6 $
+;; Version: $Revision: 1.7 $$Name: rev1dot10 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -31,9 +31,10 @@
 
 (require 'image-mode)
 (require 'mf-tag-write)
+(require 'mf-lib-var)
 (require 'wtag)
 
-(defconst taged-version "$Revision: 1.6 $")
+(defconst taged-version "$Revision: 1.7 $$Name: rev1dot10 $")
 
 (defgroup taged nil
   "Music file tag edit."
@@ -58,7 +59,8 @@
 
 (defcustom taged-cursor-intangible t
   "NON-NIL だと非編集領域を避けてカーソルが動く.
-マイナーモード cursor-intangible-mode を使うので念のためオプションになっています."
+マイナーモード `cursor-intangible-mode' を使うので
+念のためオプションになっています."
   :type  'boolean
   :group 'taged)
 
@@ -94,14 +96,22 @@ fit だとTAGウィンドウの行数が最大ウインドウサイズに満た�
   :type '(repeat (choice symbol (cons symbol string)))
   :group 'taged)
 
+(defvar taged-cover-tags `("APIC" "PIC" ,mf-geob-image "covr"))
+
+(defvar taged-lyric-symbol 'lyric "taged 内部的な lyric symbol.")
+(defvar taged-cover-symbol 'cover "taged 内部的な cover symbol.")
+(defvar taged-cover-symbol-list nil
+  "`taged' のはじめで `taged-cover-tags' を元に `taged-get-cover-tags' によりセットされる.")
+
 (defcustom taged-suffix-mode
-  '(("\\.txt\\'"             . lyric)
-    ("\\.\\(jpg\\|png\\)\\'" . cover))
+  `(("\\.txt\\'"             . ,taged-lyric-symbol)
+    ("\\.\\(jpg\\|png\\)\\'" . ,taged-cover-symbol))
   "事後ロードするファイルに関する関数の紐付け."
   :type  '(repeat (cons regexp function))
   :group 'taged)
 
-(defcustom taged-image-auto-resize (if (boundp 'image-auto-resize) image-auto-resize t)
+(defcustom taged-image-auto-resize
+  (if (boundp 'image-auto-resize) image-auto-resize t)
   "`image-auto-resize' を override."
   :type '(choice (const :tag "No resizing" nil)
                  (other :tag "Fit height and width" t)
@@ -111,15 +121,20 @@ fit だとTAGウィンドウの行数が最大ウインドウサイズに満た�
   :group 'taged)
 
 (defcustom taged-image-auto-resize-on-window-resize
-  (if (boundp 'image-auto-resize-on-window-resize) image-auto-resize-on-window-resize 1)
+  (if (boundp 'image-auto-resize-on-window-resize)
+      image-auto-resize-on-window-resize 1)
   "`image-auto-resize-on-window-resize' を override."
   :type '(choice (const :tag "No auto-resize on window size change" nil)
                  (integer :tag "Wait for number of seconds before resize" 1))
   :group 'taged)
 
-(defvar taged-sub-buffer-mode '((cover image-mode) (artwork image-mode) (lyric text-mode)))
+(defvar taged-sub-buffer-mode
+  '((cover image-mode) (artwork image-mode) (lyric text-mode)))
 (defvar taged-kakasi-pair
-  '((title . s-title) (artist . s-artist) (album . s-album) (a-artist . s-a-artist)))
+  '((title . s-title)
+    (artist . s-artist)
+    (album . s-album)
+    (a-artist . s-a-artist)))
 
 (defgroup taged-faces nil
   "Faces for taged."
@@ -169,7 +184,9 @@ fit だとTAGウィンドウの行数が最大ウインドウサイズに満た�
   (interactive "fFile: \nP")
   (let* ((fun (mf-func-get file mf-function-list))
          tags alias album tmp)
-    (set (make-local-variable 'mf-current-case) (string-match "\\.flac\\'" file))
+    (setq taged-cover-symbol-list (taged-get-cover-tags))
+    (set (make-local-variable 'mf-current-case)
+         (string-match "\\.flac\\'" file))
     (setq tags (mf-tag-read file (* 1024 40) no-bin))
     (setq alias (mf-alias fun (taged-get-mode tags)))
     (setq tags (taged-add-symbol tags alias))
@@ -178,9 +195,10 @@ fit だとTAGウィンドウの行数が最大ウインドウサイズに満た�
 
 (defun taged-make-main-buffer (tags file)
   "Make main buffer."
-  (let ((mode taged-sub-buffer-mode)
+  (let ((mode      taged-sub-buffer-mode)
+        (buff-syms (cons taged-lyric-symbol taged-cover-symbol-list))
         album tmp win)
-    (dolist (sym '(cover artwork lyric title))
+    (dolist (sym (cons 'title buff-syms))
       (setq tmp (cons (assq sym tags) tmp)))
     (setq album (plist-get (wtag-asscdr 'title tmp) :data))
     (setq tags (taged-tags-filter tags))
@@ -200,12 +218,22 @@ fit だとTAGウィンドウの行数が最大ウインドウサイズに満た�
     (set-buffer-modified-p nil)
     (set-window-buffer (selected-window) (current-buffer))
     (dolist (a tmp)
-      (if (memq (car a) '(cover artwork lyric))
+      (when (memq (car a) buff-syms)
+        (let (sym)
+          (when (memq (car a) taged-cover-symbol-list)
+            (setq sym taged-cover-symbol))
           (apply #'taged-make-sub-buffer
                  album (plist-get (cdr a) :data) '1st-time
-                 (car a) (wtag-asscdr (car a) mode))))
+                 sym (wtag-asscdr sym mode)))))
     (buffer-enable-undo)))
 
+(defun taged-delete-buffer (buff)
+  "Delete BUFF and Window."
+  (and buff
+       (window-live-p (get-buffer-window buff))
+       (delete-window (get-buffer-window buff))
+       (kill-buffer buff)))
+  
 (defun taged-make-sub-buffer (album file-or-obj &optional 1st-time symbol mode)
   "Make cover buffer.
 ALBUM is main buffer name. FILE-OR-OBJ is data.
@@ -215,21 +243,28 @@ SYMBOL tag symbol."
   (interactive
    (let ((file (read-file-name "File: ")))
      (list nil file nil)))
-  (let* ((file   (when (and file-or-obj (file-exists-p file-or-obj)) file-or-obj))
+  (let* ((file   (when (and file-or-obj (file-exists-p file-or-obj))
+                   file-or-obj))
          (suffix (concat "*" (symbol-name symbol)))
          (calbum (concat (or album taged-album-name) suffix))
-         (insert-function (if (eq symbol 'cover)
+         (insert-function (if (memq symbol taged-cover-symbol-list)
                               'insert-file-contents-literally
                             'insert-file-contents))
          (image-auto-resize taged-image-auto-resize)
-         (image-auto-resize-on-window-resize taged-image-auto-resize-on-window-resize)
+         (image-auto-resize-on-window-resize
+          taged-image-auto-resize-on-window-resize)
          buff win first)
+    (and taged-buffer-list
+         (setq buff (get-buffer
+                     (cdr (assq taged-cover-symbol taged-buffer-list)))))
+    (taged-delete-buffer buff)
     (setq buff (get-buffer-create calbum))
-    (setq taged-buffer-list (cons (cons symbol buff) (delqq symbol taged-buffer-list)))
+    (setq taged-buffer-list
+          (cons (cons symbol buff) (delqq symbol taged-buffer-list)))
     (with-current-buffer buff
       (fundamental-mode)
       (erase-buffer)
-      (and (eq symbol 'cover) (set-buffer-multibyte nil))
+      (and (memq symbol taged-cover-symbol-list) (set-buffer-multibyte nil))
       (if file
           (funcall insert-function file)
         (insert file-or-obj))
@@ -242,9 +277,11 @@ SYMBOL tag symbol."
       (taged-set-window-buffer buff))))
 
 (defun taged-set-window-buffer (buff)
-  (let* ((max (+ (count-screen-lines (point-min) (point-max)) taged-window-margin))
+  (let* ((max (+ (count-screen-lines
+                  (point-min) (point-max))
+                 taged-window-margin))
          (win (window-height))
-         (split (if (and (eq taged-window-height 'fit) (< (max win)))
+         (split (if (and (eq taged-window-height 'fit) (< max win))
                     (- win 2 max)
                   taged-window-height)))
     (setq win (split-window nil (- win split)))
@@ -262,7 +299,10 @@ SYMBOL tag symbol."
         (tbl taged-tags)
         sym tag str)
     (dolist (a tags)
-      (setq max (max (string-width (or (wtag-asscdr (car a) tbl) (symbol-name (car a)))) max)))
+      (setq max (max (string-width
+                      (or (wtag-asscdr (car a) tbl)
+                          (symbol-name (car a))))
+                     max)))
     (dolist (a tags)
       (setq tag (car a)
             sym (or (wtag-asscdr (car a) tbl) (symbol-name tag))
@@ -319,7 +359,9 @@ SYMBOL tag symbol."
              (cons
               (catch 'break
                 (dolist (a alias)
-                  (when (mf-string-equal (cdr a) (or (plist-get tag :dsc) (plist-get tag :tag)))
+                  (when (mf-string-equal
+                         (cdr a)
+                         (or (plist-get tag :dsc) (plist-get tag :tag)))
                     (throw 'break (car a)))))
               tag)
              result)))))
@@ -329,7 +371,8 @@ SYMBOL tag symbol."
   (set-buffer taged-main-buffer))
 
 (defun taged-get-property-string (point)
-  "Returns a list of POINT's 'tag 'org property, current string and its beg end point.
+  "Returns a list of POINT's 'tag 'org property,
+current string and its beg end point.
 If there is no 'tag, return NIL."
   (let* ((tag (get-text-property point 'tag))
          (org (get-text-property point 'org))
@@ -399,7 +442,8 @@ If there is no 'tag, return NIL."
                        (cons
                         (cons
                          (car a)
-                         (buffer-substring-no-properties (point-min) (point-max)))
+                         (buffer-substring-no-properties
+                          (point-min) (point-max)))
                         result))))))))
 
 (defun taged-y-or-n-p (prompt)
@@ -417,7 +461,8 @@ Repeat until characters in COMMAND list are received."
         repeat message-log-max ret)
     (while (not (memq ret command))
       (setq ret (read-char
-                 (concat repeat prompt (format "(%s)" (mapconcat #'string command "/"))))
+                 (concat repeat prompt
+                         (format "(%s)" (mapconcat #'string command "/"))))
             repeat "Please "))
     ret))
 
@@ -457,7 +502,8 @@ Repeat until characters in COMMAND list are received."
 (defun taged-cancel ()
   "Edit cancel."
   (interactive)
-  (and (or (not taged-ask-cancel) (taged-y-or-n-p "Cancel?")) (taged-kill-buffer)))
+  (and (or (not taged-ask-cancel) (taged-y-or-n-p "Cancel?"))
+       (taged-kill-buffer)))
 
 (defun taged-mouse-load (event)
   "Drag and drop the image file to Emacs with the left mouse button."
@@ -469,7 +515,8 @@ Repeat until characters in COMMAND list are received."
       (setq file (car (nth 2 event))
             type (assoc-default file suffix-mode 'string-match))
       (and type
-           (apply #'taged-make-sub-buffer nil file nil type (wtag-asscdr type buffer-mode))))))
+           (apply #'taged-make-sub-buffer
+                  nil file nil type (wtag-asscdr type buffer-mode))))))
 
 (defun taged-file-load (file)
   "File load."
@@ -478,25 +525,28 @@ Repeat until characters in COMMAND list are received."
          (buffer-mode taged-sub-buffer-mode)
          (type (assoc-default file suffix-mode 'string-match)))
     (and type
-         (apply #'taged-make-sub-buffer nil file nil type (wtag-asscdr type buffer-mode)))))
+         (apply #'taged-make-sub-buffer
+                nil file nil type (wtag-asscdr type buffer-mode)))))
 
 (defun taged-open-frame (prefix)
   "cover sub window open other frame.
 PREFIX on for lyric window."
   (interactive "P")
-  (let ((buffs (assq (if prefix 'lyric 'cover) taged-buffer-list)))
+  (let ((buffs (assq (if prefix taged-lyric-symbol taged-cover-symbol)
+                     taged-buffer-list)))
     (and buffs
          (with-current-buffer (cdr buffs)
            (set (make-local-variable 'taged-frame) (make-frame))))))
 
 (defun taged-popup-artwork ()
   (interactive)
-  (let ((abuff (cdr (assq 'cover taged-buffer-list))))
+  (let ((abuff (cdr (assq taged-cover-symbol taged-buffer-list))))
     (and (get-buffer abuff) (taged-set-window-buffer abuff))))
 
 (defun taged-fit-artwork-toggle ()
   (interactive)
-  (let ((buff (or (cdr (assq 'cover taged-buffer-list)) (current-buffer))))
+  (let ((buff (or (cdr (assq taged-cover-symbol taged-buffer-list))
+                  (current-buffer))))
     (when buff
       (with-current-buffer buff
         (if image-transform-resize
@@ -516,12 +566,15 @@ PREFIX on for lyric window."
 
 (defun delqq (key lst)
   "Returns a list with the elements whose CAR is KEY removed from LST."
-  (let (result)
-  (while lst
-    (if (not (eq key (caar lst)))
-        (setq result (cons (car lst) result)))
-    (setq lst (cdr lst)))
-  (nreverse result)))
+  (let ((key (if (memq key taged-cover-symbol-list)
+                 (regexp-opt (mapcar #'symbol-name taged-cover-symbol-list))
+               (symbol-name key)))
+        result)
+    (while lst
+      (if (not (string-match key (symbol-name (caar lst))))
+          (setq result (cons (car lst) result)))
+      (setq lst (cdr lst)))
+    (nreverse result)))
 
 (defun taged-truncate-lines ()
   "Screen wrap toggle."
@@ -540,17 +593,44 @@ PREFIX on for lyric window."
   (interactive)
   (goto-char (1- (point-max))))
 
+(defun taged-get-cover-alias-list ()
+  "`mf-tag-write:mf-function-list' の中の各 4番目要素 alias を
+展開した上すべてアペンドし list にして返す."
+  (let (result tmp)
+    (dolist (f mf-function-list result)
+      (setq tmp (nth 4 f))
+      (setq tmp
+            (if (consp tmp)
+                (apply #'append (mapcar #'(lambda (a) (eval (cdr a))) tmp))
+              (eval tmp)))
+      (setq result (append tmp result)))))
+
+(require 'cl-lib)
+(defun taged-get-cover-tags ()
+  "`mf-tag-write:mf-function-list' の alias 要素から
+`taged-cover-tags' の要素に対応するすべてのシンボルのリストを返す."
+  (let ((tags  taged-cover-tags)
+        (alias (taged-get-cover-alias-list))
+        result)
+    (dolist (i tags)
+      (dolist (j alias)
+        (when (equal i (cdr j))
+          (setq result (cons (car j) result)))))
+    (cl-remove-duplicates result)))
+
 (defvar taged-mode-map nil "keymap for `taged-mode'.")
 (if taged-mode-map
     nil
   (setq taged-mode-map
         (let ((map (make-sparse-keymap))
               (menu-map (make-sparse-keymap "TAGED")))
-          (define-key map [remap move-beginning-of-line] 'wtag-beginning-of-line)
-          (define-key map [remap move-end-of-line]       'wtag-end-of-line)
-          (define-key map [remap kill-buffer]            'taged-kill-buffer)
-          (define-key map [remap beginning-of-buffer]    'taged-beginning-of-buffer)
-          (define-key map [remap end-of-buffer]          'taged-end-of-buffer)
+          (define-key map
+            [remap move-beginning-of-line] 'wtag-beginning-of-line)
+          (define-key map [remap move-end-of-line] 'wtag-end-of-line)
+          (define-key map [remap kill-buffer] 'taged-kill-buffer)
+          (define-key map
+            [remap beginning-of-buffer]    'taged-beginning-of-buffer)
+          (define-key map [remap end-of-buffer] 'taged-end-of-buffer)
           (define-key map "\C-i"          'wtag-next-tag)
           (define-key map [S-tab]         'wtag-previous-tag)
           (define-key map "\C-j"          'ignore)
@@ -592,7 +672,8 @@ PREFIX on for lyric window."
 \\{taged-mode-map}"
   (setq-local truncate-lines taged-truncate-lines))
 
-(defvar taged-key-override-mode-map nil "Extended keymap for special buffers for `taged-mode'.")
+(defvar taged-key-override-mode-map nil
+  "Extended keymap for special buffers for `taged-mode'.")
 (if taged-key-override-mode-map
     nil
   (setq taged-key-override-mode-map

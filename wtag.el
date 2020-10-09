@@ -2,7 +2,7 @@
 ;; Copyright (C) 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.9 $
+;; Version: @(#)$Revision: 1.10 $$Name: rev1dot10 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -58,7 +58,7 @@
 (defvar wtag-music-copy-dst-dir nil "music copy destination work directory.")
 (make-variable-buffer-local 'wtag-music-copy-dst-dir)
 
-(defconst wtag-version "@(#)$Revision: 1.9 $")
+(defconst wtag-version "@(#)$Revision: 1.10 $$Name: rev1dot10 $")
 (defconst wtag-emacs-version "GNU Emacs 27.1 (build 1, x86_64-w64-mingw32) of 2020-08-22")
 
 (defcustom wtag-load-without-query nil
@@ -145,6 +145,8 @@ PATH が通っていなければフルパスで."
   :type  'boolean
   :group 'wtag)
 
+(or (boundp 'cursor-intangible-mode) (defvar cursor-intangible-mode nil))
+
 (defcustom wtag-cursor-intangible t
   "NON-NIL だと非編集領域を避けてカーソルが動く.
 マイナーモード `cursor-intangible-mode' を使うので念のためオプションになっています."
@@ -163,7 +165,7 @@ PATH が通っていなければフルパスで."
                 (list (const 2) (symbol :tag "tag      ") (symbol :tag "for Univ.")))
   :group 'wtag)
 
-(make-obsolete-variable 'wtag-qrt "この変数は廃止されました." "@(#)$Revision: 1.9 $")
+(make-obsolete-variable 'wtag-qrt "この変数は廃止されました." "Revision 1.9")
 
 (defcustom wtag-image-auto-resize (if (boundp 'image-auto-resize) image-auto-resize nil)
   "`image-auto-resize' を override."
@@ -292,10 +294,11 @@ ALIAS は SYMBOL をタグに変換する alist.
 マッチしなければ RET が返る."
   (let* ((tag (cdr (assq symbol alias)))
          result l)
-    (catch 'break
-      (dolist (a plist (or result ret))
+    (catch 'out
+      (dolist (a plist)
         (setq l (or (plist-get a :dsc) (plist-get a :tag)))
-        (and (mf-string-equal l tag) (throw 'break (setq result (plist-get a :data))))))))
+        (and (mf-string-equal l tag) (throw 'out (setq result (plist-get a :data))))))
+    (or result ret)))
 
 ;; (alias   (mf-alias mf-function-list mode))             
 (defun wtag-directory-set (files)
@@ -307,7 +310,7 @@ ALIAS は SYMBOL をタグに変換する alist.
       (set (make-local-variable 'mf-current-case) (string-match "\\.flac\\'" f))
       (let* ((length  (wtag-read-size f))
              (tags    (condition-case nil
-                          (progn (message "Read file %s..." f)
+                          (progn (message "Read file %s..." (file-name-nondirectory f))
                                  (mf-tag-read f length nil))
                         (error nil)))
              (file  (cons 'filename f))
@@ -407,7 +410,7 @@ PREFIX によってソートオーダーが変わる."
          (kill-read-only-ok t)
          buffer art-buff obj)
     (unless result (error "No music file"))
-    (setq buffer   (wtag-asscdr 'album (car result))
+    (setq buffer (or (wtag-asscdr 'album (car result)) "*NULL*")
           art-buff (wtag-artwork-buffer-name buffer))
     (and (get-buffer buffer) (kill-buffer buffer))
     (and (get-buffer art-buff) (kill-buffer art-buff))
@@ -466,18 +469,14 @@ PREFIX によってソートオーダーが変わる."
        (propertize " "
                    'old-performer (wtag-asscdr 'artist a) 'filename (wtag-asscdr 'filename a))
        ;; Performer.
-       (propertize (concat
-                    (propertize (wtag-asscdr 'artist a)
-                                'mouse-face 'highlight 'face 'wtag-artist-name-face)
-                    (wtag-padding-string (wtag-asscdr 'artist a) max-width-artist))
-                   'performer t)
+       (propertize (wtag-asscdr 'artist a)
+                   'performer t 'mouse-face 'highlight 'face 'wtag-artist-name-face)
+       (wtag-padding-string (wtag-asscdr 'artist a) max-width-artist)
        (propertize " " 'old-title (wtag-asscdr 'title a) 'filename (wtag-asscdr 'filename a))
        ;; Music Title.
-       (propertize (concat
-                    (propertize (wtag-asscdr 'title a)
-                                'mouse-face 'highlight 'face 'wtag-title-face)
-                    (wtag-padding-string (wtag-asscdr 'title a) max-width-title))
-                   'title t)
+       (propertize (wtag-asscdr 'title a)
+                   'title t 'mouse-face 'highlight 'face 'wtag-title-face)
+       ;; (wtag-padding-string (wtag-asscdr 'title a) max-width-title)
        "\n"))))
 
 (defun wtag-stat (list)
@@ -814,28 +813,92 @@ PREFIX 在りだと1～2行目の共通表示と曲自体のデータが違っ�
         (write-region (point-min) (point-max) file nil 'silent)
         (kill-buffer)))))
 
-(defun wtag-beginning-of-line ()
-  "wtag 用 beginning-of-line.
-一旦編集ブロックの先頭で止まるが更に押すと前の編集ブロックへ移動."
-  (interactive)
-  (let ((limit (wtag-beg-limit)))
-    (if (get-text-property (1- (point)) 'read-only)
-        (progn
-          (goto-char (previous-single-property-change (point) 'read-only nil limit))
-          (goto-char (previous-single-property-change (point) 'read-only nil limit)))
-      (goto-char (previous-single-property-change (point) 'read-only nil limit)))))
+(defmacro save-cursor-intangible-mode (&rest body)
+  `(progn
+     (let ((ci cursor-intangible-mode))
+       (when ci (cursor-intangible-mode -1))
+       ,@body
+       (when ci (cursor-intangible-mode)))))
 
-(defun wtag-end-of-line ()
+(defun wtag-2nd-area ()
+  "先頭エリアを 1 とし、そこから数えて 2番目のエリアにポイントがあれば
+そのエリアの先頭と終端の目印のシンボル対を返し、さもなくば NILを返す."
+  (let* ((limit (line-end-position))
+         (beg   (line-beginning-position))
+         range result)
+    (catch 'out
+      (dolist (a '((old-aartist   . end-aartist)
+                   (old-genre     . end-genre)
+                   (old-performer . end-performer)))
+        (setq range (cons (next-single-property-change beg (car a) nil limit)
+                          (next-single-property-change beg (cdr a) nil limit))
+              result a)
+        (and (not (equal (car range) (cdr range))) (throw 'out range))))
+    (if (and (< (car range) (point)) (>= (cdr range) (point)))
+        result)))
+
+(defun wtag-next-line (&optional arg)
+  "現在のエリアからなるたけポイントが外れないようにする next-line.
+ARG はリピート数."
+  (interactive "p")
+  (let ((tc  temporary-goal-column)
+        (cc  (current-column))
+        (lmv line-move-visual)
+        mode)
+    (save-cursor-intangible-mode
+     (unless (and lmv (eq last-command 'wtag-next-line))
+       (setq temporary-goal-column cc))
+     (dotimes (i (if arg arg 1))
+       (if (setq mode (cdr (wtag-2nd-area)))
+           (progn
+             (forward-line)
+             (move-to-column cc)
+             ;; 真下が read-only(エリア外) なら 後方 MODE(end-***) へ移動.
+             (if (get-text-property (point) 'read-only)
+                 (goto-char
+                  (next-single-property-change
+                   (line-beginning-position) mode nil (line-end-position)))
+               ;; read-only でなければエリア内なのでカレントに居座わる.
+               ;; 但しひとつ前に実行したコマンドもこのコマンドならそのときのカレントに移動する
+               ;; が、それが現在行の MODE(end-xxx) より前方なら MODE に移動.
+               ;; temporary-goal-column は依然維持される.
+               (let ((ec (- (next-single-property-change
+                             (line-beginning-position) mode nil (line-end-position))
+                            (line-beginning-position))))
+                 (if (eq last-command 'wtag-next-line)
+                     (if (< ec tc)
+                         (move-to-column ec)
+                       (move-to-column tc)))))
+             (and (not lmv) (setq temporary-goal-column (current-column))))
+         (line-move arg))))))
+
+(defun wtag-beginning-of-line (arg)
+  "wtag 用 beginning-of-line.
+一旦編集エリアの先頭で止まるが更に押すと後方の編集エリアへ移動.
+これを行頭まで繰り返す.
+ARG はリピート回数.
+プレフィクス付きでインタラクティブ起動し引数を省略すると 5 になる.
+これは単純な行頭移動になる."
+  (interactive "p")
+  (let* ((arg (if (equal current-prefix-arg '(4)) 5 arg))
+         (limit (wtag-beg-limit))
+         mv)
+    (while (and (not (bolp)) (not (zerop arg)))
+      (goto-char (previous-single-property-change (point) 'read-only nil limit))
+      (setq arg (1- arg)))))
+
+(defun wtag-end-of-line (arg)
   "wtag 用 end-of-line.
-一旦編集ブロックの終端で止まるが更に押すと次の編集ブロックへ移動."
-  (interactive)
-  (let ((limit (line-end-position)))
-    (if (get-text-property (point) 'read-only)
-        (progn
-          (forward-char)
-          (goto-char (next-single-property-change (point) 'read-only nil limit))
-          (skip-chars-backward " "))
-      (goto-char (next-single-property-change (point) 'read-only nil limit)))))
+一旦編集エリアの終端で止まるが更に押すと前方の編集エリアへ移動.
+これを行末まで繰り返す.
+ARG 等は `wtag-beginning-of-line' を参照."
+  (interactive "p")
+  (let* ((arg (if (equal current-prefix-arg '(4)) 5 arg))
+         (limit (line-end-position))
+         mv)
+    (while (and (not (eolp)) (not (zerop arg)))
+      (goto-char (next-single-property-change (point) 'read-only nil limit))
+      (setq arg (1- arg)))))
 
 (defun wtag-next-tag (&optional arg)
   "次の編集ブロックへ移動."
@@ -849,7 +912,7 @@ PREFIX 在りだと1～2行目の共通表示と曲自体のデータが違っ�
              (while (get-text-property (point) 'read-only)
                (backward-char))))))
            
-(defun wtag-previous-tag (&optional arg)
+(defun wtag-previous-tag (arg)
   "前の編集ブロックへ移動."
   (interactive "p")
   (condition-case nil
@@ -1281,6 +1344,7 @@ nkf は完全にあることが前提でノーチェックです."
           (define-key map [remap move-beginning-of-line] 'wtag-beginning-of-line)
           (define-key map [remap move-end-of-line]       'wtag-end-of-line)
           (define-key map [remap kill-line]              'wtag-kill-line)
+          (define-key map [remap next-line]              'wtag-next-line)
           (define-key map "\C-i"          'wtag-next-tag)
           (define-key map [S-tab]         'wtag-previous-tag)
           (define-key map "\C-j"          'ignore)
