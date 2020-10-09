@@ -9,12 +9,12 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 
 # このセットのバージョン
 
-1.9
+1.10
 
 
 # 基本関数(必須)
 
-1.  mf-tag-write.el   - タグの書き換えフロントエンド関数.
+1.  mf-tag-write.el   - タグの書き換えフロントエンド関数
 2.  mf-lib-var.el     - 各ライブラリから参照されるコモン変数と関数
 3.  mf-lib-mp4.el     - mp4(m4a) ライブラリ
 4.  mf-lib-mp3.el     - oma(atrac3plus), mp3(ID3.2v2, ID3.2v3) ライブラリ
@@ -31,7 +31,7 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 # ドキュメント
 
 1.  MF-TAG-WRITE.org
-2.  alias-table.org - mf-tag-write で使える TAG の alias 表.
+2.  ALIAS-TABLE.org - mf-tag-write で使える TAG の alias 表.
 3.  WTAG.org
 4.  CHENGES.org
 5.  README.md or README.org

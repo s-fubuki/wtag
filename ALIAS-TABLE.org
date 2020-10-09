@@ -1,0 +1,137 @@
+#+title:   mf-tag-write alias table
+#+date:   Sun Sep 27 08:10:28 2020
+#+AUTHOR: fubuki
+          
+# (defun alist2table (alist)
+#   (dolist (a alist)
+#     (insert (format "||%s |%s|\n" (cdr a) (car a)))))
+
+* mp3(ID3v2.3) mf-id33-tag-alias
+| 意味                   | タグ | エイリアス |
+|------------------------+------+------------|
+| 曲名                   | TIT2 | title      |
+| アーティスト           | TPE1 | artist     |
+| アルバム               | TALB | album      |
+| ジャンル               | TCON | genre      |
+| 製作者                 | TCOM | composer   |
+| アーティスト3          | TPE3 | artist3    |
+| トラック               | TRCK | track      |
+| ディスク               | TPOS | disk       |
+| リリース               | TYER | year       |
+| アルバム・アーティスト | TPE2 | a-artist   |
+| コメント               | COMM | comment    |
+| コピーライト           | TCOP | copy       |
+| カバー・アート(OBJ)    | APIC | cover      |
+| カバー・アート(OBJ)    | APIC | artwork    |
+| 歌詞                   | USLT | lyric      |
+| エンコード             | TENC | enc        |
+| グループ               | GRP1 | group      |
+| ビート/ミニット        | TBPM | bpm        |
+| プリブ                 | PRIV | priv       |
+
+* mp3(ID3v2.2) mf-id32-tag-alias
+| 意味                   | タグ | エイリアス |
+|------------------------+------+------------|
+| 曲名                   | TT2  | title      |
+| アーティスト           | TP1  | artist     |
+| アルバム               | TAL  | album      |
+| ジャンル               | TCO  | genre      |
+| 製作者                 | TCM  | composer   |
+| アーティスト3          | TP3  | artist3    |
+| トラック               | TRK  | track      |
+| ディスク               | TPA  | disk       |
+| リリース               | TYE  | year       |
+| アルバム・アーティスト | TP2  | a-artist   |
+| コメント               | COM  | comment    |
+| コピーライト           | TCR  | copy       |
+| カバーアート(OBJ)      | PIC  | cover      |
+| カバーアート(OBJ)      | PIC  | artwork    |
+| 歌詞                   | ULT  | lyric      |
+| エンコード             | TEN  | enc        |
+| グループ               | GP1  | group      |
+| 演奏速度               | TBP  | bpm        |
+
+* oma(Atrac3Plus) mf-oma-tag-alias
+| 意味                               | タグ        | エイリアス |
+|------------------------------------+-------------+------------|
+| カバーアート(OBJ)                  | OMG_TDFCA   | artwork    |
+| カバーアート(OBJ)                  | OMG_TDFCA   | cover      |
+| カバーアート(OBJ)                  | OMG_TDFCA   | image2     |
+| ???                                | OMG_OLINF   | bin2       |
+| カバーアート(OBJ)                  | OMG_FENCA1  | image1     |
+| ???                                | OMG_BKLSI   | bin1       |
+| ???                                | USR_L2TMDDA | date       |
+| ???                                | TLEN        | time       |
+| 製作者                             | TCOM        | composer   |
+| リリース?                          | OMG_TRLDA   | release    |
+| 曲名(for ソート)                   | OMG_TIT2S   | s-title    |
+| アルバム・アーティスト             | OMG_ATPE1   | a-artist   |
+| アルバム・アーティスト(for ソート) | OMG_ATP1S   | s-a-artist |
+| ???                                | OMG_ASGTM   | asgtm      |
+| アルバム(for ソート)               | OMG_ALBMS   | s-album    |
+| ジャンル(for ソート)               | OMG_AGENR   | s-genre    |
+| リリース                           | TYER        | year       |
+| トラック                           | OMG_TRACK   | track      |
+| アーティスト(for ソート)           | OMG_TPE1S   | s-artist   |
+| ジャンル                           | TCON        | genre      |
+| アルバム                           | TALB        | album      |
+| アーティスト                       | TPE1        | artist     |
+| 曲名                               | TIT2        | title      |
+
+* m4a(mp4) mf-mp4-tag-alias
+| 意味                               | タグ            | エイリアス |
+|------------------------------------+-----------------+------------|
+| 曲名                               | \251nam         | title      |
+| アーティスト                       | \251ART         | artist     |
+| アルバム・アーティスト             | aART            | a-artist   |
+| アルバム                           | \251alb         | album      |
+| リリース                           | \251day         | date       |
+| リリース                           | \251day         | year       |
+| ジャンル                           | \251gen         | genre      |
+| トラック                           | trkn            | track      |
+| ディスク                           | disk            | disk       |
+| 作者                               | \251wrt         | writer     |
+| カバーアート(OBJ)                  | covr            | cover      |
+| カバーアート(OBJ)                  | covr            | artwork    |
+| 歌詞                               | \251lyr         | lyric      |
+| アルバム(for ソート)               | soal            | s-album    |
+| タイトル(for ソート)               | sonm            | s-title    |
+| アーティスト(for ソート)           | soar            | s-artist   |
+| アルバム・アーティスト(for ソート) | soaa            | s-a-artist |
+| コピーライト                       | cprt            | copy       |
+| ???                                | iTunSMPB        | mpb        |
+| ???                                | cpil            | cpil       |
+| プリギャップ?                      | pgap            | pgap       |
+| テンポ                             | tmpo            | tempo      |
+| ???                                | \251too         | too        |
+| エンコーダ                         | Encoding Params | enc        |
+| ???                                | iTunNORM        | norm       |
+| ???                                | iTunes_CDDB_IDs | cddb       |
+# | ??? | UFIDhttp://www.cddb.com/id3/taginfo1.html | ufid |
+
+* flac mf-flac-tag-alias
+| 意味                               | タグ            | エイリアス |
+|------------------------------------+-----------------+------------|
+| 曲名                               | TITLE           | title      |
+| アーティスト                       | ARTIST          | artist     |
+| アルバム・アーティスト             | ALBUMARTIST     | a-artist   |
+| アルバム                           | ALBUM           | album      |
+| リリース日?                        | DATE            | date       |
+| リリース年?                        | YEAR            | year       |
+| ジャンル                           | GENRE           | genre      |
+| トラック                           | TRACKNUMBER     | track      |
+| ディスク                           | DISCNUMBER      | disk       |
+| 作者                               | WRITER          | writer     |
+| カバーアート(OBJ)                  | APIC            | cover      |
+| カバーアート(OBJ)                  | APIC            | artwork    |
+| 歌詞                               | LYRICS          | lyric      |
+| アルバム(for ソート)               | ALBUMSORT       | s-album    |
+| 曲名(for ソート)                   | TitleSort       | s-title    |
+| アーティスト(for ソート)           | ArtistSort      | s-artist   |
+| アルバム・アーティスト(for ソート) | AlbumArtistSort | s-a-artist |
+| コピーライト                       | Copyright       | copy       |
+
+* 注意
+- flac のアートワークはタグ情報には埋め込まれていないので flac 表 の APIC はタグではなく mf-tag-write 内部処理シンボルです. 勿論指定は (cover . "image.jpg") のようにできます.
+- OBJ はバイナリデータです
+- アルバム・カバーは cover を使うことを推奨します. wtag 等でそちらしか見てない気がするので.
