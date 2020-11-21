@@ -1,6 +1,46 @@
-# -*- mode: org; coding: utf-8-unix -*-
+# -*- mode: org; coding: utf-8-unix; truncate-lines: nil -*- 
 #+title: wtag archive set CHANGES
-#+date: Thu Oct  8 16:55:58 2020
+# +date: Mon Nov  2 16:49:51 2020
+#+date: Thu Nov 19 08:15:58 2020
+* rev1.11
+** wtag 1.11
+*** D&D で音楽ファイルのコピー
+wtag buffer に 対応拡張子の音楽ファイルを D&D で追加できるようにしました.
+*** kakasi を shell なしで起動するように変更
+shell を介さないでも標準入力にテキストが送り込めると判ったのでそのようにしました.
+*** 変数 `wtag-force-load' が数値なら、その秒数問い合わせを抑止.
+`wtag-force-load' が NON-NIL だと view mode 時でも画像セットができるが、
+数値だと最初に1度だけ問い合わせをし、そこからその秒数間問い合わせをしなくなる.
+画像をセットするたびこの値に更新するので最後に画像セットしてからその秒数の間有効となります.
+*** face name の末尾の "-face" を削除.
+冗長なのでつけてはいけないというルールがあることを知り変更.
+
+** mf-lib-var
+*** fix 関数 mf-chop: 空タグでちゃんと "" (null string) を返すよう修正.
+nil を返すようになっていて (title . "") と返すべき場合 (title) となってしまっていた.
+これではそのまま mf-tag-write の引数に渡すとタグ削除になってしまう.
+*** 内部的に正規表現を rx macro で起こし直す.
+正規表現が文字列から式になるので後からマッチ対象を増減等したとき等、
+マージしやすい等フレキシビリティがアップするので.
+*** no-backup 引数のある関数でその値が first なら 最初の 1度だけバックアップを作る.
+buffer save のそれとは違い buffer との結び付きが無いためリセットされず永続的なもになる.
+オリジナルだけ保護したい為などの用途.
+
+** mf-tag-write
+*** 関数 mf-tag-read-alist の追加
+file の tag list を alist で返します. 引数は mf-tag-read と同じです.
+*** 関数 mf-tag-read-alias の追加
+`mf-tag-read-alist' の戻値の各エレメントに対応する alias シンボルを cons した list で返します. 引数は mf-tag-read と同じです.
+
+** tiny-ted (NEW)
+短かくシンプルなサンプルができたので、
+シングル・エディット・インターフェイスは taged に代えこちらを同梱します.
+
+** mf-lib-utility
+*** music-file-get-title
+表示データを変数設定できるようにしました.
+*** Doc String の整理.
+
 * rev1.10
 ** wtag 1.10
 *** fix タグのデータを返す関数 `wtag-str-gets' のバグ修正.

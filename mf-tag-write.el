@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.5 $
+;; Version: $Revision: 1.6 $$Name: r1dot11 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.5 $")
+(defconst mf-tag-write-version "$Revision: 1.6 $$Name: r1dot11 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -68,8 +68,11 @@
 (defconst mf-file-tag-list
   '("covr" "APIC" "PIC" "GEOB" "OMG_FENCA1" "OMG_TDFCA" "USLT" "ULT" "\251lyr"))
 
-(defvar mf-image-regexp "\\.\\(jpg\\|png\\)\\'")
-(defvar mf-text-regexp  "\\.\\(txt\\)\\'")
+(defvar mf-image-suffix '(jpg png))
+(defvar mf-text-suffix '(txt))
+
+(defvar mf-image-regexp (mf-re-suffix mf-image-suffix))
+(defvar mf-text-regexp  (mf-re-suffix mf-text-suffix))
 
 (defun mf-id-to-mode (id)
   (or (cdr (assoc id mf-id-to-mode)) mf-id-to-mode-else))
@@ -192,7 +195,13 @@ CDR を NIL とするとそのタグの削除になる."
         (setq tag (if (symbolp (car a))
                       (cdr (assoc (car a) alias))
                     (cdr (rassoc (car a) alias))) ;; 未定義検出するためそのまま返さない.
-              str (if (and (cdr a) (symbolp (cdr a))) (symbol-name (cdr a)) (cdr a)))
+              str (cond
+                   ((and (cdr a) (symbolp (cdr a)))
+                    (symbol-name (cdr a)))
+                   ((and (cdr a) (numberp (cdr a)))
+                    (number-to-string (cdr a)))
+                   (t
+                    (cdr a))))
         (when (null tag) (error "Bad arg... %s" a)))
       (setq result
             (cons
@@ -221,6 +230,53 @@ CDR を NIL とするとそのタグの削除になる."
                (error "Unknown format: %s" a)))
              result)))))
 
+(defun mf-tag-read-alist (file &optional len no-bin)
+  "FILE のタグを \(TAG . DATA) または \(DSC . DATA) の alist にして返す."
+  (let* ((plst (mf-tag-read file (or len 1024) no-bin))
+         result)
+    (dolist (a plst result)
+      (let ((tag (or (plist-get a :dsc) (plist-get a :tag)))
+            (data (plist-get a :data)))
+        (setq result (cons (cons tag data) result))))))
+
+(defvar mf-type-dummy-symbol '*type)
+
+;;;###autoload
+(defun mf-tag-read-alias (file &optional len no-bin)
+  "FILE のタグを \(ALIAS TAG . DATA) または \(ALIAS DSC . DATA) の list にして返す."
+  (let* ((alist (mf-tag-read-alist file len no-bin))
+         (case  (string-match "\\.flac\\'" file))
+         (mlist (mf-func-get file mf-function-list))
+         (mode  (cdr (assoc mf-type-dummy alist)))
+         (alias (cons (cons mf-type-dummy-symbol mf-type-dummy) (mf-alias mlist mode))))
+    (mf-alist-add-tag alist alias case)))
+
+(defun mf-alist-add-tag (alist alias case)
+  "ALIST の各要素 \(TAG . DATA) に TAG に対応する alias を ALIAS から捜して cons し
+\(ALIAS TAG . DATA) という形にする.
+ひとつのタグに対し複数のエイリアスがあればその分だけ作る.
+(複数の alias のある artwork cover 等
+car だけ違う大きな list が複数作られるが、
+中身はアドレス参照で実体は増えないのでメモリは特に圧迫されない)
+CASE が NON-NIL(FLAC)のときだけ戻す ALIST の中の TAG が upper case 化される."
+  (let ((alist
+         (if case
+             (mapcar #'(lambda (a) (cons (upcase (car a)) (cdr a))) alist)
+           alist))
+        result)
+    (dolist (a alias result)
+      (let* ((tag (if case (upcase (cdr a)) (cdr a)))
+             (tmp (assoc tag alist)))
+        (when tmp
+          (setq result (cons (cons (car a) tmp) result)))))))
+
+;;;###autoload
+(defun mf-alias-get (alias lst)
+  "`mf-alist-add-tag' の生成する \(ALIAS TAG . DATA) 形式の LST の中から
+CAR が  ALIAS に EQ の CDDR を返す.
+無ければ NIL を返す."
+  (cdr (assoc-default alias lst)))
+
 (defun mf-string-equal (a b)
   (if mf-current-case
       (string-equal (upcase a) (upcase b))
@@ -247,10 +303,14 @@ CDR を NIL とするとそのタグの削除になる."
   (dolist (v vals)
     (make-variable-buffer-local v)))
 
+(defvar mf-func-get-hook nil)
+
+;; from mf-write-tag
 (defun mf-func-get (file funclist)
   "FILE にマッチする関数セットを FUNCLIST list より取得. 無ければ NIL.
 FUNCLIST は '((REGEXP READ-FUNC WRITE-FUNC CV-FUNC ALIAS-LIST ) (...)) といった形式."
-  (assoc-default file funclist 'string-match))
+    (run-hooks 'mf-func-get-hook)
+    (assoc-default file funclist 'string-match))
 
 ;; 引数がまちまちなのでバッファローカル変数化して引数なしにするかも.
 (defun mf-rfunc (funclist)
@@ -280,8 +340,9 @@ atom なら第4の値をそのまま返す. いずれも eval して返す."
 ;;;###autoload
 (defun mf-tag-write (file &optional new-tags no-backup time-opt)
   "FILE の既存タグに plist形式の NEW-TAGS が含まれれば置き換え無ければ追加し書き換える.
-NO-BACKUP が非NIL なら Backup file を作らない.
-NO-BACKUP が文字列ならそのファイルに書き出す。その場合バックアップはされない.
+NO-BACKUP が NON-NIL なら Backup file を作らない.
+但しシンボル once なら 1度だけ作る.
+また文字列ならそのファイルに書き出しバックアップも作らない.
 TIME-OPT が非NIL ならタイムスタンプを継承する."
   (interactive "fFile: \nxTags: ")
   (let* ((time-opt (and time-opt (mf-sixth (file-attributes file))))

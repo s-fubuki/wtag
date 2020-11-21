@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020 fubuki -*- coding: utf-8-emacs -*-
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.2 $
+;; Version: @(#)$Revision: 1.3 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,12 +33,16 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.2 $")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.3 $$Nmae$")
 
 (require 'mf-lib-var)
 
+(defvar mf-lib-flac-suffix '(flac))
+(defvar mf-lib-flac-regexp (mf-re-suffix mf-lib-flac-suffix))
+(setq mf-lib-suffix-all (append mf-lib-flac-suffix mf-lib-suffix-all))
+
 (defvar mf-flac-function-list
-  '("\\.flac\\'"
+  `(,mf-lib-flac-regexp
     mf-flac-tag-read
     mf-flac-write-buffer
     mf-list-convert
@@ -433,11 +437,7 @@ NO-BACKUP が 非NIL なら元ファイイルを残さない."
         (setq blocks (cdr blocks))))
 
     ;; あとはバックアップするならして書き換えたバッファを書き出すだけ.
-    (if (and (not (stringp no-backup)) (null no-backup))
-        (let ((name (make-backup-file-name file)))
-          (if (file-exists-p name) (delete-file name 'trash))
-          (rename-file file name)))
-    (write-region (point-min) (point-max) file)))
+    (mf-write-file file no-backup)))
 
 ;; ソニーのアプリが作る Flac はシークテーブルを作らない.
 ;; おそらくウォークマンは参照もしていない

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.7 $
+;; Version: @(#)$Revision: 1.8 $$Name: r1dot11 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -19,16 +19,24 @@
 
 ;;; Commentary:
 
-;; Sample junk collection using mf-tag-write.el.
+;; Sample junk code collection using mf-tag-write.el.
 
 ;; - make-digital-album : ディレクトリ内の音楽ファイルのアルバム名等を統一.
 ;; - dired-music-file-change-title : dired でポイント位置の音楽ファイルの曲名を変更.
 ;; - dired-music-file-get-titles : dired でポイント位置のファイルの曲名/アルバムの中身等を表示.
 ;; - dired-image-extract : バイナリファイルからマジックナンバーで jpg/png を抽出.
-;; - mf-tag-list : 音楽ファイルのタグをプロパティリストで表示.
+;; - dired-music-file-tag-list : 音楽ファイルのタグをプロパティリストで表示.
 ;; - dired-rename-file-to-title : dired でマークされた音楽ファイルを曲名を元にファイル名変更.
 ;; - dired-music-file-get-title : dired でポイント位置の音楽ファイルの曲名等を表示.
-;; - mf-artwork-to-window : 音楽ファイル内のアートワークを表示.
+;; - dired-music-file-match: dired から起動しタグに REGEXP を含む音楽ファイルをマーク.
+;; - mf-artwork-to-window : 音楽ファイル内のアートワークを表示. (コマンドではありません)
+
+;; お手軽設定例
+;; (defun music-file-key-set ()
+;;   (define-key dired-mode "C-cmt" 'dired-music-file-get-titles)
+;;   (define-key dired-mode "C-cmR" 'dired-rename-file-to-title)
+;;   (define-key dired-mode "C-cmx" 'dired-image-extract))
+;; (add-hook 'dired-mode-hook #'music-file-key-set)
 
 ;;; Installation:
 
@@ -40,82 +48,108 @@
 (require 'wtag)
 (require 'dired)
 
-(defconst mf-lib-utility-version "@(#)$Revison$")
-  
-(defun music-file-directory-index-list (directory)
-  (let* ((files (wtag-directory-files directory t (wtag-suffix-list mf-function-list))))
+(defconst mf-lib-utility-version "@(#)$Revison$$Name: r1dot11 $")
+
+;;
+;; ** make-digital-album **
+;;
+(defun music-file-directory-index-list (dir)
+  (let* ((files (directory-files dir t (mf-re-suffix mf-lib-suffix-all))))
     (wtag-directory-set files)))
 
-(defun mf-file-exists-p (file)
-  "`file-exists-p' FILE なら FILE(文字列) を返しさもなくば NIL を返す."
-  (if (file-exists-p file) file nil))
-
 ;;;###autoload
-(defun make-digital-album (directory album-name &optional cover)
-  "DIRECTORY 中の `mf-function-list' の要素の car にマッチする file のアルバム名を
-ALBUM-NAME にしトラック番号を振り直す.
+(defun make-digital-album (dir name &optional cover)
+  "DIR 中の拡張子 `mf-lib-suffix-all' にマッチする\
+音楽ファイルのアルバム名を NAME にしトラック番号を振り直す.
 用途としてひとつまたは複数のアルバムから曲をいくつか抜き出してコピーしたディレクトリを作り
-それを新たなアルバムとして再構成する等に使う."
-  (let (albums track result (n 1))
-    (setq albums (reverse (music-file-directory-index-list directory))
+それを新たなアルバムとして再構成する等に使う.
+
+  下ごしらえとしてディレクトリを作ってまとめたい曲をそこにコピーします.
+そのディレクトリ名を第一引数にして、二つ目の引数につけたいアルバム名を指定します.
+
+: (make-digital-album DIRECTORY NEW-ALBUM-NAME)
+
+第三の引数に画像を指定するとカバーアートがその画像になります.
+
+: (make-digital-album DIRECTORY NEW-ALBUM-NAME ALBUM-ARTWORK)
+
+M-x 等でコマンド起動するとひとつひとつ引数をきいてきます.
+アートワークを指定しない場合はリターンのみです."
+  (interactive "DDir: \nsName: \nfCover: ")
+  (let ((cover (and cover (if (file-exists-p cover) cover)))
+        (n 1)
+        albums result)
+    (setq albums (music-file-directory-index-list dir)
           albums (sort albums 'wtag-sort-track)
           albums (sort albums 'wtag-sort-album))
-    (dolist (a albums result) (setq result (cons (assq 'filename a) result)))
-    (setq cover
-          (or (mf-file-exists-p (concat directory "/" cover))
-              (mf-file-exists-p (concat default-directory "/" cover))
-              cover))
+    (dolist (a albums) (setq result (cons (cdr (assoc-default 'filename a)) result)))
     (dolist (file (reverse result))
-      (mf-tag-write
-       file
-       (append
-        `((album . ,album-name)
-          ("OMG_OLINF") ("OMG_FENCA1") ("OMG_BKLSI")
-          (track . ,(number-to-string n)))
-        (if cover (list cover) nil)))
-      (setq n (1+ n)))))
+      (let ((oma (string-match "\\.oma\\'" file)))
+        (mf-tag-write
+         file
+         (append
+          (list (cons 'album name))
+          (if oma (list '("OMG_OLINF") '("OMG_FENCA1") '("OMG_BKLSI")) nil)
+          (list (cons 'track (number-to-string n)))
+          (if cover (list cover) nil)))
+        (setq n (1+ n))))))
+;; end of make-digital-album
 
+;;
+;; ** dired-music-file-change-title **
+;;
 ;;;###autoload
 (defun dired-music-file-change-title (&optional prefix)
-  "dired でカーソル位置の音楽ファイルの曲名を変更する.
-PREFIX 非NIL でアー名変更."
+  "dired でポイント位置の音楽ファイルの曲名タグを変更する.
+PREFIX でアー名変更になる.
+`mf-tag-write' を使った最もシンプルなインターフェイス例."
   (interactive "P")
-  (let* ((file  (dired-get-filename))
-         (mf-current-case (string-match "\\.flac\\'" file))
+  (let* ((file (dired-get-filename))
          (mode (if prefix 'artist 'title))
-         (tags  (mf-tag-read file 1024 t))
-         (tag   (mf-alias-to-org mode file))
-         lst str new)
-    (setq lst
-          (catch 'break
-            (dolist (a tags lst)
-              (let ((tmp (plist-get a :tag)))
-                (when (mf-string-equal tmp tag) (throw 'break a))))))
-    (setq str (plist-get lst :data))
-    (setq new (read-string (concat (capitalize (symbol-name mode)) ": ") str))
-    (unless (string-equal str new)
-      (mf-tag-write file (list (cons tag new)))
+         (pair (assoc-default mode (mf-tag-read-alias file 1024 t)))
+         (new  (read-string
+                (concat (capitalize (symbol-name mode)) ": ") (cdr pair))))
+    (unless (string-equal (cdr pair) new)
+      (mf-tag-write file (list (cons (car pair) new)))
       (revert-buffer))))
+;; end of dired-music-file-change-title
 
+;;
+;; ** dired-music-file-get-titles **
+;;
 ;;;###autoload
-(defun dired-music-file-get-titles (file &optional prefix)
-  "FILE の主なタグをエコーエリアに表示.
-FILE がディレクトリならその中の音楽ファイルのタイトル一覧表示.
-PREFIX 在りで file なら タグを詳しく表示."
-  (interactive
-   (list (dired-get-filename) current-prefix-arg))
-  (if (file-directory-p file)
-      (wtag file prefix)
-    (if prefix
-        (mf-tag-list)
-      (dired-music-file-get-title file))))
+(defun dired-music-file-get-titles (prefix)
+  "dired でポイント位置の音楽ファイルの曲名等をエコーエリアに表示.
+アートワークも含まれていれば別バッファで表示. その場合 q 押しで抜ける.
 
+PREFIX 在りのときは別バッファに\
+`mf-tag-wrtie' で扱うプロパティリスト形式でタグの一覧を出力.
+
+このコマンドは `dired-music-file-get-title' と `mf-tag-list' のフロントエンドです.
+元々タイトル表示用の関数ではなかった名残りで名前と実体が合っていません."
+  (interactive "P")
+  (let ((file (dired-get-filename)))
+    (if (file-directory-p file)
+        (wtag file prefix)
+      (if prefix
+          (mf-tag-list)
+        (dired-music-file-get-title)))))
+;; end of dired-music-file-get-titles
+
+;;
+;; ** dired-image-extract **
+;;
 (defcustom dired-image-extract-max nil
-  "*抜き取る画像の最大枚数. NIL ならすべて."
+  "抜き取る画像の最大枚数. NIL ならすべて."
   :type  '(choice (const nil) integer)
   :group 'music-file)
 
-(defvar dired-image-extract-max-length 32 "出力ファイル名の最大長.")
+(defcustom dired-image-extract-name-length 32
+  "出力ファイル名の最大長.
+`dired-image-extract-safe-file-name' によってこれより長くなることも在り."
+  :type  'integer
+  :group 'music-file)
+
 (defvar dired-image-extract-type
   '(("\xff\xd8\xff[\xe0\xe1]"  image-jpg-extract jpg)
     ("\x89PNG\x0d\x0a\x1a\x0a" image-png-extract png))
@@ -126,9 +160,10 @@ PREFIX 在りで file なら タグを詳しく表示."
 
 ;;;###autoload
 (defun dired-image-extract (files &optional max)
-  "FILES に含まれる jpg または png パートすべてを file(-数).ext に抜き出す.
-TAG を手繰らずバイナリレベルでサーチして抜き出すのでフォーマットには依存しません.
-最大 MAX 枚数抜き出す. デフォルトは `dired-image-extract-max' で指定. NIL ならすべて."
+  "FILES に含まれる jpg または png パートすべてをファイルに抜き出す.
+TAG を手繰らずバイナリレベルでサーチして抜き出すのでコーッデクには依存しません.
+最大 MAX 枚数抜き出す. デフォルトは `dired-image-extract-max' で指定. NIL ならすべて.
+枚数はインタラクティブ起動する場合プレフィクスでも指定できます."
   (interactive
    (let ((files (dired-get-marked-files))
          (max   (and current-prefix-arg (prefix-numeric-value current-prefix-arg))))
@@ -138,7 +173,7 @@ TAG を手繰らずバイナリレベルでサーチして抜き出すのでフ�
          (files  (if (listp files) files (list files)))
          (type   dired-image-extract-type)
          (regexp (concat "\\(" (mapconcat #'identity (mapcar #'car type) "\\|") "\\)"))         
-         (len    dired-image-extract-max-length)
+         (len    dired-image-extract-name-length)
          out ext)
     (dolist (file files)
       (let* ((c 0) p)
@@ -210,7 +245,7 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
       file)))
 
 (defun dired-image-extract-safe-file-name (file type &optional number)
-  "FILE name を NUMBER でナンバリングし 新たな拡張子 TYPE を追加し、
+  "FILE name を NUMBER でナンバリングし 新たな拡張子 TYPE を追加し,
 その名前が既存なら重複しないよう更に日付を加えた名前を返す.
 `dired-image-extract-short-name' で長さを丸めこんでいてもそれ以上になることに注意."
   (let ((number (or number 1)))
@@ -227,17 +262,15 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
   (let ((base   (file-name-sans-extension file))
         (ext    (file-name-extension file)))
     (format "%s-%d-%s.%s.%s" base number (format-time-string "%Y%m%d%H%M%S") ext type)))
+;; end of dired-image-extract
 
-;; (defun make-test-bin (&rest args)
-;;   (with-temp-buffer
-;;     (dolist (file args)
-;;       (insert-file-contents-literally file))
-;;       (set-buffer-multibyte nil)
-;;       (write-region (point-min) (point-max) "test-bin.bin")))
-
+;;
+;; ** dired-music-file-tag-list **
+;;
 ;;;###autoload
+(defalias 'dired-music-file-tag-list 'mf-tag-list)
 (defun mf-tag-list ()
-  "dired でカーソル位置の音楽ファイルのタグを別ウインドウに表示."
+  "dired でポイント位置の音楽ファイルのタグ情報を別ウインドウに表示."
   (interactive)
   (let* ((file (dired-get-filename))
          (tags (mf-tag-read file 1024))
@@ -262,30 +295,32 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
 (defun mf-alias-to-org (sym file)
   "エイリアスシンボル SYM を FILE の対応したタグに解決しその文字列を返す."
   (or (cdr (assq sym (mf-alias (assoc-default file mf-function-list 'string-match)))) ""))
-    
+;; end of dired-music-file-tag-list
+
+;; 
+;; ** rename-file-to-title **
+;;
 ;;;###autoload
 (defun dired-rename-file-to-title ()
+  "dired でマークされた音楽ファイルを曲名を元にファイル名変更."
   (interactive)
   (rename-file-to-title (dired-get-marked-files))
   (revert-buffer))
-   
+
 (defun rename-file-to-title (files)
   "FILES の \"01-未タイトル(1).mp4\" のようなファイル名を曲名にリネーム."
-  (let ((tbl (make-tag-member 'title))
-        name ext num)
-    (dolist (f files)
-      (setq name (file-relative-name f)
-            ext (file-name-extension name)
-            num (and
-                 (string-match "\\`\\(?1:[0-9]+[^0-9]\\)" name)
-                 (match-string 1 name)))
+  (dolist (f files)
+    (let* ((tags (mf-tag-read-alias f 1024 t))
+           (name (file-relative-name f))
+           (ext (file-name-extension name))
+           (num (rename-file-to-title-make-prefix name (cdr (assoc-default 'track tags)))))
       (condition-case err
           (progn
-            (setq name (concat
-                        num
-                        (rename-file-to-title-regular
-                         (rename-file-to-title-get-title (mf-tag-read f 1024 t) tbl))
-                        "." ext))
+            (setq name
+                  (concat
+                   num
+                   (rename-file-to-title-regular (cdr (assoc-default 'title tags)))
+                   "." ext))
             (rename-file f name))
         (error (dired-log "Rename to title error %s\n" f))))))
 
@@ -310,120 +345,120 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
 ;; (make-tag-member 'foo)(nil nil nil nil nil)
 ;; (make-tag-member 'album)("ALBUM" "TALB" "TAL" "TALB" "\251alb")
 
-(defun mf-member (elt lst case)
-  "flac のためだけにある関数."
-  (if case
-      (member (upcase elt) (mapcar #'upcase lst))
-    (member elt lst)))
+(defun rename-file-to-title-make-prefix (name trk)
+  (format "%02d-"
+          (string-to-number
+           (if (string-match "\\`\\(?1:[0-9]+\\)[^0-9]" name)
+               (match-string 1 name)
+             (if (string-match "/" trk)
+                 (car (split-string trk "/"))
+               trk)))))
+;; end of rename-file-to-title
 
-(defun rename-file-to-title-get-title (plst tbl)
-  "pLST の束から TBL に対応した :tag の :data を返す."
-  (let* ((case (string-equal "flac" (mf-get-mode plst))))
-    (plist-get
-     (catch 'break
-       (dolist (a plst)
-         (and (mf-member (plist-get a :tag) tbl case)
-              (throw 'break a))))
-     :data)))
+;;
+;; ** music-file-get-title **
+;;
+(defgroup music-file-get-title nil
+  "music-file-get-title."
+  :group 'music-file)
 
-(defvar music-file-get-title-separator      nil
-  "*`dired-music-file-get-title' で表示される区切文字. NIL なら \"|\" になる.")
-(defvar music-file-get-title-separator-face 'bold
-  "*`dired-music-file-get-title' で表示される区切文字の face.")
+(defcustom music-file-get-title-choice '(title artist album genre)
+  "表示するタグのエイリアスシンボルの list.
+cover 等バイナリ関連は指定すると酷いことになる.
+文字列ならそのまま表示される."
+  :type  '(repeat (choice symbol string))
+  :group 'music-file-get-title)
 
-;;;###autoload
-(defun dired-music-file-get-title (&optional file)
-  "Put Message \"TITLE | ARTIST | ALBUM | CATEGORY\"."
-  (interactive
-   (list (dired-get-filename)))
-  (let* ((image t)
-         (result (music-file-get-title file nil image))
-         (separator
-          (propertize
-           (or music-file-get-title-separator " | ")
-           'face music-file-get-title-separator-face))
-         size)
-    (message "%s" (mapconcat #'identity result separator))))
+(defcustom music-file-get-title-image t
+  "image タグの中身を表示するか否か."
+  :type  'boolean
+  :group 'music-file-get-title)
 
-(defvar music-file-header-function
-  '(("\\.oma\\'"                    mf-get-title 30)
-    ("\\.\\(mp4\\|m4a\\|mp3\\)\\'"  mf-get-title 10)
-    ("\\.flac\\'"                   mf-get-title 3))
-  "((regexp header-scan-func read-size(%)) ...)")
+(defcustom music-file-get-title-separator (propertize " | " 'face 'bold)
+  "`music-file-get-title-choice' を表示する際の区切文字.
+NIL なら区切なし."
+  :type  'string
+  :group 'music-file-get-title)
 
-(defvar music-file-dummy-list '("unknown" "unknown" "unknown")
-  "* `music-file-get-title' 用の曲名を除く ARTIST ALBUM CATEGORY の未定義ファイル用ダミー.")
+(defcustom music-title-null (propertize "nil" 'face 'dired-ignored)
+  "Tag が無かったときの代替文字列."
+  :type  'string
+  :group 'music-file-get-title)
 
-;;;###autoload
-(defun music-file-get-title (file &optional length image)
-  "音楽 `FILE' のコンテンツ情報(所謂タグ)から \"TITLE\" \"ARTIST\" \"ALBUM\" \"CATEGORY\" を 4つの文字列から成る list を返す. 
-現在対応しているのは .oma(Atrac3plus) .mp4 .m4a .mp3(ID32 ID33) .flac の 6種類.
-`LENGTH' はアナライズするために読み込むサイズ. NIL ならすべて読み込む.
- mp4 等はコンテンツ情報の前にデータサイズによって変動の大きいパケットテーブルがあるので
-この数値を大きめに取らないといけない.
-IMAGE が NON-NIL ならイメージタグの内容をバッファ表示する."
-  (let* ((flength (mf-eighth (file-attributes file)))
-         (mode    (assoc-default file music-file-header-function 'string-match))
-         (func    (car mode))
-         (per     (or (cadr mode) 0))
-         (length  (or length (round (* (/ flength 100.0) per)))))
-    (if func
-        (condition-case err
-            (funcall func file length image)
-          (error (cons (file-name-nondirectory file) music-file-dummy-list))))))
+(defcustom music-file-read-size
+  '(("\\.oma\\'" . 30) ("\\.\\(mp4\\|m4a\\|mp3\\)\\'" . 10) ("\\.flac\\'" . 3))
+  "ファイルサイズに対する読み込みの割合."
+  :type  '(repeat (cons regexp integer))
+  :group 'music-file-get-title)
 
-(defvar music-title-null "(nil)")
+(defun mf-magick-init (&optional sym exe)
+  (let ((sym (or sym 'mf-magick))
+        (exe (or exe "magick.exe")))
+    (set-default
+     sym
+     ;; Emacs 27.1 after なら NIL. さもなくば exe を捜しあればフルパスで返す.
+     (if (>= (+ (* emacs-major-version 256) emacs-minor-version) (+ (* 27 256) 1))
+         nil
+       (executable-find exe)))))
 
-(defun mf-get-data (sym plist alias)
-  (let ((tag (cdr (assq sym alias))))
-    (catch 'break
-      (dolist (a plist)
-        (let ((tg (or (plist-get a :dsc) (plist-get a :tag))))
-          (if (mf-string-equal tag tg)
-              (throw 'break (plist-get a :data))))))))
-
-(defvar mf-magick
-  (let ((exe "magick.exe"))
-    (cond ; 27.1 after なら
-     ((<= (+ (* emacs-major-version 256) emacs-minor-version) (+ (* 27 256) 1))
-      nil)
-     (t ; "EXE が `exec-path' に存在すれば EXE を返しさもなくば NIL を返す."
-      (catch 'break
-        (dolist (a exec-path)
-          (if (file-executable-p (concat (file-name-as-directory a) exe))
-              (throw 'break exe)))))))
-  "この変数が非NILなら `dired-select-cover-set-put-images' で画像が縮小表示される.")
+(defcustom mf-magick nil
+  "画像表示の際、縮小をかけるコマンド.
+NIL なら使わないし Emacs 27.1 なら必要もない."
+  :type       '(choice file (const nil))
+  :set        'mf-magick-init
+  :initialize 'custom-initialize-set
+  :group 'music-file-get-title)
 
 (defvar mf-image-auto-resize (if (boundp 'image-auto-resize) image-auto-resize t))
 (defvar mf-image-auto-resize-on-window-resize nil)
 
-(defun mf-get-title (file &optional length image)
-  "`mf-tag-read' で得たタグのデータを `update-directory-copy' 用に整理して返す.
-Retern list (TITLE ARTIST ALBUM CATEGORY).
-IMAGE が non-nil でなければイメージを表示しない. 他にも条件在り."
-  (let* ((plist (mf-tag-read file length nil))
-         (magick mf-magick)
-         (buff-name " *img*")
-         (mode   (mf-get-mode plist)) 
-         (alias  (mf-alias (assoc-default file mf-function-list 'string-match) mode))
-         (null   music-title-null)
-         (mf-current-case (string-match "\\.flac\\'" file))
-         (title  (or (mf-get-data 'title plist alias)  null))
-         (artist (or (mf-get-data 'artist plist alias) null))
-         (album  (or (mf-get-data 'album plist alias)  null))
-         (genre  (or (mf-get-data 'genre plist alias)  null))
-         (cover  (or (mf-get-data 'cover plist alias)  null))
-         size obj)
-    (list title artist album genre
-          (if (and image
-                   (image-type-available-p 'jpeg)
-                   (setq obj (mf-get-data 'cover plist alias)))
-              (progn
-                (setq size (mf-put-image-obj-window obj buff-name magick))
-                (if (consp size)
-                    (format "H:%d W:%d" (car size) (cdr size))
-                  "H:??? W:???"))
-            null))))
+;;;###autoload
+(defun dired-music-file-get-title (&optional file)
+  "Dired でポイント位置の音楽ファイルの曲名等を表示.
+変数 `music-file-get-title-choice' に表示したいタグを alias symbol のリストで指定.
+デフォルトは \(title artist album genre).
+変数 `music-file-get-title-separator' 上記の区切文字。デフォルトは `|'. "
+  (interactive
+   (list (dired-get-filename)))
+  (let* ((image music-file-get-title-image)
+         (title (music-file-get-title file nil image))
+         (separator (or music-file-get-title-separator "")))
+    (message "%s" (mapconcat #'identity title separator))))
+
+;;;###autoload
+(defun music-file-get-title (file &optional len image)
+  "音楽 FILE のコンテンツ情報(所謂タグ)から
+`music-file-get-title-choice' で指定したタグを list にして返す. 
+LENGTH はアナライズするために読み込むサイズ. NIL ならすべて読み込む.
+IMAGE が NON-NIL ならイメージタグのデータも表示する."
+  (let* ((flen (mf-eighth (file-attributes file)))
+         (size (assoc-default file music-file-read-size 'string-match))
+         (len  (or len (round (* (/ flen 100.0) (or size 0))))))
+    (mf-get-title file len image)))
+
+(defun mf-get-title (file &optional len image)
+  "`mf-tag-read' で得たタグのデータを
+`music-file-get-title-choice' からチョイスされたリストにして返す.
+IMAGE が NON-NIL ならイメージも表示する.
+他にも条件在り."
+  (let* ((tags   (mf-tag-read-alias file len))
+         (buff   " *img*")
+         (cover  (mf-alias-get 'cover tags))
+         (choice music-file-get-title-choice)
+         ret)
+    (dolist (a choice)
+      (let ((str (if (stringp a) a (or (mf-alias-get a tags) music-title-null))))
+        (setq ret (cons str ret))))
+    (if (and image (image-type-available-p 'jpeg))
+        (setq ret (cons 
+                   (if cover
+                       (let ((size (mf-put-image-obj-window cover buff mf-magick)))
+                         (if (consp size)
+                             (format "H:%d W:%d" (car size) (cdr size))
+                           "H:??? W:???"))
+                     music-title-null)
+                   ret)))
+    (reverse ret)))
 
 (defun mf-put-image-obj-window (obj buff-name magick &optional funk)
   "イメージ OBJ を BUFF-NAME のバッファに表示.
@@ -494,29 +529,26 @@ MAGICK が NON-NIL ならバッファの高さに合わせバッファ表示. fo
      ((string-match "\xff\xc0" obj) ; JPG
       (setq beg (+ (match-end 0) 3))
       (cons (mf-point-word obj beg) (mf-point-word obj (+ beg 2)))))))
+;; end of music-file-get-title
 
-(defun mf-image-dpi-size (obj)
-  "jpeg/png バイナリ OBJ の dpi サイズを `(width . hight) で返す."
-  (let (beg)
-    (cond
-     ((string-match "\xdIHDR" obj)  ; PNG
-      (setq beg (match-end 0))
-      (cons (mf-point-long-word obj beg) (mf-point-long-word obj (+ beg 4))))
-     ((string-match "\xff\xe0" obj) ; JPG
-      (setq beg (+ (match-end 0) 10))
-      (cons (mf-point-word obj beg) (mf-point-word obj (+ beg 2)))))))
 
-;; Sat Feb  8 13:30:48 2020 v3 dired-music-file-match
-;; こうすると沢山調べるが時間がかかる "\\.\\(m4a\\|mp4\\|mp3\\|oma\\|flac\\)\\'"
-;; なのでファイル名から曲の判らないレコチョクのものだけにする
+;;
+;; ** dired-music-file-match **
+;;
+
+;; "\\.\\(m4a\\|mp4\\|mp3\\|oma\\|flac\\)\\'" などとすると時間がかかるので
+;; ファイル名からでは曲の判らないレコチョクのものだけにこの変数で絞る.
 (defvar dired-music-file-match-file "\\`[[:digit:]]\\{9\\}\\.\\(m4a\\|flac\\)\\'"
-  "* `dired-music-file-match' で扱う対象ファイル名.")
+  "*`dired-music-file-match' で扱う対象ファイル名.")
 
 ;;;###autoload
 (defun dired-music-file-match (regexp &optional marker-char)
   "dired から起動しタグに REGEXP を含む音楽ファイルをマーク.
-音楽ファイルはファイル名が `dired-music-file-match-file' にマッチするもの.
-MARKER-CHAR はマークキャラクタ."
+\"12345678.m4a\" のような名前のファイルから
+曲名やアーティスト、アルバム名の REGEXP を捜してマークします.
+対象ファイルはファイル名が `dired-music-file-match-file' にマッチするもの.
+MARKER-CHAR はマークキャラクタ.
+`C-% m' にバインドしています."
   (interactive "sTag Regexp: ")
   (let ((dired-marker-char (or marker-char dired-marker-char))
         (music-file-regexp dired-music-file-match-file)
@@ -539,7 +571,10 @@ MARKER-CHAR はマークキャラクタ."
       (if (string-match-p regexp a)
           (throw 'break t)))))
 
-(add-hook 'dired-mode-hook '(lambda nil (local-set-key [?\C-% ?m] 'dired-music-file-match)))
+(defun dired-music-file-match-key ()
+  (local-set-key [?\C-% ?m] 'dired-music-file-match))
+(add-hook 'dired-mode-hook #'dired-music-file-match-key)
+;; end of dired-music-file-match
 
 (provide 'mf-lib-utility)
-;; fine.
+;; fin.

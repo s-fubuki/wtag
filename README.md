@@ -9,7 +9,7 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 
 # このセットのバージョン
 
-1.10
+1.11
 
 
 # 基本関数(必須)
@@ -24,7 +24,7 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 # ユーティリティ(サンプル)
 
 1.  wtag.el           - mf-tag-write アルバム・エディット・インターエイス
-2.  taged.el          - mf-tag-write 単一ファイル・エディット・インターフェイス
+2.  tiny-ted.el       - mf-tag-write 単一ファイル・エディット・インターフェイス
 3.  mf-lib-utility.el - mf-tag-write を利用したジャンク小物集
 
 
@@ -33,8 +33,8 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 1.  MF-TAG-WRITE.org
 2.  ALIAS-TABLE.org - mf-tag-write で使える TAG の alias 表.
 3.  WTAG.org
-4.  CHENGES.org
-5.  README.md or README.org
+4.  CHENGES
+5.  README.org もしくは README.md
 
 
 # インストール
@@ -42,5 +42,5 @@ Emacs 27.1用 音楽ファイルのタグ修正 lisp 関数集です.
 load-path の通った処に基本関数のファイルを(必要ならユーティリティ類も)置き、
 init.el 等で (require 'mf-tag-write) します.
 
-必要に応じて "wtag", "taged", "mf-lib-utility" も個別に require すれば利用できるようになります。
+必要に応じて "wtag", "tiny-ted", "mf-lib-utility" も個別に require すれば利用できるようになります。
 

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.2 $
+;; Version: $Revision: 1.3 $$Name: r1dot11 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.2 $")
+(defconst mf-lib-mp3-version "$Revision: 1.3 $$Name: r1dot11 $")
 
 (require 'mf-lib-var)
 
@@ -48,8 +48,12 @@
   :type  '(repeat (list string function function function))
   :group 'music-file)
 
+(defvar mf-lib-mp3-suffix '(mp3 oma))
+(defvar mf-lib-mp3-regexp (mf-re-suffix mf-lib-mp3-suffix))
+(setq mf-lib-suffix-all (append mf-lib-mp3-suffix mf-lib-suffix-all))
+
 (defvar mf-mp3-function-list
-  '("\\.\\(mp3\\|oma\\)\\'"
+  `(,mf-lib-mp3-regexp
     mf-oma-tag-read
     mf-oma-write-buffer
     mf-list-convert
@@ -73,7 +77,7 @@
     (27 . "Trip-Hop") (28 . "Vocal") (29 . "Jazz-funk") (30 . "Fusion")
     (31 . "Trance") (32 . "Classical") (33 . "Instrumental") (34 . "Acid")
     (35 . "House") (36 . "Game") (37 . "Sound Clip") (38 . "Gospel")
-    (39 . "Noise") (40 . "Alt. Rock") (41 . "Bass") (42 . "Soul") (43 . "Punk")
+    (39 . "Noise") (40 . "Alternative Rock") (41 . "Bass") (42 . "Soul") (43 . "Punk")
     (44 . "Space") (45 . "Meditative") (46 . "Instrumental pop")
     (47 . "Instrumental rock") (48 . "Ethnic") (49 . "Gothic") (50 . "Darkwave")
     (51 . "Techno-Industrial") (52 . "Electronic") (53 . "Pop-folk")
@@ -101,8 +105,27 @@
     (133 . "Afro-punk") (134 . "Polsk Punk") (135 . "Beat")
     (136 . "Christian gangsta rap") (137 . "Heavy Metal") (138 . "Black Metal")
     (139 . "Crossover") (140 . "Contemporary Christian") (141 . "Christian Rock")
+
+    ;; Genres 142..147 were added in the 1 June 1998 release of Winamp 1.91.
     (142 . "Merengue") (143 . "Salsa") (144 . "Thrash Metal")
-    (145 . "Anime") (146 . "JPop") (147 . "Synthpop")))
+    (145 . "Anime") (146 . "JPop") (147 . "Synthpop")
+
+    ;; genres 148..191 were added in Winamp 5.6 (30 November 2010).
+    (148 . "Abstract") (149 . "Art Rock") (150 . "Baroque")
+    (151 . "Bhangra") (152 . "Big beat") (153 . "Breakbeat")
+    (154 . "Chillout") (155 . "Downtempo") (156 . "Dub")
+    (157 . "EBM") (158 . "Eclectic") (159 . "Electro")
+    (160 . "Electroclash") (161 . "Emo") (162 . "Experimental")
+    (163 . "Garage") (164 . "Global") (165 . "IDM")
+    (166 . "Illbient") (167 . "Industro-Goth") (168 . "Jam Band")
+    (169 . "Krautrock") (170 . "Leftfield") (171 . "Lounge")
+    (172 . "Math Rock") (173 . "New Romantic") (174 . "Nu-Breakz")
+    (175 . "Post-Punk") (176 . "Post-Rock") (177 . "Psytrance")
+    (178 . "Shoegaze") (179 . "Space Rock") (180 . "Trop Rock")
+    (181 . "World Music") (182 . "Neoclassical") (183 . "Audiobook")
+    (184 . "Audio theatre") (185 . "Neue Deutsche Welle") (186 . "Podcast")
+    (187 . "Indie-Rock") (188 . "G-Funk") (189 . "Dubstep")
+    (190 . "Garage Rock") (191 . "Psybient")))
 
 (defvar mp3-tag-table
   '(("TIT2" "TT2" "Title"       20)
@@ -153,7 +176,7 @@
   :group 'music-file)
 
 (defcustom mf-oma-tag-alias
-  `((artwork . ,mf-geob-image) (cover . ,mf-geob-image) (image2 . ,mf-geob-image) (bin2 . "OMG_OLINF") (image1 . "OMG_FENCA1") (bin1 . "OMG_BKLSI") (date . "USR_L2TMDDA") (time . "TLEN") (composer . "TCOM") (release . "OMG_TRLDA") (s-title . "OMG_TIT2S") (a-artist . "OMG_ATPE1") (s-a-artist . "OMG_ATP1S") (asgtm . "OMG_ASGTM") (s-album . "OMG_ALBMS") (s-genre . "OMG_AGENR") (year . "TYER") (track . "OMG_TRACK") (s-artist . "OMG_TPE1S") (genre . "TCON") (album . "TALB") (artist . "TPE1") (title . "TIT2"))
+  `((cover . ,mf-geob-image) (artwork . ,mf-geob-image) (image2 . ,mf-geob-image) (bin2 . "OMG_OLINF") (image1 . "OMG_FENCA1") (bin1 . "OMG_BKLSI") (date . "USR_L2TMDDA") (time . "TLEN") (composer . "TCOM") (release . "OMG_TRLDA") (s-title . "OMG_TIT2S") (a-artist . "OMG_ATPE1") (s-a-artist . "OMG_ATP1S") (asgtm . "OMG_ASGTM") (s-album . "OMG_ALBMS") (s-genre . "OMG_AGENR") (year . "TYER") (track . "OMG_TRACK") (s-artist . "OMG_TPE1S") (genre . "TCON") (album . "TALB") (artist . "TPE1") (title . "TIT2"))
   "oma atrac3pluse tag alias."
   :type  '(repeat (cons symbol string))
   :group 'music-file)
@@ -774,11 +797,7 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
     (delete-region (point-min) (+ (point-min) hsize 10))
     (goto-char (point-min))
     (insert header)
-    (when (and (not (stringp no-backup)) (null no-backup))
-      (let ((name (make-backup-file-name file)))
-        (if (file-exists-p name) (delete-file name 'trash))
-        (rename-file file name)))
-    (write-region (point-min) (point-max) file)))
+    (mf-write-file file no-backup)))
 
 (provide 'mf-lib-mp3)
 ;; fine.

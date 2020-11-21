@@ -1,9 +1,9 @@
-;;; mf-lib-var-20200418.el ---                       -*- lexical-binding: t; -*-
+;;; mf-lib-var-20200418.el -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020  
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.1 $
+;; Version: $Revision: 1.2 $$Name: r1dot11 $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -25,9 +25,12 @@
 
 ;;; Code:
 
-(defconst mf-lib-var-version "$Revision: 1.1 $")
+(require 'rx)
+
+(defconst mf-lib-var-version "$Revision: 1.2 $$Name: r1dot11 $")
 
 (defvar mf-function-list  nil)
+(defvar mf-lib-suffix-all nil)
 
 (defvar mf-current-file nil "for buffer local variable.")
 (defvar mf-current-mode nil "for buffer local variable.")
@@ -53,7 +56,17 @@
 
 ;; 予想で充てたシンボルであり公式ではない.
 (defconst mf-ilst-data-type
-  '((0  . binary) (1  . string) (13 . jpeg) (14 . png) (21 . number)) "ilst data type.")
+  '((0 . binary) (1 . string) (13 . jpeg) (14 . png) (21 . number)) "ilst data type.")
+
+(defmacro mf-re-suffix (lst)
+  "拡張子シンボルのリスト LST にマッチする正規表現文字列を生成."  
+  `(rx "." (or ,@(mapcar #'symbol-name (eval lst))) string-end))
+
+;; ;; 拡張子マッチに限ればこれでもできる.
+;; (defmacro mf-re-suffix* (lst)
+;;   (concat "\\.\\("
+;;           (mapconcat #'concat (mapcar #'symbol-name (eval lst)) "\\|")
+;;           "\\)\\'"))
 
 (defun mf-first   (a) (nth 0 a))
 (defun mf-second  (a) (nth 1 a))
@@ -142,7 +155,7 @@
 (defun mf-chop (str)
   (save-match-data
     (string-match "\\([^\0]+\\)\0*\\'" str)
-    (match-string 1 str)))
+    (or (match-string 1 str) "")))
 
 ;; `mf-add-longlong' のために複数の引数に対応.
 (defun mf-add-word (&rest args)
@@ -154,6 +167,37 @@ BUG: 負の引数は考慮されていない."
   (let* ((result (apply '+ args))
          (carry (if (not (zerop (logand (lsh result -16) 65535))) 'carry)))
     (cons (logand result 65535) carry)))
+
+(defun mf-write-file (file no-backup)
+  "buffer の中身を丸々 FILE に書き出す.
+NO-BACKUP が non-nil ならバックアップを作らない.
+once ならバックアップがあればバックアップしない."
+  (let ((backup (make-backup-file-name file)))
+    (cond
+     ((and (eq no-backup 'once) (not (file-exists-p backup)))
+      (rename-file file backup))
+     ((and (not (stringp no-backup)) (null no-backup))
+      (when (file-exists-p backup)
+        (delete-file backup 'trash))
+      (rename-file file backup)))
+    (write-region (point-min) (point-max) file)))
+
+(defvar mf-files '("mf-tag-write" "mf-lib-mp3" "mf-lib-mp4"
+                   "mf-lib-flac" "mf-lib-utility" "mf-lib-var"
+                   "wtag" "tiny-ted"))
+(defvar mf-local (locate-user-emacs-file "local"))
+;; user-emacs-directory
+
+(defun mf-snap (tag)
+  "for wtag release tag set."
+  (interactive "sTag: ")
+  (let* ((files mf-files)
+         (local mf-local)
+         (rcs (list "rcs" (format "-n%s:" tag)))
+         (co  (list "co"  (format "-r%s"  tag))))
+    (cd local)
+    (dolist (com (list rcs co))
+      (shell-command (mapconcat #'identity (append com files) " ")))))
 
 (provide 'mf-lib-var)
 ;;; mf-lib-var-20200418.el ends here

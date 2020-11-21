@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2919, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.3 $
+;; Version: $Revision: 1.4 $$Name: r1dot11 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,12 +32,16 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 1.3 $")
+(defconst mf-lib-mp4-version "$Revision: 1.4 $$Name: r1dot11 $")
 
 (require 'mf-lib-var)
 
+(defvar mf-lib-mp4-suffix '(mp4 m4a))
+(defvar mf-lib-mp4-regexp (mf-re-suffix mf-lib-mp4-suffix))
+(setq mf-lib-suffix-all (append mf-lib-mp4-suffix mf-lib-suffix-all))
+
 (defvar mf-mp4-function-list
-  '("\\.\\(m4a\\|mp4\\)\\'"
+  `(,mf-lib-mp4-regexp
     mf-m4a-tag-read
     mf-mp4-write-buffer
     mf-list-convert
@@ -230,72 +234,68 @@ NO-MC-DELETE が NON-NIL なら MusicCenter で作られた mp4 の 3つの重�
         atoms depend ilst ilst-point offset meta mc-flag delete-list)
 
     (run-hooks 'mf-mp4-write-hook)
-    
     (goto-char (point-min))
 
-      ;;;; 必要な data 収集パート Collected atoms.
-      (setq atoms  (mf-mp4-tag-collect)) ; 堅牢にする為更めてこのファイルから得る.
-      ;; "ilst" を含めた "ilst" が依存するコンテナが集まる.
-      (setq depend (car (mp4-get-container "ilst" atoms))
-            ilst   (car (mp4-get-list "ilst" atoms)))
+    ;; * 必要な data 収集パート Collected atoms.
+    (setq atoms  (mf-mp4-tag-collect)) ; 堅牢にする為更めてこのファイルから得る.
+    ;; "ilst" を含めた "ilst" が依存するコンテナが集まる.
+    (setq depend (car (mp4-get-container "ilst" atoms))
+          ilst   (car (mp4-get-list "ilst" atoms)))
 
-      ;; Set MusicCenter flag.
-      ;; "mp42" で "uuid" が在り "meta" をふたつ持っていれば Sony Type のデータ.
-      ;; 但し MediaGo だと "uuid" が無いので sony meta の中にある "ID32" の有無で判断.
-      (setq mc-flag (and (not no-mc-delete)
-                         (string-equal (mf-mp4-get-type atoms) "mp42")
-                         (mp4-get-list "ID32" atoms)
-                         (= (length (mp4-get-list "meta" atoms)) 2)))
+    ;; Set MusicCenter flag.
+    ;; "mp42" で "uuid" が在り "meta" をふたつ持っていれば Sony Type のデータ.
+    ;; 但し MediaGo だと "uuid" が無いので sony meta の中にある "ID32" の有無で判断.
+    (setq mc-flag (and (not no-mc-delete)
+                       (string-equal (mf-mp4-get-type atoms) "mp42")
+                       (mp4-get-list "ID32" atoms)
+                       (= (length (mp4-get-list "meta" atoms)) 2)))
 
-      ;; 削除する ilst と新しい ilst との大きさの差を offset にセット.
-      (setq ilst-point (cadr ilst))
-      (setq offset (- (length ilst-pack) (caddr ilst)))
+    ;; 削除する ilst と新しい ilst との大きさの差を offset にセット.
+    (setq ilst-point (cadr ilst))
+    (setq offset (- (length ilst-pack) (caddr ilst)))
 
-      ;; ふたつある(なら) meta のうち削除する後方の方の情報を得る.
-      (setq meta (if mc-flag (car (sort (mp4-get-list "meta" atoms) #'atom-point-more)) nil))
+    ;; ふたつある(なら) meta のうち削除する後方の方の情報を得る.
+    (setq meta (if mc-flag (car (sort (mp4-get-list "meta" atoms) #'atom-point-more)) nil))
 
-      ;; 後ほど削除するコンテナの降順リストを作る.
-      (setq delete-list
-            (sort
-             (append
-              (if mc-flag
-                  (append (mp4-get-list "uuid" atoms)
-                          (list meta)))
-              (mp4-get-list "ilst" depend))
-             #'atom-point-more))
+    ;; 後ほど削除するコンテナの降順リストを作る.
+    (setq delete-list
+          (sort
+           (append
+            (if mc-flag
+                (append (mp4-get-list "uuid" atoms)
+                        (list meta)))
+            (mp4-get-list "ilst" depend))
+           #'atom-point-more))
 
-      ;;;; 書き換えパート
-      ;; Walkman に "ilst" の方を参照させるためのトリック.
-      (if (and (mp4-get-list "titl" atoms) (or (not no-one-patch) mc-flag))
-          (save-excursion (mf-m4a-one-patch atoms)))
+    ;; * 書き換えパート
+    ;; Walkman に "ilst" の方を参照させるためのトリック.
+    (if (and (mp4-get-list "titl" atoms) (or (not no-one-patch) mc-flag))
+        (save-excursion (mf-m4a-one-patch atoms)))
 
-      ;; 変更した "ilst" サイズに影響するバッファ上のアトムのサイズ情報にそのオフセットを加える.
-      (dolist (d (butlast depend))
-        (mf-point-add-long-word (cadr d) (- offset (mp4-meta-include (car d) meta atoms))))
+    ;; 変更した "ilst" サイズに影響するバッファ上のアトムのサイズ情報にそのオフセットを加える.
+    (dolist (d (butlast depend))
+      (mf-point-add-long-word (cadr d) (- offset (mp4-meta-include (car d) meta atoms))))
     
-      ;; *** ここで uuid , meta(ID32) と ilst を delete
-      ;; (バッファ内のアトムの物理ポイントが変わる)
-      ;; 末尾から削除していかないと整合性が取れなくなるので
-      ;; `delete-list' は降順ソートされていなければならない.
-      (dolist (atom delete-list) 
-        (let* ((beg  (cadr atom))
-               (end  (+ beg (caddr atom))))
-          (delete-region beg end)))
+    ;; *** ここで uuid , meta(ID32) と ilst を delete
+    ;; (バッファ内のアトムの物理ポイントが変わる)
+    ;; 末尾から削除していかないと整合性が取れなくなるので
+    ;; `delete-list' は降順ソートされていなければならない.
+    (dolist (atom delete-list) 
+      (let* ((beg  (cadr atom))
+             (end  (+ beg (caddr atom))))
+        (delete-region beg end)))
 
-      ;; 跡地に新 ilst の挿入.
-      (goto-char ilst-point)
-      (insert ilst-pack)
-      
-      ;; (ilst より後方にある)mdat の位置が変わったので
-      ;; パケットテーブル(stco)の値にオフセットをかける.
-      (mf-packet-table-update
-       (car (mp4-get-list "stco" atoms)) (if mc-flag (- offset (caddr meta)) offset))
+    ;; 跡地に新 ilst の挿入.
+    (goto-char ilst-point)
+    (insert ilst-pack)
+    
+    ;; (ilst より後方にある)mdat の位置が変わったので
+    ;; パケットテーブル(stco)の値にオフセットをかける.
+    (mf-packet-table-update
+     (car (mp4-get-list "stco" atoms)) (if mc-flag (- offset (caddr meta)) offset))
 
-      (if (and (not (stringp no-backup)) (null no-backup))
-        (let ((name (make-backup-file-name file)))
-          (if (file-exists-p name) (delete-file name 'trash))
-        (rename-file file name)))
-      (write-region (point-min) (point-max) file)))
+    ;; バッファを丸ごと書き出す.
+    (mf-write-file file no-backup)))
 
 (defun atom-point-more (a b)
   (> (cadr a) (cadr b)))
