@@ -133,7 +133,7 @@ PREFIX 在りのときは別バッファに\
         (wtag file prefix)
       (if prefix
           (mf-tag-list)
-        (dired-music-file-get-title)))))
+        (dired-music-file-get-title file)))))
 ;; end of dired-music-file-get-titles
 
 ;;
