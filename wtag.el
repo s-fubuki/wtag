@@ -1,8 +1,8 @@
 ;;; wtag.el -- Music file writable tags. -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2919, 2020 fubuki
+;; Copyright (C) 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.11 $$Name: r1dot11 $
+;; Version: @(#)$Revision: 1.12 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -64,7 +64,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.11 $$Name: r1dot11 $")
+(defconst wtag-version "@(#)$Revision: 1.12 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 27.1 (build 1, x86_64-w64-mingw32) of 2020-08-22")
 
@@ -1540,12 +1540,13 @@ ARGS は PROGRAM への引数."
   "文字列リスト LST を改行で区切ったテキストの塊にして
 まとめて1度にフィルタリングし再びリストにして戻して返す."
   (let ((exe wtag-kakashi)
-        (dic (if (boundp 'wtag-kakashi-usrdic) wtag-kakashi-usrdic "")))
-    (split-string
-     (wtag-filter-variable
-      (mapconcat #'identity lst "\n")
-      exe "-JK" "-HK" "-aE" dic)
-     "\n")))
+        (dic (or wtag-kakashi-usrdic "")))
+    (and lst
+         (split-string
+          (wtag-filter-variable
+           (mapconcat #'identity lst "\n")
+           exe "-JK" "-HK" "-aE" dic)
+          "\n"))))
 
 (defun wtag-new-append (alist new)
   "ALIST から car が NEW とかぶる要素を取り除いた後 NEW を append して返す."
