@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.12 $$Name:  $
+;; Version: @(#)$Revision: 1.13 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -64,7 +64,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.12 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.13 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 27.1 (build 1, x86_64-w64-mingw32) of 2020-08-22")
 
@@ -1075,8 +1075,8 @@ Line 1..2 の場合 `wtag-point-file-name-to-kill-buffer-list' の設定が使�
     (save-excursion
       (beginning-of-line)
       (when (< ln 3) (forward-line (- 3 ln)))
-      (setq str (cdr (assq tag (get-text-property (point) 'stat))))
-      (and str (kill-new str) (message "%s" str)))))
+      (setq str (cdr (assoc-default tag (get-text-property (point) 'stat))))
+      (and str (kill-new str) (message "%s" str)))) )
 
 (defvar wtag-mouse-funcs
   `((,mf-image-regexp . wtag-artwork-load)
@@ -1668,8 +1668,7 @@ ALIST にハナから sort tag が含まれていれば除去され
 	  (define-key map "n"               'next-line)
 	  (define-key map "p"               'previous-line)
 	  (define-key map "\C-c\C-l"        'wtag-truncate-lines)
-          (define-key map
-            "w" 'wtag-point-file-name-to-kill-buffer)
+          (define-key map "w"               'wtag-point-file-name-to-kill-buffer)
           (define-key map "\C-c="           'wtag-point-file-name)
           (define-key map "f"               'wtag-fit-artwork-toggle)
           (define-key map "\C-c\C-f"        'wtag-fit-artwork-toggle)
