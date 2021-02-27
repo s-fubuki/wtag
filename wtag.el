@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.13 $$Name:  $
+;; Version: @(#)$Revision: 1.14 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -64,7 +64,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.13 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.14 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 27.1 (build 1, x86_64-w64-mingw32) of 2020-08-22")
 
@@ -323,7 +323,7 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 参照するときここでの順序が影響する."
   (let ((null wtag-not-available-string)
         result message-log-max)
-    (dolist (f files (progn (message nil) result))
+    (dolist (f files (progn (message nil) (reverse result)))
       (set (make-local-variable 'mf-current-case) (string-match "\\.flac\\'" f))
       (let* ((len  (wtag-read-size f))
              (tags (condition-case nil
@@ -347,23 +347,22 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   "sort プリディケイド for album."
   (string-collate-lessp (wtag-alias-value 'album a) (wtag-alias-value 'album b)))
 
-(defun wtag-directory-files-list (directory &optional fun)
-  "DIRECTORY の中のファイルのタグリストを返す.
-FUN は真偽ならソート切り換えスイッチで関数ならソート関数."
+(defun wtag-nrenumber-track-order (lst)
+  "'track の値を LST の順列順に破壊的に打ち直す."
+  (let ((i 1) tmp)
+    (dolist (a lst lst)
+      (setq tmp (cdr (assq 'track a)) )
+      (and tmp (setcdr tmp (number-to-string i)))
+      (setq i (1+ i)))))
+
+(defun wtag-directory-files-list (dir)
+  "DIRECTORY の中のファイルのタグリストを返す."
   (let* ((suffixs (mf-re-suffix mf-lib-suffix-all))
-         (files   (if (and (file-regular-p directory)
-                           (assoc-default
-                            directory mf-function-list 'string-match))
-                      (list directory)
-                    (directory-files directory t suffixs)))
-         (sort-fun (cond
-                    ((functionp fun)
-                     fun)
-                    (fun
-                     'wtag-sort-album)
-                    (t
-                     'wtag-sort-track))))
-    (sort (wtag-directory-set files) sort-fun)))
+         (files   (if (and (file-regular-p dir)
+                           (assoc-default dir mf-function-list 'string-match))
+                      (list dir)
+                    (directory-files dir t suffixs))))
+    (sort (wtag-directory-set files) 'wtag-sort-track)))
 
 (defun wtag-suffix-list (lst)
   "alist LST の各要素の car だけの list を返す."
@@ -378,7 +377,7 @@ FUN は真偽ならソート切り換えスイッチで関数ならソート関�
 
 ;;;###autoload
 (defun dired-wtag (&optional prefix)
-  "`wtag' の Dired 用ラッパー. PREFIX によってソートオーダーが変わる.
+  "`wtag' の Dired 用ラッパー.
 
 * wtag view mode
 \\{wtag-view-mode-map}
@@ -388,13 +387,13 @@ FUN は真偽ならソート切り換えスイッチで関数ならソート関�
 \\{wtag-image-mode-map}"
   (interactive "P")
   (let ((dir (dired-get-filename)))
-    (wtag (file-name-as-directory dir) prefix)))
+    (wtag (file-name-as-directory dir))))
 
 ;;;###autoload
 (defun wtag (directory &optional prefix)
   "DiRECTORY 内の `mf-lib-suffix-all' にある拡張子ファイルの\
 タイトル一覧をバッファに表示する.
-PREFIX によってソートオーダーが変わる.
+PREFIX は廃止になり互換のためのダミー.
 
 * wtag view mode
 \\{wtag-view-mode-map}
@@ -404,7 +403,7 @@ PREFIX によってソートオーダーが変わる.
 \\{wtag-image-mode-map}"
   (interactive "DAlbum Directory: \nP")
   (let* ((directory (file-name-as-directory directory))
-         (result (wtag-directory-files-list directory prefix))
+         (result (wtag-directory-files-list directory))
          (kill-read-only-ok t)
          buffer art-buff obj)
     (unless result (error "No music file"))
@@ -674,14 +673,16 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
 (defun wtag-flush-tag (prefix)
   "フィニッシュ関数.
 バッファを元にタグを構成しファイルを書き換えロードし直す.
-PREFIX 在りだと1～2行目の共通表示と曲自体のデータが違っていれば書き換えが起こる.
-これをデフォにするかも 保留中."
+\"PREFIX 在りだと1～2行目の共通表示と曲自体のデータが違っていれば書き換えが起こる.
+これをデフォにするかも 保留中.\"
+↑デフォルト動作にし「PREFIX 在りなら書換えられない」にする."
   (interactive "P")
   (let ((no-backup wtag-no-backup)
         (sfunc     wtag-make-sort-string-function)
         (modify-cover
          (buffer-modified-p
           (get-buffer (wtag-artwork-buffer-name (buffer-name)))))
+        (prefix (not prefix))
         buff keep-name
         new-disk new-aartist new-album new-genre new-year new-title
         old-disk old-aartist old-album old-genre old-year track directory tmp)
@@ -994,16 +995,50 @@ ARG 等は `wtag-beginning-of-line' を参照."
       (transpose-lines arg)
       (wtag-renumber-tracks))))
 
-(defun wtag-sort-columns (&optional reverse)
-  "曲名をキーにソートしリナンバーする."
+(defun wtag-sort-albums ()
+  (cddr (assq 'album (get-text-property (point) 'stat))))
+(defun wtag-sort-artist ()
+  (wtag-get-name 'old-performer 'end-performer))
+(defun wtag-sort-title ()
+  (wtag-get-name 'old-title 'end-title))
+
+(defvar wtag-sort-key-function
+  '(("album"  . wtag-sort-albums)
+    ("artist" . wtag-sort-artist)
+    ("title"  . wtag-sort-title)))
+
+(defcustom wtag-default-sort-key-function "album"
+  "Sort function for `wtag-sort-tracks'."
+  :type (cons
+         'choice
+         (cons
+          '(const nil)
+          (mapcar (lambda (k) (list 'const (car k)))
+                  wtag-sort-key-function)))
+  :group 'wtag)
+
+(defun wtag-sort-tracks (&optional prefix)
+  "物理ソートしてリナンバーされる.
+デフォルトはアルバム名をキーにする.
+PREFIX があると `wtag-sort-key-function' からのキー選択になる.
+PREFIX をふたつ打つとリバースになる."
   (interactive "P")
-  (let ((inhibit-read-only t)
-        (line (count-lines (point-min) (if (eobp) (point) (1+ (point))))))
-    (if (or (< line 3) (eobp))
-        (error "Out of range")
-      (sort-columns
-       reverse (progn (beginning-of-line) (point)) (1- (point-max)))
-      (wtag-renumber-tracks))))
+  (let* ((inhibit-read-only t)
+         (def (or wtag-default-sort-key-function
+                  (caar wtag-sort-key-function)))
+         (prompt (format "Sort key(default %s): " def))
+         (sort (if prefix
+                   (assoc-default
+                    (setq wtag-default-sort-key-function
+                          (completing-read prompt wtag-sort-key-function
+                                     nil nil nil nil def))
+                    wtag-sort-key-function)
+                 (cdar wtag-sort-key-function)))
+         (rev (and prefix (= 16 (car prefix)))))
+    (goto-char (point-min))
+    (forward-line 2)
+    (sort-subr rev #'forward-line #'end-of-line sort)
+    (wtag-renumber-tracks)))
 
 (defun wtag-renumber-tracks ()
   "バッファのトラックナンバーを書き換え昇順にリナンバーする."
@@ -1597,6 +1632,7 @@ ALIST にハナから sort tag が含まれていれば除去され
           (define-key map "\C-c\C-c"      'wtag-flush-tag-ask)
           (define-key map "\C-c\C-l"      'wtag-truncate-lines)
           (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
+          (define-key map "\C-c\C-s"      'wtag-sort-tracks)
           (define-key map "\C-c="         'wtag-point-file-name)
           (define-key map "\C-x\C-q"      'wtag-writable-tag-cancel)
           (define-key map "\C-c\C-q"      'wtag-writable-tag-cancel)
@@ -1620,6 +1656,8 @@ ALIST にハナから sort tag が含まれていれば除去され
           (define-key menu-map [wtag-artwork-load]
             '("Artwork Image Load" . wtag-artwork-load))
           (define-key menu-map [dashes2] '("--"))
+          (define-key menu-map [wtag-sort-tracks]
+            '("Album Name Sort" . wtag-sort-tracks))
           (define-key menu-map [wtag-artistname-copy-all]
             '("Album Artist Name Set All" . wtag-artistname-copy-all))
           (define-key menu-map [wtag-flush-tag-ask]
