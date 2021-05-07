@@ -1,8 +1,8 @@
 ;;; mf-lib-mp3.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2919, 2020 fubuki
+;; Copyright (C) 2018, 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.3 $$Name: r1dot11 $
+;; Version: $Revision: 1.4 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.3 $$Name: r1dot11 $")
+(defconst mf-lib-mp3-version "$Revision: 1.4 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -164,10 +164,17 @@
   :group 'music-file)
 
 (defcustom mf-id33-tag-alias
-  '((title . "TIT2") (artist . "TPE1") (album . "TALB") (genre . "TCON") (composer . "TCOM") (artist3 . "TPE3") (track . "TRCK") (disk . "TPOS") (year . "TYER") (a-artist . "TPE2") (comment . "COMM") (copy . "TCOP") (cover . "APIC") (artwork . "APIC") (lyric . "USLT") (enc . "TENC") (group . "GRP1") (bpm . "TBPM") (priv . "PRIV"))
+  '((title . "TIT2") (artist . "TPE1") (album . "TALB") (genre . "TCON") (composer . "TCOM") (artist3 . "TPE3") (track . "TRCK") (disk . "TPOS") (year . "TYER") (a-artist . "TPE2") (comment . "COMM") (copy . "TCOP") (cover . "APIC") (artwork . "APIC") (lyric . "USLT") (enc . "TENC") (group . "GRP1") (bpm . "TBPM") (priv . "PRIV") (tsse . "TSSE"))
   "mp3 id33 tag alias."
   :type  '(repeat (cons symbol string))
   :group 'music-file)
+
+(defvar mf-id33-tag-musiccenter-alias
+  '((s-album . "TSOA") (s-a-artist . "TSO2") (s-title . "TSOT") (s-artist . "TSOP")))
+
+(defvar mf-id33-tag-lame-alias
+  '((s-album . "ALBUMSORT") (s-a-artist . "ALBUMARTISTSORT")
+    (s-title . "TITLESORT") (s-artist . "ARTISTSORT")))
 
 (defcustom mf-id32-tag-alias
   '((title . "TT2") (artist . "TP1") (album . "TAL") (genre . "TCO") (composer . "TCM") (artist3 . "TP3") (track . "TRK") (disk . "TPA") (year . "TYE") (a-artist . "TP2") (comment . "COM") (copy . "TCR") (cover . "PIC") (artwork . "PIC") (lyric . "ULT") (enc . "TEN") (group . "GP1") (bpm . "TBP"))
@@ -270,6 +277,18 @@ Bug.同期形式には対応していない."
   (let ((code (detect-coding-string str)))
     (if (memq 'cp932 code) 'cp932 (car code))))
 
+(defvar mf-mp3-sort-alias nil)
+(make-variable-buffer-local 'mf-mp3-sort-alias)
+
+(defun mf-set-sort-alias (alias-list)
+  "tag alias に ALIAS-LIST をアペンド."
+  (let (sym)
+    (unless mf-mp3-sort-alias
+      (setq mf-mp3-sort-alias alias-list)
+      (setq sym (cdr (assoc "ID3\3" (nth 4 mf-mp3-function-list))))
+      (or (member (car alias-list) (eval sym))
+          (set sym (append (eval sym) alias-list))))))
+    
 (defun mf-oma-tags-analyze (tags &optional no-binary)
   "`mf-oma-tags-collect' が生成した TAGS からそれが指している値を読み出しプロパティリストとして返す.
 プロパティの概要は以下の通り.
@@ -303,13 +322,14 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
         (goto-char (cadr a))
         (let* ((code (cdr (assoc (char-after) mf-oma-encode)))
                (term (mf-term-code code))
-               (str  (split-string (buffer-substring-no-properties
-                                    (progn (forward-char) (point))
-                                    (+ (point) (1- (mf-third a))))
-                                   term))
-               dsc)
-          (setq dsc (decode-coding-string (car str) code)
-                str (decode-coding-string (cadr str) code))
+               (tmp  (buffer-substring-no-properties
+                      (progn (forward-char) (point))
+                      (+ (point) (1- (mf-third a)))))
+               (tmp  (split-string (decode-coding-string tmp code) "\0"))
+               (dsc  (car tmp))
+               (str  (cadr tmp)))
+          (when (rassoc dsc mf-id33-tag-lame-alias)
+            (mf-set-sort-alias mf-id33-tag-lame-alias))
           (setq result (cons (list :tag (car a) :dsc dsc :data str) result))))
        
        ((member (car a) '("PRIV"))
@@ -390,6 +410,8 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
           (and (string-equal (car a) "TCON") (string-match "([0-9]+)" str)
                (setq str (or (cdr (assq (string-to-number (substring str 1)) mf-tag-tco))
                              "unknown")))
+          (when (rassoc (car a) mf-id33-tag-musiccenter-alias)
+            (mf-set-sort-alias mf-id33-tag-musiccenter-alias))
           (setq result (cons (list :tag (car a) :data (mf-chop str)) result))))))))
 
 (defun mf-geob-file-name-p (code)
@@ -732,11 +754,11 @@ Walkman で表示されないのでそうしてある. "
 (defun mf-pack-id33 (tags &optional no-mc-delete)
   "TAGS の alist を ID3v3 ヘッダ形式にパックして返す.
 NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしない."
-  (let ((id "ID3\3")
+  (let ((id mf-current-mode)
         (no-mc-delete (or no-mc-delete mf-no-mc-delete))
         result)
-    (if (string-equal mf-current-mode "ea3\3")
-        (setq tags (mf-oma-sort tags)))
+    (when (string-equal mf-current-mode "ea3\3")
+      (setq tags (mf-oma-sort tags)))
     (dolist (a tags result)
       (let ((tag (plist-get a :tag))
             (dsc (plist-get a :dsc)))
@@ -747,10 +769,7 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
                  (mf-byte-com-33 a))
                 ((string-equal tag "APIC")
                  (mf-byte-pic-33 a))
-                ;; 現状排他的なのでこれでいいが
-                ;; 仕様上は必ずしも TXXX があれば oma だということではない.
                 ((string-equal tag "TXXX")
-                 (setq id "ea3\3")
                  (mf-byte-txxx a))
                 ((string-equal tag "PRIV")
                  (mf-byte-priv a))

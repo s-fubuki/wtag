@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020  
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.2 $$Name: r1dot11 $
+;; Version: $Revision: 1.3 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.2 $$Name: r1dot11 $")
+(defconst mf-lib-var-version "$Revision: 1.3 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -48,7 +48,9 @@
   :group 'music-file)
 
 (defconst mf-omg-tags '("USR_L2TMDDA" "OMG_TRLDA" "OMG_TIT2S" "OMG_ATPE1" "OMG_ATP1S"
-                        "OMG_ASGTM"   "OMG_ALBMS" "OMG_AGENR" "OMG_TRACK" "OMG_TPE1S"))
+                        "OMG_ASGTM"   "OMG_ALBMS" "OMG_AGENR" "OMG_TRACK" "OMG_TPE1S"
+                        ;; for LAME
+                        "ALBUMSORT" "ALBUMARTISTSORT" "TITLESORT" "ARTISTSORT"))
 
 ;; :tag "----" :mean "com.apple.iTunes"
 (defconst mf-itunes-tags '("iTunSMPB" "Encoding Params" "iTunNORM" "iTunes_CDDB_IDs"

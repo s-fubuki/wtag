@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.14 $$Name:  $
+;; Version: @(#)$Revision: 1.15 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -64,9 +64,10 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.14 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.15 $$Name:  $")
 (defconst wtag-emacs-version
-  "GNU Emacs 27.1 (build 1, x86_64-w64-mingw32) of 2020-08-22")
+  "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
+ of 2021-01-16")
 
 (defcustom wtag-load-without-query nil
   "NON-NIL なら新たなジャケをロードするとき問合せない.
@@ -464,7 +465,7 @@ PREFIX は廃止になり互換のためのダミー.
       (insert
        (propertize " "
                    'old-track (wtag-alias-value 'track a)
-                   'mode (wtag-alias-value 'mode a) 'stat (wtag-stat a))
+                   'mode (wtag-alias-value '*type a) 'stat (wtag-stat a))
        ;; Track number.
        (propertize (format form (wtag-alias-value 'track a))
                    'track t 'mouse-face 'highlight
@@ -662,6 +663,22 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
                (cons (cons s (cons nil (wtag-get-common-property-value s)))
                      lst)))))))
 
+(defun wtag-include-sort-tag-p (tags)
+  "TAGS の中に sort 用タグが含まれていれば sort mode シンボルを返す.
+MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
+  (let ((mc   mf-id33-tag-musiccenter-alias)
+        (lame mf-id33-tag-lame-alias)
+        mode)
+    (catch 'out
+      (dolist (tag tags)
+        (if (or (prog1
+                    (rassoc (cadr tag) mc)
+                  (setq mode 'mc))
+                (prog1
+                    (rassoc (cadr tag) lame)
+                  (setq mode 'lame)))
+            (throw 'out mode))))))
+
 (defun wtag-flush-tag-ask (prefix)
   "フィニッシュ時バッファが read-only なら問合せる."
   (interactive "P")
@@ -669,6 +686,8 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
             (and buffer-read-only (y-or-n-p "Do you wanna write?")))
     (wtag-flush-tag prefix))
   (message nil))
+
+(defvar mf-sort-extend nil "sort tag を追加したいファイルタイプの追加用.")
 
 (defun wtag-flush-tag (prefix)
   "フィニッシュ関数.
@@ -678,7 +697,7 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
 ↑デフォルト動作にし「PREFIX 在りなら書換えられない」にする."
   (interactive "P")
   (let ((no-backup wtag-no-backup)
-        (sfunc     wtag-make-sort-string-function)
+        (sfunc wtag-make-sort-string-function)
         (modify-cover
          (buffer-modified-p
           (get-buffer (wtag-artwork-buffer-name (buffer-name)))))
@@ -723,6 +742,7 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
              (ext           (downcase (file-name-extension filename)))
              (mp3           (and (string-equal ext "mp3") mode))
              (mp4           (member ext '("mp4" "m4a")))
+             (sort          (or mp3 mp4 (member ext '("flac" "oma")) mf-sort-extend))
              tags)
         ;; Disk number.
         (and (or mp4 mp3) (not (string-equal old-disk new-disk))
@@ -754,7 +774,7 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
              (push (wtag-cons 'cover (wtag-image-filename-exist)) tags))
         ;; File re-write.
         (when tags
-          (and sfunc (not mp3) (setq tags (wtag-add-sort-tags tags)))
+          (and sfunc sort (setq tags (wtag-add-sort-tags tags)))
           (wtag-message "wtag re-write tags: \"%s\" %s" filename tags)
           (condition-case err
               (progn
@@ -851,6 +871,7 @@ ARG はリピート数."
         (lmv line-move-visual)
         mode)
     (save-cursor-intangible-mode
+     (unless (eq last-command 'wtag-next-line) (push-mark))
      (unless (and lmv (eq last-command 'wtag-next-line))
        (setq temporary-goal-column cc))
      (dotimes (i (if arg arg 1))
@@ -878,6 +899,11 @@ ARG はリピート数."
                        (move-to-column tc)))))
              (and (not lmv) (setq temporary-goal-column (current-column))))
          (line-move arg))))))
+
+(defun wtag-previous-line (&optional arg)
+  (interactive "p")
+  (unless (eq last-command 'wtag-previous-line) (push-mark))
+  (line-move (- arg)))
 
 (defun wtag-beginning-of-line (arg)
   "wtag 用 beginning-of-line.
@@ -910,6 +936,7 @@ ARG 等は `wtag-beginning-of-line' を参照."
 (defun wtag-next-tag (&optional arg)
   "次の編集ブロックへ移動."
   (interactive "p")
+  (unless (eq last-command 'wtag-next-tag) (push-mark))
   (condition-case nil
       (dotimes (i (or arg 1))
         (goto-char (next-single-property-change (point) 'read-only))
@@ -922,6 +949,7 @@ ARG 等は `wtag-beginning-of-line' を参照."
 (defun wtag-previous-tag (arg)
   "前の編集ブロックへ移動."
   (interactive "p")
+  (unless (eq last-command 'wtag-previous-tag) (push-mark))
   (condition-case nil
       (dotimes (i (or arg 1))
         (while (not (get-text-property (point) 'read-only)) (backward-char))
@@ -1435,6 +1463,13 @@ point が 1行目ならすべてマークする."
     (and obj (pop-to-buffer (wtag-artwork-buffer-name (buffer-name))))
     (pop-to-buffer buff)))
 
+(defun wtag-mp3-get-id (file)
+  "mp3 FILE の ID 4バイトを返す."
+  (with-temp-buffer
+    (insert-file-contents-literally file nil 0 32)
+    (set-buffer-multibyte nil)
+    (buffer-substring (point-min) (+ (point-min) 4))))
+
 ;; COPY part.
 (defun wtag-music-file-copy (src dst)
   "SRC を DST(buffer or dreictory)に `mf-tag-write' でコピー.
@@ -1448,7 +1483,8 @@ buffer ならその `default-directory' になる. "
       (setq args
             (wtag-music-file-copy-pty-get pty (string-match "\\.oma\\'" src))
             args
-            (if (string-match "\\.mp3\\'" src) ;; MP3s don't have sort tags.
+            (if (and (string-match "\\.mp3\\'" src) ;; MP3s don't have sort tags.
+                     (not (equal "ID3\3" (wtag-mp3-get-id src))))
                 args
               (wtag-add-sort-tags args)))
       (mf-tag-write src args (concat dst (file-name-nondirectory src))))))
@@ -1573,15 +1609,18 @@ ARGS は PROGRAM への引数."
 
 (defun wtag-kakasi-list (lst)
   "文字列リスト LST を改行で区切ったテキストの塊にして
-まとめて1度にフィルタリングし再びリストにして戻して返す."
+まとめて1度にフィルタリングし再びリストにして戻して返す.
+`wtag-kakashi' が nil なら LST がそのまま返る."
   (let ((exe wtag-kakashi)
         (dic (or wtag-kakashi-usrdic "")))
-    (and lst
-         (split-string
-          (wtag-filter-variable
-           (mapconcat #'identity lst "\n")
-           exe "-JK" "-HK" "-aE" dic)
-          "\n"))))
+    (if exe
+        (and lst
+             (split-string
+              (wtag-filter-variable
+               (mapconcat #'identity lst "\n")
+               exe "-JK" "-HK" "-aE" dic)
+              "\n"))
+      lst)))
 
 (defun wtag-new-append (alist new)
   "ALIST から car が NEW とかぶる要素を取り除いた後 NEW を append して返す."
@@ -1617,9 +1656,10 @@ ALIST にハナから sort tag が含まれていれば除去され
               (menu-map (make-sparse-keymap "WTAG")))
           (define-key map
             [remap move-beginning-of-line] 'wtag-beginning-of-line)
-          (define-key map [remap move-end-of-line]       'wtag-end-of-line)
-          (define-key map [remap kill-line]              'wtag-kill-line)
-          (define-key map [remap next-line]              'wtag-next-line)
+          (define-key map [remap move-end-of-line] 'wtag-end-of-line)
+          (define-key map [remap kill-line]        'wtag-kill-line)
+          (define-key map [remap next-line]        'wtag-next-line)
+          (define-key map [remap previous-line]    'wtag-previous-line)
           (define-key map "\C-i"          'wtag-next-tag)
           (define-key map [S-tab]         'wtag-previous-tag)
           (define-key map "\M-{"          'wtag-backward-jump-points)

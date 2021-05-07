@@ -1,8 +1,8 @@
 ;;; mf-lib-utility.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2919, 2020 fubuki
+;; Copyright (C) 2018, 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.8 $$Name: r1dot11 $
+;; Version: @(#)$Revision: 1.9 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -48,7 +48,7 @@
 (require 'wtag)
 (require 'dired)
 
-(defconst mf-lib-utility-version "@(#)$Revison$$Name: r1dot11 $")
+(defconst mf-lib-utility-version "@(#)$Revison$$Name:  $")
 
 ;;
 ;; ** make-digital-album **
@@ -276,7 +276,7 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
          (tags (mf-tag-read file 1024))
          (mf-current-mode (mf-get-mode tags)) ; ダイナミックスコープで照合関数から参照させる用.
          (buffer "*tag-list*")
-         (font-lock '(("\\(:.+?\\) " 1 font-lock-keyword-face))))
+         (font-lock '(("\\(:[^ ]+?\\) " 1 font-lock-keyword-face))))
     (with-output-to-temp-buffer buffer
       (font-lock-set buffer font-lock)
       (mapcar #'(lambda (f)
@@ -325,7 +325,7 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
         (error (dired-log "Rename to title error %s\n" f))))))
 
 (defun rename-file-to-title-regular (name)
-  (replace-regexp-in-string "[.?:*/\\~\"']" "_" name))
+  (replace-regexp-in-string "[.?:*/\\~\"'<>]" "_" name))
 
 (defun make-tag-member (tag)
   "TAG に alias シンボルを指定すると対応するタグのリストを返す."
