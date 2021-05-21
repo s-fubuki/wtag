@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.9 $$Name:  $
+;; Version: @(#)$Revision: 1.10 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -50,6 +50,7 @@
 
 (defconst mf-lib-utility-version "@(#)$Revison$$Name:  $")
 
+
 ;;
 ;; ** make-digital-album **
 ;;
@@ -95,6 +96,7 @@ M-x 等でコマンド起動するとひとつひとつ引数をきいてきま�
         (setq n (1+ n))))))
 ;; end of make-digital-album
 
+
 ;;
 ;; ** dired-music-file-change-title **
 ;;
@@ -114,6 +116,7 @@ PREFIX でアー名変更になる.
       (revert-buffer))))
 ;; end of dired-music-file-change-title
 
+
 ;;
 ;; ** dired-music-file-get-titles **
 ;;
@@ -136,6 +139,7 @@ PREFIX 在りのときは別バッファに\
         (dired-music-file-get-title file)))))
 ;; end of dired-music-file-get-titles
 
+
 ;;
 ;; ** dired-image-extract **
 ;;
@@ -264,6 +268,7 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
     (format "%s-%d-%s.%s.%s" base number (format-time-string "%Y%m%d%H%M%S") ext type)))
 ;; end of dired-image-extract
 
+
 ;;
 ;; ** dired-music-file-tag-list **
 ;;
@@ -276,7 +281,7 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
          (tags (mf-tag-read file 1024))
          (mf-current-mode (mf-get-mode tags)) ; ダイナミックスコープで照合関数から参照させる用.
          (buffer "*tag-list*")
-         (font-lock '(("\\(:[^ ]+?\\) " 1 font-lock-keyword-face))))
+         (font-lock '(("[ (]\\(:[^ ]+?\\) " 1 font-lock-function-name-face))))
     (with-output-to-temp-buffer buffer
       (font-lock-set buffer font-lock)
       (mapcar #'(lambda (f)
@@ -297,6 +302,7 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
   (or (cdr (assq sym (mf-alias (assoc-default file mf-function-list 'string-match)))) ""))
 ;; end of dired-music-file-tag-list
 
+
 ;; 
 ;; ** rename-file-to-title **
 ;;
@@ -308,7 +314,8 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
   (revert-buffer))
 
 (defun rename-file-to-title (files)
-  "FILES の \"01-未タイトル(1).mp4\" のようなファイル名を曲名にリネーム."
+  "FILES の \"01-未タイトル(1).mp4\" のようなファイル名を曲名にリネーム.
+頭の数値もトラックタグのものにする."
   (dolist (f files)
     (let* ((tags (mf-tag-read-alias f 1024 t))
            (name (file-relative-name f))
@@ -346,15 +353,23 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
 ;; (make-tag-member 'album)("ALBUM" "TALB" "TAL" "TALB" "\251alb")
 
 (defun rename-file-to-title-make-prefix (name trk)
-  (format "%02d-"
-          (string-to-number
-           (if (string-match "\\`\\(?1:[0-9]+\\)[^0-9]" name)
-               (match-string 1 name)
+  "TRK があればそれを prefix 文字列にして返す.
+でなければ NAME に トラック prefix があればそれを返す.
+どちらでもなければ空文字  \"\" を返す."
+  (cond
+   (trk
+    (format "%02d-"
+            (string-to-number
              (if (string-match "/" trk)
                  (car (split-string trk "/"))
-               trk)))))
+               trk))))
+   ((string-match "\\`\\(?1:[0-9]+-\\)" name)
+    (match-string 1 name))
+   (t
+    "")))
 ;; end of rename-file-to-title
 
+
 ;;
 ;; ** music-file-get-title **
 ;;
@@ -531,7 +546,7 @@ MAGICK が NON-NIL ならバッファの高さに合わせバッファ表示. fo
       (cons (mf-point-word obj beg) (mf-point-word obj (+ beg 2)))))))
 ;; end of music-file-get-title
 
-
+
 ;;
 ;; ** dired-music-file-match **
 ;;

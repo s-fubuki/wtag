@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.15 $$Name:  $
+;; Version: @(#)$Revision: 1.16 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -64,7 +64,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.15 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.16 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -90,6 +90,16 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 システムの Trash に破棄されるので万が一のとき復活は可能.
 *scratch* buffer 等で以下のように試しゴミ箱に移動していれば対応しています.
  (delete-file \"foo.txt\" 'trash)"
+  :type  'boolean
+  :group 'wtag)
+
+(defcustom wtag-sort-extend nil
+  "sort tag を追加したいファイルタイプの追加用."
+  :type  'sexp
+  :group 'wtag)
+
+(defcustom wtag-track-prefix-rename t
+  "Track tag が変更されていればファイル名プレフィクスの数値もそれに合わせ変更する."
   :type  'boolean
   :group 'wtag)
 
@@ -376,6 +386,7 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 (defvar wtag-no-dot-directory "/?[^.][^.]?\\'"
   "\".\" と \"..\" を弾く正規表現.")
 
+
 ;;;###autoload
 (defun dired-wtag (&optional prefix)
   "`wtag' の Dired 用ラッパー.
@@ -424,6 +435,7 @@ PREFIX は廃止になり互換のためのダミー.
       (and (get-buffer art-buff) (pop-to-buffer art-buff))
       (pop-to-buffer buffer))))
 
+
 (defun wtag-insert-index (index directory)
   "Tag plist INDEX を取得した DIRECTORY."
   (let* ((max-width-artist (wtag-max-width index 'artist))
@@ -511,6 +523,7 @@ PREFIX は廃止になり互換のためのダミー.
       (forward-char)))
   (set-buffer-modified-p nil))
 
+
 ;; <old-disk> DISK <old-album> ALBUM <old-genre> GENRE <old-year> YEAR <"\n">
 ;;            disk             album-name        genre-name       year
 ;; 1. 移動: old-disk 末尾(または DISK 先頭)に移動.
@@ -679,6 +692,22 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
                   (setq mode 'lame)))
             (throw 'out mode))))))
 
+(defun wtag-track-prefix-rename (file track)
+  "FILE のプレフィクスがトラック番号なら(2桁数値とハイフン)
+その部分を TRACK 番号文字列にした名前にリネームする.
+FILE 開始位置がトラック番号でなければ TRACK を付け足した名前にリネーム"
+  (let ((dir   (file-name-directory file))
+        (node  (file-name-nondirectory file))
+        (track (format "%02d" (string-to-number track)))
+        new-name)
+    (save-match-data
+      (if (string-match "\\`\\(?1:[0-9]+\\)\\(?2:-.+\\)\\'" node)
+          (setq new-name (concat  track (match-string 2 node)))
+        (setq new-name (concat track "-" node)))
+      (rename-file file (expand-file-name new-name dir))
+      (wtag-message "Renmae file: \"%s\" -> \"%s\"" file new-name))))
+
+
 (defun wtag-flush-tag-ask (prefix)
   "フィニッシュ時バッファが read-only なら問合せる."
   (interactive "P")
@@ -686,8 +715,6 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
             (and buffer-read-only (y-or-n-p "Do you wanna write?")))
     (wtag-flush-tag prefix))
   (message nil))
-
-(defvar mf-sort-extend nil "sort tag を追加したいファイルタイプの追加用.")
 
 (defun wtag-flush-tag (prefix)
   "フィニッシュ関数.
@@ -705,6 +732,7 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
         buff keep-name
         new-disk new-aartist new-album new-genre new-year new-title
         old-disk old-aartist old-album old-genre old-year track directory tmp)
+    (when wtag-cursor-intangible (cursor-intangible-mode -1))
     (goto-char (point-min))
     (setq new-disk    (wtag-get-name 'old-disk    'end-disk)
           new-aartist (wtag-get-name 'old-aartist 'end-aartist)
@@ -742,7 +770,7 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
              (ext           (downcase (file-name-extension filename)))
              (mp3           (and (string-equal ext "mp3") mode))
              (mp4           (member ext '("mp4" "m4a")))
-             (sort          (or mp3 mp4 (member ext '("flac" "oma")) mf-sort-extend))
+             (sort          (or mp3 mp4 (member ext '("flac" "oma")) wtag-sort-extend))
              tags)
         ;; Disk number.
         (and (or mp4 mp3) (not (string-equal old-disk new-disk))
@@ -779,9 +807,12 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
           (condition-case err
               (progn
                 (run-hooks 'wtag-flush-tag-hook)
-                (and (null wtag-test) (mf-tag-write filename tags no-backup)))
+                (unless wtag-test
+                  (mf-tag-write filename tags no-backup)
+                  (and wtag-track-prefix-rename (assq 'track tags)
+                       (wtag-track-prefix-rename filename new-track))))
             (wtag-message "File error: %s" filename)))
-        (forward-line)))
+         (forward-line)))
     ;; Salvage old cover.
     (when (and wtag-old-cover modify-cover (eq wtag-load-without-query 'keep))
       (let* ((coding-system-for-write 'no-conversion)
@@ -793,6 +824,7 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
     (setq buff (current-buffer))
     (wtag-init-buffer directory buff)))
 
+
 (defcustom wtag-log-buffer "*wtag log*"
   "*ログバッファ名."
   :type  'string
@@ -838,6 +870,7 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
         (write-region (point-min) (point-max) file nil 'silent)
         (kill-buffer)))))
 
+
 (defmacro save-cursor-intangible-mode (&rest body)
   `(progn
      (let ((ci cursor-intangible-mode))
@@ -1829,4 +1862,4 @@ ALIST にハナから sort tag が含まれていれば除去され
 \\{wtag-image-mode-map}")
 
 (provide 'wtag)
-;; fine.
+;; fin.
