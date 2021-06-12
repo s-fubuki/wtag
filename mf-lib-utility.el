@@ -1,8 +1,8 @@
 ;;; mf-lib-utility.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020 fubuki
+;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.10 $$Name:  $
+;; Version: @(#)$Revision: 1.11 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -326,11 +326,13 @@ png 終端ポイントまでポイントを移動しそのポイントを返す.
             (setq name
                   (concat
                    num
-                   (rename-file-to-title-regular (cdr (assoc-default 'title tags)))
+                   (wtag-regular-file-name (cdr (assoc-default 'title tags)))
                    "." ext))
             (rename-file f name))
         (error (dired-log "Rename to title error %s\n" f))))))
 
+(make-obsolete
+ 'rename-file-to-title-regular 'wtag-regular-file-name "Wed Jun  9 08:36:14 2021")
 (defun rename-file-to-title-regular (name)
   (replace-regexp-in-string "[.?:*/\\~\"'<>]" "_" name))
 

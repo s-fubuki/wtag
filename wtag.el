@@ -1,8 +1,8 @@
 ;;; wtag.el -- Music file writable tags. -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2019, 2020 fubuki
+;; Copyright (C) 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.16 $$Name:  $
+;; Version: @(#)$Revision: 1.17 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -64,7 +64,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.16 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.17 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -627,8 +627,10 @@ BEG と END のデフォルトはポイントの行頭と行末.
   "NAME が null string なら nil として SYM に cons."
   (cons sym (if (string-equal name "") nil name)))
 
+(defvar wtag-regular-file-name "[.?:*/\\~\"'<>|]")
+
 (defun wtag-regular-file-name (str)
-  (let ((reg "[.?:*/\\~\"']"))
+  (let ((reg wtag-regular-file-name))
     (replace-regexp-in-string reg "_" str)))
 
 (defun wtag-safe-keep-name (file)
