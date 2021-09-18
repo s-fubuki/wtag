@@ -1,5 +1,72 @@
 # -*- mode: outline -*-
-#+date: Sat May 22 08:45:13 2021
+#+date: Sat Sep 18 11:12:21 2021
+* wtag 1.18
+** wtag
+*** mf-tag-read: 時間とビットレートの取得
+    ダミータグ " *time" に秒数とビットレート(1/1000)をリストで得ます.
+    alias シンボルは `*time'.
+    通常 2要素のリストですが mp3 は 3要素目にシンボル `vbr' が, oma は `*' が入る事があり、
+    それぞれ可変長、誤差在りの場合です.
+    m4p は可変長でも何も付きません(現在未調査で未対応のため).
+
+#+BEGIN_SRC emacs-lisp
+(assoc '*time (mf-tag-read-alias "01-Take It Easy.mp3"))
+;; --> (*time " *time" 214 128 vbr)
+
+;; assoc-default (または alist-get) なら CAR にタグ、 CDR にその値が得られる
+(alist-get '*time (mf-tag-read-alias "01-Take It Easy.mp3"))
+;; --> (" *time" 214 128 vbr)
+(mf-sec-to-times 214) ; CADR
+;; --> (0 3 34)
+#+END_SRC
+
+*** wtag-stat-view:内部のタグ表示.
+    曲名の行で `C-c =' するとエイリアスタイプのリストでエコーエリアにすべてのタグが表示されます.
+    アートワーク等のバイナリタグは含まれません.
+
+** mf-lib-mp3 lyric 取得時のバグを fix.
+   mf-tag-read-alist, mf-tag-read-arias から lyric にアクセスした場合
+   正常に動かなかったのを修正.
+
+   lyric から :dsc プロパティを無くし(これをタグと見なし誤動作していた)、
+   そこにセットされていたデータを :cdsc プロパティにセットするようにしたので、
+   もしこのプロパティを利用している人がいたらそう書換えてください.
+
+** wav ライブラリを追加
+  wav 標準の LIST info タグを読み ID3 タグにして書き戻します.
+  これらは共存できるのですがどちらを見るかはアプリによって違うので、
+  整合性が取れるよう 元の LIST info も ID3 に合わせて書換えされます.
+  sjis の LIST が読めずに化けてしまっていた fre:ac でも
+  ID3 を参照するようになり正常に表示されます.
+
+  コンテナの配置も変更します.
+  WMP で作った wav なのに エクスプローラからはタイトルが見えない等の問題回避をするため、
+  コンテナの配置順序を変えます.
+  これによりエクスプローラや Grooveミュージックでもタイトルが出るようになります.
+  
+  mf-tag-write へのライブリの事後追加が正常にできるかのテストを兼ねているので、
+  今のところ標準ではインストールされないので、
+  必要なら init.el 等で (require 'mf-tag-write) の後に (require 'mf-lib-wav) としてください.
+
+#+BEGIN_SRC emacs-lisp
+(require 'mf-lib-wav)
+(mf-tag-read-alist "01 乙女 パスタに感動.wav")
+;; --> (("TRCK" . "1") ("TCON" . "J-Pop") ("TALB" . "乙女 パスタに感動") ("TIT2" . "乙女 パスタに感動") ("TPE1" . "タンポポ") (" *ver" . "wav") (" *time" 273 1411))
+#+END_SRC
+
+** アーカイブの整理
+  mf-lib-utility, tiny-ted を外しました.
+  サンプルの体で入れていましたが、
+  今では関数 mf-tag-read-alias, mf-tag-read-alist 等でタグを抜き出し
+  lisp プリミティブな連想リスト関連の関数に渡すだけで平易にタグにアクセスできるので、
+  特にサンプルも不要だと思われるのと、
+  以前からグシャグシャな utility はサンプルとして如何なものかと思っていたので、
+  lib-wav 追加でまたファイルが増えたのを契機に除外しました.
+
+* wtag 1.17
+** wtag:wtag-regular-file-name
+   <> 追加と変数化.
+
 * wtag 1.16
 ** Add: トラック・ナンバー・タグを変更するとファイル名もそれに合わせてリネームする.
    変数 `wtag-track-prefix-rename' が non-nil なら

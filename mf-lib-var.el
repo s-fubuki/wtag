@@ -1,9 +1,9 @@
-;;; mf-lib-var-20200418.el -*- lexical-binding: t -*-
+;;; mf-lib-var-20200418.el
 
-;; Copyright (C) 2020  
+;; Copyright (C) 2020, 2021
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.3 $$Name:  $
+;; Version: $Revision: 1.4 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.3 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.4 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -42,10 +42,20 @@
   :type  'string
   :group 'music-file)
 
+(defvar mf-type-dummy-symbol '*type)
+
+(defcustom mf-time-dummy " *time"
+  "時間関係を保存する擬似タグ. 行頭がブランクならヘッダ生成時に無視される."
+  :type  'string
+  :group 'music-file)
+
+(defvar mf-time-dummy-symbol '*time)
+
 (defcustom mf-geob-image "OMG_TDFCA"
   "oma data ジャケット格納 DSC タグ."
   :type 'string
   :group 'music-file)
+
 
 (defconst mf-omg-tags '("USR_L2TMDDA" "OMG_TRLDA" "OMG_TIT2S" "OMG_ATPE1" "OMG_ATP1S"
                         "OMG_ASGTM"   "OMG_ALBMS" "OMG_AGENR" "OMG_TRACK" "OMG_TPE1S"
@@ -60,9 +70,10 @@
 (defconst mf-ilst-data-type
   '((0 . binary) (1 . string) (13 . jpeg) (14 . png) (21 . number)) "ilst data type.")
 
-(defmacro mf-re-suffix (lst)
-  "拡張子シンボルのリスト LST にマッチする正規表現文字列を生成."  
-  `(rx "." (or ,@(mapcar #'symbol-name (eval lst))) string-end))
+(defun mf-re-suffix (lst)
+  "拡張子シンボルのリスト LST にマッチする正規表現文字列を生成."
+  (let ((seq (mapcar #'symbol-name lst)))
+    (eval (list 'rx "." (cons 'or seq) 'string-end))))
 
 ;; ;; 拡張子マッチに限ればこれでもできる.
 ;; (defmacro mf-re-suffix* (lst)
@@ -111,24 +122,54 @@
   :type  'boolean
   :group 'music-file)
 
+(defvar mf-list-pack-partition
+  '(((ll longlong)      mf-buffer-read-longlong-word 8)
+    ((l  long longword) mf-buffer-read-long-word     4)
+    ((t  twenty-four)   mf-buffer-read-3-bytes       3)
+    ((w  word s short)  mf-buffer-read-word          2)
+    ((b  byte c char)   mf-char-after                1)))
+
 (defun mf-buffer-substring (start end)
   (ignore-errors (buffer-substring start end)))
 
-(defun mf-buffer-read-long-word (&optional pos)
-  "POS から 4バイト読んで整数として返す. POS が範囲外なら NIL を返す."
-  (let (high low a b c d)
-    (or pos (setq pos (point)))
-    (setq a (char-after pos)
-          b (char-after (+ 1 pos))
-          c (char-after (+ 2 pos))
-          d (char-after (+ 3 pos)))
-    (if (null (and a b c d))
+(defun mf-char-after (&optional pos opt)
+  (let ((pos (or pos (point))))
+    (char-after pos)))
+
+(defun mf-buffer-read-word (&optional pos opt)
+  "POS から word 長を返す.
+POS を省略するとカレント point になる."
+  (let ((pos (or pos (point)))
+        high low)
+    (setq high (char-after pos)
+          low  (char-after (+ pos 1)))
+    (if (null (and high low))
         nil
-      (setq high (+ (* a 256) b)
-            low  (+ (* c 256) d))
+      (+ (* high 256) low))))
+
+(defun mf-buffer-read-long-word (&optional pos opt)
+  "POS から 4バイト読んで整数として返す. POS が範囲外なら NIL を返す."
+  (let* ((pos (or pos (point)))
+         (high (mf-buffer-read-word pos opt))
+         (low  (mf-buffer-read-word (+ 2 pos) opt)))
+    (if (null (and high low))
+        nil
       (+ (* high 65536) low))))
 
-(defun mf-buffer-read-3-bytes (&optional pos)
+(defun mf-buffer-read-longlong-word (&optional pos wlst)
+  "POS から 8バイト読んで整数として返す. POS が範囲外なら NIL を返す.
+WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした形式で戻す."
+  (let* ((pos (or pos (point)))
+         (high (mf-buffer-read-long-word pos))
+         (low  (mf-buffer-read-long-word (+ 4 pos))))
+    (if (null (and high low))
+        nil
+      (if wlst
+          (list (lsh high -16 ) (logand high 65536)
+                (lsh low -16 ) (logand low 65536))
+        (+ (* high (expt 2 32)) low)))))
+
+(defun mf-buffer-read-3-bytes (&optional pos opt)
   (let (a b c)
     (or pos (setq pos (point)))
     (setq a (char-after pos)
@@ -137,6 +178,44 @@
     (if (null (and a b c))
         nil
       (+ (* a 65536) (* b 256) c))))
+
+(defun mf-buffer-read-word-le (&optional pos opt)
+  "POS から word 長を little endian で返す.
+POS を省略するとカレント point になる."
+  (let ((pos (or pos (point)))
+        high low)
+    (setq high (char-after pos)
+          low  (char-after (+ pos 1)))
+    (if (null (and high low))
+        nil
+      (+ (* low 256) high))))
+
+(defun mf-buffer-read-long-word-le (&optional pos opt)
+  "POS から 4バイトを little endian として読んで整数として返す.
+POS が範囲外なら NIL を返す."
+  (let (high low a b c d)
+    (or pos (setq pos (point)))
+    (setq a (char-after pos)
+          b (char-after (+ 1 pos))
+          c (char-after (+ 2 pos))
+          d (char-after (+ 3 pos)))
+    (if (null (and a b c d))
+        nil
+      (setq high (+ (* b 256) a)
+            low  (+ (* d 256) c))
+      (+ (* low 65536) high))))
+
+(defun mf-buffer-read-word-le-fd ()
+  "point から word 長を little endian で返し、その分 point を進める."
+    (prog1
+        (mf-buffer-read-word-le)
+      (forward-char 2)))
+
+(defun mf-buffer-read-long-word-le-fd ()
+  "point から long word 長を little endian で返し、その分 point を進める."
+  (prog1
+      (mf-buffer-read-long-word-le)
+    (forward-char 4)))
 
 (defun mf-3-byte-char (int)
   "INT を char char char の 24ビットで構成されたバイトの並びにする."
@@ -153,6 +232,44 @@
     (logand (lsh value  -8) 255)
     (logand value           255))
    'iso-8859-1))
+
+(defun mf-list-pack (point partition wlst)
+  "POINT からバッファの内容を PARTITION に従いバイトレベルで小分けしてリストにパック.
+指定可能な長さは 64bit longlongword までで 各値は符合無しの整数になる.
+数値変換せずバイトの羅列としてそのまま切り出すときは\
+整数を指定するとその長さだけ切り出される.
+PARTITION は `mf-list-pack-partition' の 各 car で定義されたシンボルをリストで羅列する.
+Example. \(mf-list-pack point '(l l w l c))
+WLST が non-nil なら 64bit 値  16bit ごとに分割したリストにした形式で戻す."
+  (let (fun result)
+    (dolist (a partition (reverse result))
+      (setq fun (assoc-default a mf-list-pack-partition #'(lambda (a b) (memq b a))))
+      (cond
+       (fun
+        (setq result (cons (funcall (car fun) point wlst) result)
+              point (+ point (cadr fun))))
+       ((numberp a)
+        (setq result (cons (buffer-substring point (+ point a)) result)
+              point (+ point a)))
+       (t
+        (error "Illegal %s" a))))))
+
+(defun mf-disbits (val partition &optional width)
+  "VAL をビット長 WIDTH として PARTITION に従いビット分解しリストにして戻す.
+PARTITION はビット数をリストで羅列する.
+WIDTH を省略すると PARTITION の合計補正し自動的に計算する.
+Example: \(mf-disbits val '(20 3 5 36))"
+  (let ((width
+         (or width
+             (let ((w (apply #'+ partition)))
+               (if (zerop (% w 8))
+                   w
+                 (+ (- 8 (% w 8)) w)))))
+        result tmp)
+    (dolist (elt partition (reverse result))
+      (setq tmp (lsh val (* (- width elt) -1))
+            width (- width elt))
+      (setq result (cons (logand tmp (1- (expt 2 elt))) result)))))
 
 (defun mf-chop (str)
   (save-match-data
@@ -183,6 +300,10 @@ once ならバックアップがあればバックアップしない."
         (delete-file backup 'trash))
       (rename-file file backup)))
     (write-region (point-min) (point-max) file)))
+
+(defun mf-sec-to-times (sec)
+  "整数秒 SEC を時間リスト \(h m s) に変換."
+  (mapcar #'floor (list (/ sec 3600) (/ (mod sec 3600) 60) (mod sec 60))))
 
 (defvar mf-files '("mf-tag-write" "mf-lib-mp3" "mf-lib-mp4"
                    "mf-lib-flac" "mf-lib-utility" "mf-lib-var"

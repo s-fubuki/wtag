@@ -1,8 +1,8 @@
-;;; mf-lib-flac.el -- This library for mf-tag-write.el
-;; Copyright (C) 2020 fubuki -*- coding: utf-8-emacs -*-
+;;; mf-lib-flac.el -- This library for mf-tag-write.el  -*- coding: utf-8-emacs -*-
+;; Copyright (C) 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.3 $$Nmae$
+;; Version: @(#)$Revision: 1.4 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.3 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.4 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -227,21 +227,6 @@ POS が省略されると現在のポイントが使われる.
       (if (eobp)
           (cons nil (reverse result))
         (reverse result)))))
-
-(defun mf-buffer-read-long-word-le (&optional pos)
-  "POS から 4バイトを little endian として読んで整数として返す.
-POS が範囲外なら NIL を返す."
-  (let (high low a b c d)
-    (or pos (setq pos (point)))
-    (setq a (char-after pos)
-          b (char-after (+ 1 pos))
-          c (char-after (+ 2 pos))
-          d (char-after (+ 3 pos)))
-    (if (null (and a b c d))
-        nil
-      (setq high (+ (* b 256) a)
-            low  (+ (* d 256) c))
-      (+ (* low 65536) high))))
 
 (defun mf-tag-alias-decode (tag)
   (let ((alias mf-flac-tag-alias))
@@ -550,6 +535,36 @@ MSX-C のライブラリみたいだな."
           p
         v)))))
 
+(defun mf-flac-time (meta data-size)
+  (let* ((pos (+ (nth 1 (assq 'STREAMINFO meta)) 4 10))
+         ;; lst -> (minBlockSize(16bit) maxBlockSize(16) minFrameSize(24) maxFlameSize(24)
+         ;;         SampleRate(20) Channel-1(3) bit/SAmple(5) totalSample(36))
+         (lst (mf-flac-disbits pos))
+         (sec (/ (nth 3 lst) (nth 0 lst))) ; totalSample / SampleRate
+         (brate (ceiling (/ (/ data-size 125.0) sec))))
+    (list sec brate)))
+
+(defun mf-flac-disbits (&optional pos)
+  "POS 位置からの内容を  20bit 3bit 5bit 36bit にビット分解してリストで戻す.
+POS を省略すると現在ポイントになる."
+;; * 32bit Emacs では total が(フルに使われていると)正常値が得られない可能性がある.
+;; 16bit/44,100Hz で 23分あるデータまで試したが 
+;; Total sampling 数が 29bit(32bit Emacs で扱える最大整数値)を越える大きさではなかった.
+;; (Live/Dead - 01-Dark Star.flac  23'07\")
+;; このデータのトータルサンプル数 ->  61171712
+;;               (1- (expt 2 29)) -> 536870911
+  (let ((pos (or pos (point)))
+        tmp srate ch bps total)
+    (setq tmp   (mf-buffer-read-3-bytes pos))
+    (setq srate (lsh tmp -4)
+          ch    (logand (lsh tmp -1) 7))
+    (setq bps   (lsh (logand tmp 1) 5)
+          tmp   (char-after (+ pos 3))
+          bps   (+ bps (lsh tmp  -4)))
+    (setq total (+ (lsh (logand tmp 15) 32)
+                   (mf-buffer-read-long-word (+ pos 4))))
+    (list srate ch bps total)))
+
 (defun mf-flac-tag-read (file &optional length no-binary)
   "FILE のタグを plist にして返す.
 `mf-type-dummy' を擬似タグとした tag の種別も追加される.
@@ -558,33 +573,40 @@ LENGTH が non-nil ならその整数分だけ読み込む.
 データ部が巨大である FLAC では特に有用ですが
 堅牢ではないのでメタヘッダの構造を理解していて必要な場合のみ利用してください.
 NO-BINARY が non-nil ならイメージタグは含めない."
-  (let* ((hsize 0)
-         pos meta tags origin)
+  (let* ((fsize (file-attribute-size (file-attributes file)))
+         hsize pos meta tags origin sec)
     (setq mf-current-case 'fold)
-    (if length
-        (insert-file-contents-literally file nil 0 length)
-      (setq length (cadr (insert-file-contents-literally file))))
+    (setq length (cadr (insert-file-contents-literally file nil 0 length)))
     (set-buffer-multibyte nil)
-    (goto-char (point-min))
     (unless (looking-at "fLaC")
-      (error "Not FLAC file or Insufficient length. %s" file))
+      (error "`%s' is Not FLAC file or Insufficient length" file))
     (setq pos (match-end 0))
     (setq meta (mf-flac-meta-block-collect pos))
-    (when (null (car meta))
-      (setq hsize
-            (let ((las (mf-flac-meta-last meta))) (+ (cadr las) (caddr las)))
-            meta (cdr meta)))
-    (when (< length hsize)
-      (let ((fsize  (mf-eighth (file-attributes file))))
-        (message "Reload file %s size %d header %d(%d%%)."
-                 file fsize hsize (round (/ (* hsize 100.0) fsize)))
-        (erase-buffer)
-        (insert-file-contents-literally file nil 0 (+ hsize 4))
-        (goto-char pos)))
+    
+    (cond
+     ;; ヘッダがすべて得られなかったのでデータサイズが計算できず時間計算ができない.
+     ;; ただタグ解析に必要なサイズは判ったのでその分だけ読み直す.
+     ((null (car meta))
+      (setq meta (cdr meta)
+            hsize (let ((las (mf-flac-meta-last meta)))
+                    (+ (nth 1 las) (nth 2 las))))
+      (message "Reload file %s size %d header %d(%d%%)."
+               file fsize hsize (round (/ (* hsize 100.0) fsize)))
+      (erase-buffer)
+      (insert-file-contents-literally file nil 0 (+ hsize 4))
+      (goto-char pos))
+     ;; ヘッダがすべて得られてデータサイズが判るので時間計算ができる.
+     (t
+      (setq hsize (let ((las (car (last meta))))
+                    (+ (nth 1 las) (nth 2 las))))))
+
+    (setq sec (mf-flac-time meta (- fsize hsize)))
     (setq tags (mf-flac-analyze meta no-binary))
     (setq mf-current-mode "flac"
           origin (buffer-substring (point-min) (+ 4 (point-min))))
-    (cons (list :tag mf-type-dummy :data mf-current-mode :org origin) tags)))
+    (setq tags (cons (list :tag mf-type-dummy :data mf-current-mode :org origin)
+                     tags))
+    (cons (list :tag mf-time-dummy :data sec) tags)))
 
 (provide 'mf-lib-flac)
-;; fine.
+;; fin.

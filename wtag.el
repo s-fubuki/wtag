@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.17 $$Name:  $
+;; Version: @(#)$Revision: 1.18 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,6 +32,9 @@
 (require 'image-mode)
 (require 'dired)
 (require 'mf-tag-write)
+(require 'cl-lib)
+(require 'time-date)
+(require 'rx)
 ;; (require 'make-atrac-index)
 
 (defgroup wtag nil
@@ -50,8 +53,8 @@
 (make-variable-buffer-local 'wtag-old-cover)
 (defvar wtag-old-point nil)
 (make-variable-buffer-local 'wtag-old-point)
-(defvar wtag-ps nil)
-(make-variable-buffer-local 'wtag-ps)
+(defvar wtag-process nil "Work.")
+(defvar wtag-process-name "*wtag process*")
 (defvar wtag-image-filename nil "for buffer local variable.")
 (make-variable-buffer-local 'wtag-image-filename)
 (put 'wtag-image-filename   'permanent-local t)
@@ -64,7 +67,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.17 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.18 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -139,25 +142,23 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   :type  'function
   :group 'wtag)
 
-(defcustom wtag-music-player
-  (or (executable-find "wmplayer.exe")
-      "c:/Program Files/Windows Media Player/wmplayer.exe")
-  "`wtag-music-play' で使う再生アプリ.
-PATH が通っていなければフルパスで."
-  :type  '(choice
-           (file :must-match t)
-           (const nil))
+(defcustom wtag-music-players
+  `((,(rx "." (or "mp3" "mp4" "m4a" "flac" "wav") eos)
+     ,(executable-find "wmplayer.exe") . ("/play" "/close")))
+  "`wtag-music-play' の設定. ((拡張子 . (実行コマンド . 引数)) ...)"
+  :type '(repeat
+          (cons regexp
+                (cons
+                 (choice (file :must-match t) (const nil))
+                 (choice (repeat string) (const nil)))))
   :group 'wtag)
 
-(defcustom wtag-music-opts   '("/play" "/close")
-  "`wtag-music-player' に渡すオプション."
-  :type  '(repeat string)
-  :group 'wtag)
+(defconst wtag-beginning-line-of-track 3)
+(make-variable-buffer-local 'wtag-beginning-line-of-track)
 
-(defcustom wtag-music-coding 'sjis-dos
-  "`wtag-music-player' のプロセスコーディング."
-  :type  'coding-system
-  :group 'wtag)
+(make-obsolete-variable 'wtag-music-player 'wtag-music-players "1.18")
+(make-obsolete-variable 'wtag-music-opts   'wtag-music-players "1.18")
+(make-obsolete-variable 'wtag-music-coding  nil "1.18")
 
 (defcustom wtag-truncate-lines t
   "非NILなら画面端で表示を折り返さない."
@@ -191,6 +192,21 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   :group 'wtag)
 
 (make-obsolete-variable 'wtag-qrt "この変数は廃止されました." "Revision 1.9")
+
+(defcustom wtag-time-foram "%2m'%02s\""
+  "時間表示のフォーマット.  `format-seconds' にそのまま渡す."
+  :type 'string
+  :group 'wtag)
+
+(defcustom wtag-time-all-foram wtag-time-foram
+  "総時間表示のフォーマット.  `format-seconds' にそのまま渡す."
+  :type 'string
+  :group 'wtag)
+
+(defcustom wtag-time-all-foram-balloon "%2h@%2m'%02s\""
+  "help-echo用 総時間表示のフォーマット.  `format-seconds' にそのまま渡す."
+  :type 'string
+  :group 'wtag)
 
 (defcustom wtag-image-auto-resize
   (if (boundp 'image-auto-resize) image-auto-resize nil)
@@ -270,13 +286,23 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   '((((background light))
      :background "grey90" :foreground "grey20" :box nil :extend t)
     (t
-     :background "grey20" :foreground "grey90" :box nil :extend t))
+     :background "grey20" :foreground "grey40" :box nil :extend t))
   "wtag-protect-face."
   :group 'wtag-faces)
 
+(defface wtag-time
+  '((t :inherit font-lock-variable-name-face))
+  "wtag-time-face."
+  :group 'wtag-faces)
+
+(defface wtag-time-other
+  '((t :inherit dired-ignored))
+  "wtag-time-other-face."
+  :group 'wtag-faces)
+
 (defcustom wtag-read-length-alist
-  '(("mp3" . 10) ("oma" . 32) ("mp4" . 10) ("m4a" . 10) ("flac" . 3))
-  "拡張子毎の読み込みパーセント. oma はデータが小さいのでこの数値が大きくなる."
+  '(("mp3" . 10) ("oma" . 33) ("mp4" . 60) ("m4a" . 10) ("flac" . 3) ("wav" . 3))
+  "拡張子毎の読み込みパーセント. データが小さいほどこの数値が大きくなる."
   :type  '(repeat (cons (string :tag "ext") (integer :tag "%  ")))
   :group 'wtag)
 
@@ -292,10 +318,10 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 大きさは `wtag-read-length-alist' に拡張子と読み込むパーセントを
 整数をコンスセルにして指定."
   (let ((len
-         (cdr
-          (assoc
-           (downcase (file-name-extension file)) wtag-read-length-alist))))
-    (round (* (/ (or (mf-eighth (file-attributes file)) 0) 100.0) len))))
+         (assoc-default
+          (downcase (file-name-extension file)) wtag-read-length-alist #'string=)))
+    (and len
+         (round (* (/ (or (mf-eighth (file-attributes file)) 0) 100.0) len)))))
 
 (defcustom wtag-artwork-buffer-suffix "*art*"
   "*Cover buffer名サフィクス."
@@ -386,6 +412,19 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 (defvar wtag-no-dot-directory "/?[^.][^.]?\\'"
   "\".\" と \"..\" を弾く正規表現.")
 
+(defun wtag-sec-to-times (sec)
+  "整数秒 SEC を時間リスト \(m s) に変換."
+  (mapcar #'round (list (/ sec 60) (mod sec 60))))
+
+(defun wtag-total-time (lst)
+  (let ((total 0)
+        n)
+    (dolist (a lst total)
+      (setq total (+ (if (numberp (setq n (car (wtag-alias-value mf-time-dummy-symbol a))))
+                         n
+                       0)
+                     total)))))
+
 
 ;;;###autoload
 (defun dired-wtag (&optional prefix)
@@ -442,6 +481,8 @@ PREFIX は廃止になり互換のためのダミー.
          (max-width-title  (wtag-max-width index 'title))
          (max-width-track  (wtag-max-width index 'track)) ; とりま disk は無考慮
          (form (concat "%" (number-to-string max-width-track) "s"))
+         (total (wtag-total-time index))
+         (mode  (wtag-alias-value '*type (car index)))
          title file)
     (insert ; Common part.
      (propertize " " 'directory directory
@@ -457,6 +498,12 @@ PREFIX は廃止になり互換のためのダミー.
      (propertize " " 'old-album (wtag-alias-value 'album (car index)))
      (propertize (wtag-alias-value 'album (car index))
                  'album t 'mouse-face 'highlight 'face 'wtag-album-name)
+     " "
+     (propertize
+      (format-seconds wtag-time-all-foram total)
+      'face 'wtag-time
+      'help-echo (format-seconds wtag-time-all-foram-balloon total)
+      'mouse-face 'highlight)
      "\n"
 
      (propertize
@@ -473,15 +520,27 @@ PREFIX は廃止になり互換のためのダミー.
       (setq file  (wtag-alias-value 'filename a)
             title (or (wtag-alias-value 'title a)
                       (concat wtag-not-available-string " "
-                              (file-name-nondirectory file))))
+                              (file-name-nondirectory file)))
+            mode  (wtag-alias-value '*type a))
       (insert
        (propertize " "
                    'old-track (wtag-alias-value 'track a)
-                   'mode (wtag-alias-value '*type a) 'stat (wtag-stat a))
+                   'mode mode 'stat (wtag-stat a))
        ;; Track number.
        (propertize (format form (wtag-alias-value 'track a))
                    'track t 'mouse-face 'highlight
                    'face 'wtag-track-number)
+       ;; Time.
+       " "
+       (if (not (wtag-alias-value mf-time-dummy-symbol a))
+           "---"
+         (cl-multiple-value-bind (sec bitrate vbr)
+             (wtag-alias-value mf-time-dummy-symbol a)
+           (propertize (format-seconds wtag-time-foram sec)
+                       'help-echo (format "%s %dkbps%s" mode (or bitrate 0)
+                                          (if (eq vbr 'vbr) "(VBR)" ""))
+                       'mouse-face 'highlight
+                       'face (if (eq vbr '*) 'wtag-time-other 'wtag-time))))
        (propertize " "
                    'old-performer (wtag-alias-value 'artist a) 'filename file)
        ;; Performer.
@@ -495,9 +554,11 @@ PREFIX は廃止になり互換のためのダミー.
        ;; (wtag-padding-string (wtag-alias-value 'title a) max-width-title)
        "\n"))))
 
-(defun wtag-stat (list)
-  "LIST から最後の要素を取り除いた list を返す."
-  (reverse (cdr (reverse list))))
+(defun wtag-stat (lst)
+  "LST からバイナリ系を取り除いた list を返す."
+  (cl-remove-if #'(lambda (n)
+                    (memq (car n) '(cover artwork image1 image2 bin1 bin2)))
+                lst))
 
 (defun wtag-padding-string (str max-width)
     (make-string (1+ (- max-width (string-width str))) 32))
@@ -880,6 +941,10 @@ FILE 開始位置がトラック番号でなければ TRACK を付け足した�
        ,@body
        (when ci (cursor-intangible-mode)))))
 
+(defun wtag-stat-view ()
+  (interactive)
+  (message "%s" (get-text-property (line-beginning-position) 'stat)))
+
 (defun wtag-2nd-area ()
   "先頭エリアを 1 とし、そこから数えて 2番目のエリアにポイントがあれば
 そのエリアの先頭と終端の目印のシンボル対を返し、さもなくば NILを返す."
@@ -1150,14 +1215,14 @@ PREFIX をふたつ打つとリバースになる."
           (forward-line))))
     (message nil)))
 
-(defun wtag-point-file-name ()
+(defun wtag-point-file-name (prefix)
   "ポイントの曲に対応するファイル名をエコーエリアに表示.
 対応ファイルがなければ読み込みしたカレントディレクトリを表示."
-  (interactive)
-  (message
-   "%s"
-   (or (wtag-get-property-value 'filename)
-       (wtag-get-common-property-value 'directory))))
+  (interactive "P")
+  (let ((str (or (wtag-get-property-value 'filename)
+                 (wtag-get-common-property-value 'directory))))
+    (message "%s" str)
+    (and prefix (kill-new str))))
 
 (defun wtag-point-file-name-to-kill-buffer (prefix)
   "ポイントの `wtag-point-file-name-to-kill-buffer-tag' の CAR をキルバッファに入れる.
@@ -1338,39 +1403,40 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
          (set-window-configuration wtag-window-configuration))
     (message nil)
     (run-hooks 'wtag-quit-hook)))
-  
-;; Track の体だが行番号で動いているので現コードに可搬性はない.
-(defun wtag-music-play (track)
-  "PATH を通しておくのと(推奨)
-プロセス文字コードのセットが必要(日本語ファイル名もOKになる)
- \(modify-coding-system-alist 'process \"wmplayer\" '(undecided . sjis-dos))"
-  (interactive "p")
-  (let* ((name " *wtag process*")
-         (cmd  wtag-music-player)
-         (opts wtag-music-opts)
-         (code wtag-music-coding)
-         file process-coding-system-alist)
-    (if current-prefix-arg
-        (progn (goto-char (point-min)) (forward-line (1+ track))))
-    (setq file (wtag-get-property-value  'filename)
-          process-coding-system-alist
-          (cons `(,cmd undecided . ,code) process-coding-system-alist))
-    (if file
-        (progn
-          (message "Play file: %s." file)
-          (setq wtag-ps
-                (apply #'start-process name name cmd
-                       (append opts (list file)))))
-      (error "No Track"))))
 
-(defun wtag-goto-line (track)
+(defun wtag-music-play (prefix)
+  "point のファイルを `wtag-music-players' で設定されたコマンドで実行.
+PREFIX は整数で指定があればその行に移動してから実行される.
+この移動を正しく行なうためにバッファローカル変数 `wtag-beginning-line-of-track' に\
+トラック1の行番を号設定しておくこと."
   (interactive "p")
-  (goto-char (point-min))
-  (forward-line (1+ track)))
+  (let* ((ppty 'filename)
+         pnt file cmds)
+    (when current-prefix-arg
+      (goto-char (point-min))
+      (forward-line (+ prefix (- wtag-beginning-line-of-track 2))))
+    (setq pnt  (next-single-property-change
+                (line-beginning-position) ppty nil (line-end-position))
+          file (get-text-property pnt ppty)
+          cmds (and file (assoc-default file wtag-music-players #'string-match)))
+    (if (and file (file-exists-p file) cmds)
+        (let* ((prog (car cmds))
+               (opts (cdr cmds))
+               (args (append opts (list file)))
+               (proc wtag-process-name)
+               (buff proc))
+          (message (file-name-nondirectory file))
+          (setq wtag-process (apply #'start-process proc buff prog args)))
+      (error "Undefined or does not exist `%s'" (or file "NIL")))))
 
 (defun wtag-kill-process ()
   (interactive)
-  (kill-process wtag-ps))
+  (and wtag-process (kill-process wtag-process) (setq wtag-process nil)))
+
+(defun wtag-goto-line (prefix)
+  (interactive "p")
+  (goto-char (point-min))
+  (forward-line (1- prefix)))
 
 (defun wtag-get-mark-titles (&optional char)
   "mark があればマーク行の曲名とファイル名のコンスセルにした alist で返し、
@@ -1772,7 +1838,7 @@ ALIST にハナから sort tag が含まれていれば除去され
 	  (define-key map "7"               'digit-argument)
 	  (define-key map "8"               'digit-argument)
 	  (define-key map "9"               'digit-argument)
-	  (define-key map "g"               'wtag-goto-line)
+	  (define-key map "\M-g"            'wtag-goto-line)
 	  (define-key map " "               'next-line)
 	  (define-key map [tab]             'next-line)
 	  (define-key map [backtab]         'previous-line)
@@ -1782,7 +1848,7 @@ ALIST にハナから sort tag が含まれていれば除去され
 	  (define-key map "p"               'previous-line)
 	  (define-key map "\C-c\C-l"        'wtag-truncate-lines)
           (define-key map "w"               'wtag-point-file-name-to-kill-buffer)
-          (define-key map "\C-c="           'wtag-point-file-name)
+          (define-key map "="               'wtag-point-file-name)
           (define-key map "f"               'wtag-fit-artwork-toggle)
           (define-key map "\C-c\C-f"        'wtag-fit-artwork-toggle)
           (define-key map "F"               'wtag-open-frame)
@@ -1796,14 +1862,17 @@ ALIST にハナから sort tag が含まれていれば除去され
           (define-key map "U"               'wtag-unmark-all-file)
           (define-key map "C"               'wtag-copy)
           (define-key map "P"               'wtag-music-play)
-          (define-key map "\C-c\C-c"        'wtag-kill-process)          
+          (define-key map "\C-c\C-c"        'wtag-kill-process)
+          (define-key map "\C-c="           'wtag-stat-view)
 	  (define-key map "q"               'quit-window)
 	  (define-key map "Q"               'wtag-exit)
           (define-key map [drag-n-drop]     'wtag-mouse-load)
 	  (define-key map "\C-x\C-q"        'wtag-writable-tag)
           (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
-          (define-key menu-map [wtag-point-file-name]
-            '("Point File name" . wtag-point-file-name))
+          (define-key menu-map
+            [wtag-stat-view] '("Point File Status" . wtag-stat-view))
+          (define-key menu-map
+            [wtag-point-file-name] '("Point File Name" . wtag-point-file-name))
           (define-key menu-map
             [wtag-truncate-lines] '("Truncate Lines" . wtag-truncate-lines))
           (define-key menu-map
@@ -1837,7 +1906,8 @@ ALIST にハナから sort tag が含まれていれば除去され
   (setq buffer-read-only  t
         inhibit-read-only nil)
   (setq-local truncate-lines wtag-truncate-lines)
-  (setq-local default-directory (wtag-get-common-property-value 'directory)))
+  (setq-local default-directory (wtag-get-common-property-value 'directory))
+  (setq-local wtag-beginning-line-of-track 3))
 
 (defvar wtag-image-mode-map nil "`wtag-image-mode' 用キーマップ.")
 (if wtag-image-mode-map

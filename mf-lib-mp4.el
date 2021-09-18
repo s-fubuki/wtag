@@ -1,8 +1,8 @@
 ;;; mf-lib-mp4.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2919, 2020 fubuki
+;; Copyright (C) 2018, 2019, 2020､ 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.4 $$Name: r1dot11 $
+;; Version: $Revision: 1.5 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 1.4 $$Name: r1dot11 $")
+(defconst mf-lib-mp4-version "$Revision: 1.5 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -54,7 +54,7 @@
 (defvar mf-mp4-write-hook nil)
 
 (defcustom mf-mp4-tag-alias
-  '((title . "\251nam") (artist . "\251ART") (a-artist . "aART") (album . "\251alb") (date . "\251day") (year . "\251day") (genre . "\251gen") (track . "trkn") (disk . "disk") (writer . "\251wrt") (cover . "covr") (artwork . "covr") (lyric . "\251lyr") (s-album . "soal") (s-title . "sonm") (s-artist . "soar") (s-a-artist . "soaa") (copy . "cprt") (mpb . "iTunSMPB") (cpil . "cpil") (pgap . "pgap") (tempo .  "tmpo") (too . "\251too") (enc .  "Encoding Params") (norm . "iTunNORM") (cddb . "iTunes_CDDB_IDs") (ufid . "UFIDhttp://www.cddb.com/id3/taginfo1.html"))
+  '((title . "\251nam") (artist . "\251ART") (a-artist . "aART") (album . "\251alb") (date . "\251day") (year . "\251day") (genre . "\251gen") (track . "trkn") (disk . "disk") (writer . "\251wrt") (cover . "covr") (artwork . "covr") (lyric . "\251lyr") (comment . "\251cmt") (s-album . "soal") (s-title . "sonm") (s-artist . "soar") (s-a-artist . "soaa") (copy . "cprt") (mpb . "iTunSMPB") (cpil . "cpil") (pgap . "pgap") (tempo .  "tmpo") (too . "\251too") (enc .  "Encoding Params") (norm . "iTunNORM") (cddb . "iTunes_CDDB_IDs") (ufid . "UFIDhttp://www.cddb.com/id3/taginfo1.html"))
   "mp4/m4a tag alias."
   :type  '(repeat (cons symbol string))
   :group 'music-file)
@@ -91,7 +91,10 @@ ENV には親のタイプを指定する."
   "current buffer に読み込まれた mp4 file の atom tree list を返す.
 そのとき point は atom 先頭になくてはならない.
 LENGTH はスキャンする大きさ(atom の size), ENV は親の atom TYPE.
-これらの引数はすべて再帰するとき自分自身に情報を渡す為のダミー."
+これらの引数はすべて再帰するとき自分自身に情報を渡す為のダミー.
+戻値は \(type beg size) をリストにしたものだが
+size は先頭8バイトを含めたアトムの塊のサイズそのものであり
+beg もデータ先頭ではなくアトム自体の先頭であることに注意."
   (let ((length (or length (point-max)))
         result)
     (while (and (< 0 length) (not (eobp)))
@@ -111,7 +114,7 @@ LENGTH はスキャンする大きさ(atom の size), ENV は親の atom TYPE.
          (size
           (setq result (cons (list type beg size) result))
           (setq length (- length size))
-          (forward-char size))
+          (ignore-errors (forward-char size)))
          (t
           (setq length 0)))))
     (reverse result)))
@@ -346,6 +349,29 @@ DEPEND は子に渡すワーク用ダミーでユーザが指定することは�
             (if (string-equal type (car lst))
                 (setq result (cons lst result))))))))
 
+(defun mp4-flat-scan (target)
+  "ファイルトップからコンテナ内には潜らず親だけを舐めて TARGET の atom を得る.
+TARGET は主に \"moov\", \"free\" \"mdat\" で \"udat\" と \"meta\" はスキップするので NG."
+  (let (beg size type)
+    (save-excursion
+      (goto-char (point-min))
+      (catch 'break
+        (while (and (not (eobp)) (not (string-equal type target)))
+          (setq beg  (point)
+                size (mf-buffer-read-long-word beg)
+                type (buffer-substring (+ beg 4) (+ beg 8)))
+          (cond
+           ((string-equal type target)
+            (throw 'break (list type beg size)))
+           ((string-equal type "udta")
+            (forward-char 8))
+           ((string-equal type "meta")
+            (forward-char 12))
+           (t
+            (ignore-errors (forward-char size)))))))))
+
+(make-obsolete 'mp4-moov-point
+               "仕様変更した `mp4-flat-scan' が後継." "Thu Aug 26 09:58:33 2021")
 (defun mp4-moov-point ()
   "ファイルトップから必要最小限のコンテナを辿り堅牢に \"moov\" のサイズを得る."
   (let (beg size type)
@@ -365,6 +391,16 @@ DEPEND は子に渡すワーク用ダミーでユーザが指定することは�
           (forward-char 12))
          (t
           (forward-char size)))))))
+
+(defun mp4-get-time (atoms)
+  "ATOMS リストから得たポイントから演奏時間秒とビットレートをコンスセルで返す.
+対象ファイルの読み込まれたバッファで実行する."
+  (let* ((pnt   (+ (cadr (car (mp4-get-list "mvhd" atoms))) 20))
+         (time  (/ (mf-buffer-read-long-word (+ pnt 4)) ; Duration
+                   (mf-buffer-read-long-word pnt)))     ; Time-Scale
+         (len   (nth 2 (car (mp4-get-list "mdat" atoms))))
+         (brate (/ (/ len 125) time)))
+    (list time brate)))
 
 ;;
 ;; レコチョクの m4a を Walkman で正常に扱えるようにするためのインチキパッチ.
@@ -590,39 +626,44 @@ PREFIX があると位置のパーセント位置も追加する."
                result)))))
     (mf-make-mp4-frame "ilst" (apply #'concat result))))
 
+(defvar mf-mp4-reload-maegin 0.01) ; MusicCenter data なら 0.5 (50%) にしないといけない.
+
 (defun mf-mp4-tag-read (file &optional length no-binary)
   "FILE のタグを plist にして返す.
 `mf-type-dummy' を擬似タグとした TAG の種別も追加される.
 LENGTH が非NIL ならその整数分だけ読み込む.
 NO-BINARY が非NIL ならイメージタグは含めない."
-  (let (hsize atoms tags ilst origin)
-    (if length
-        (insert-file-contents-literally file nil 0 length)
-      (setq length (cadr (insert-file-contents-literally file))))
-
+  (let ((fsize  (file-attribute-size (file-attributes file)))
+        hsize atoms tags ilst origin sec)
+    (setq length (cadr (insert-file-contents-literally file nil 0 length)))
     (set-buffer-multibyte nil)
-    (goto-char (point-min))
-    (unless (and (looking-at "....ftyp") (setq hsize (mp4-moov-point)))
-      (error "Not MP4."))
-
-    (when (and length (> hsize length))
-      (let ((fsize  (mf-eighth (file-attributes file)))
-            (margin (point)))
-        (message "Reload file %s size %d header %d(%d%%)."
-                 file fsize hsize (round (/ (* hsize 100.0) fsize)))
-        (erase-buffer)
-        (insert-file-contents-literally file nil 0 (+ hsize margin))
-        (goto-char (point-min))))
-
-    (setq atoms (mf-mp4-tag-collect hsize)
-          ilst  (mf-get-ilst atoms))
+    (unless (looking-at "....ftyp") (error "Not mp4"))
+    ;; "mdat" まで欲しいので "free" 等をスキップするため
+    ;; ヘッダサイズにファイルサイズの 1% を足す.
+    (setq hsize (let ((tmp (mp4-flat-scan "moov")))
+                  (+ (nth 1 tmp) (nth 2 tmp) (round (* fsize mf-mp4-reload-maegin)))))
+    (when (< length hsize)
+      (message "Reload file %s size %d header %d(%d%%)."
+               file fsize hsize (round (/ (* hsize 100.0) fsize)))
+      (erase-buffer)
+      (setq length (cadr (insert-file-contents-literally file nil 0 hsize)))
+      (goto-char (point-min)))
+    (setq atoms (mf-mp4-tag-collect length)
+          ilst  (mf-get-ilst atoms)
+          sec   (if (mp4-flat-scan "mdat") (mp4-get-time atoms)))
+    (unless sec
+      (message
+       "`mf-mp4-reload-maegin' に 0.5 以上をセットすると時間情報の獲得ができるかも."))
     (goto-char (point-min))
     (setq mf-current-mode "mp4" origin (buffer-substring (+ (point) 8) (+ (point) 8 4)))
     (setq tags (mf-mp4-tag-analyze ilst no-binary))
     ;; (unless (assoc version func) (error "Bad music file"))
-    (setq tags (cons (list :tag mf-type-dummy :data mf-current-mode :org origin) tags))))
+    (setq tags (cons
+                (list :tag mf-type-dummy :data mf-current-mode :org origin)
+                tags))
+    (cons (list :tag mf-time-dummy :data sec) tags)))
 
 (defalias 'mf-m4a-tag-read 'mf-mp4-tag-read)
 
 (provide 'mf-lib-mp4)
-;; fine.
+;; fin.

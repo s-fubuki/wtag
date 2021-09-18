@@ -1,8 +1,8 @@
 ;;; mf-tag-write.el -- Music file tag write.  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2919, 2020 fubuki
+;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.6 $$Name: r1dot11 $
+;; Version: $Revision: 1.7 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.6 $$Name: r1dot11 $")
+(defconst mf-tag-write-version "$Revision: 1.7 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -110,6 +110,7 @@ MODE はタグのモード ALIAS は alias テーブル."
 ALIAS は 実 tag を得るため."
   (list :tag (cdr (assq 'lyric alias))
         :dsc nil
+        :cdsc ""
         :type 1
         :data
         (if (file-exists-p data)
@@ -232,14 +233,12 @@ CDR を NIL とするとそのタグの削除になる."
 
 (defun mf-tag-read-alist (file &optional len no-bin)
   "FILE のタグを \(TAG . DATA) または \(DSC . DATA) の alist にして返す."
-  (let* ((plst (mf-tag-read file (or len 1024) no-bin))
+  (let* ((plst (mf-tag-read file len no-bin))
          result)
     (dolist (a plst result)
       (let ((tag (or (plist-get a :dsc) (plist-get a :tag)))
             (data (plist-get a :data)))
         (setq result (cons (cons tag data) result))))))
-
-(defvar mf-type-dummy-symbol '*type)
 
 ;;;###autoload
 (defun mf-tag-read-alias (file &optional len no-bin)
@@ -248,7 +247,10 @@ CDR を NIL とするとそのタグの削除になる."
          (case  (string-match "\\.flac\\'" file))
          (mlist (mf-func-get file mf-function-list))
          (mode  (cdr (assoc mf-type-dummy alist)))
-         (alias (cons (cons mf-type-dummy-symbol mf-type-dummy) (mf-alias mlist mode))))
+         (alias (cons
+                 (cons mf-time-dummy-symbol mf-time-dummy)
+                 (cons (cons mf-type-dummy-symbol mf-type-dummy)
+                       (mf-alias mlist mode)))))
     (mf-alist-add-tag alist alias case)))
 
 (defun mf-alist-add-tag (alist alias case)
@@ -340,9 +342,8 @@ atom なら第4の値をそのまま返す. いずれも eval して返す."
 ;;;###autoload
 (defun mf-tag-write (file &optional new-tags no-backup time-opt)
   "FILE の既存タグに plist形式の NEW-TAGS が含まれれば置き換え無ければ追加し書き換える.
-NO-BACKUP が NON-NIL なら Backup file を作らない.
-但しシンボル once なら 1度だけ作る.
-また文字列ならそのファイルに書き出しバックアップも作らない.
+NO-BACKUP が非NIL なら Backup file を作らない.
+NO-BACKUP が文字列ならそのファイルに書き出す。その場合バックアップはされない.
 TIME-OPT が非NIL ならタイムスタンプを継承する."
   (interactive "fFile: \nxTags: ")
   (let* ((time-opt (and time-opt (mf-sixth (file-attributes file))))
@@ -384,3 +385,4 @@ LENGTH は読み込む大きさ. NO-BINARY が非NIL だと返り値に画像タ
     (mf--tag-read file length no-binary)))
 
 (provide 'mf-tag-write)
+;; fin.
