@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.5 $$Name:  $
+;; Version: $Revision: 1.6 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.5 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 1.6 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -870,9 +870,9 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
 
 ;; AAAAAAAA AAABBCCD EEEEFFGH IIJJKLMM
 (defvar mf-frame-bits
-  '((sync      . 11) (version   . 2) (layer . 2) (protection . 1)
-    (bitrate   . 4)  (frequency . 2)
-    (pading    . 1)  (ext . 1) (channel . 2) (mode . 2)
+  '((sync . 11) (version . 2) (layer . 2) (protection . 1)
+    (bitrate . 4)  (frequency . 2)
+    (pading . 1)  (ext . 1) (channel . 2) (mode . 2)
     (copyright . 1)  (original . 1) (emphasis . 2))
   "分解する各ビット数.")
 
@@ -926,14 +926,18 @@ BIT は 128k なら 128 と指定する."
   "カレントバッファに読み込まれている mp3 の時間秒とビットレートをリストで戻す.
 VBR data ならリスト末尾に non-nil が追加される.
 バッファには 1st Audio Frame まで読み込まれている必要がある.
-FSIZE はファイルの大きさ HSIZE はヘッダの大きさ."
+FSIZE はファイルの大きさ HSIZE はヘッダの大きさ.
+フレームヘッダがおかしいとエラーになる\
+(HSIZEが違っている場合位置の特定を誤りに起きうる)."
   (save-excursion
     (let* ((frame   (mf-read-frame-alist (+ 11 hsize)))
+           (sync    (assoc-default 'sync frame))
            (bitrate (assoc-default 'bitrate frame))
            (frq     (assoc-default 'frequency frame))
            (offset  (mf-xing-offset frame))
            sec vbr)
-      (goto-char (+ 11 hsize 4 offset))
+      (unless (= sync 2047) (error "Illegal frame header"))
+      (goto-char (+ 11 hsize 4 offset)) ; Padding skip.
       (setq sec
             (if (mf-xing-p)
                 ;; 曲長[sec] = MPEG フレーム数 * (1152 / サンプリングレート[Hz])

@@ -1,5 +1,53 @@
-# -*- mode: outline -*-
-#+date: Sat Sep 18 11:12:21 2021
+# -*- mode: org -*-
+#+date: Fri Oct 15 15:03:01 2021
+* wtag 1.19
+** wtag
+*** カスタマイズ変数 `wtag-force-load' のデフォルトを nil に変更
+    編集モードになっていなくても D&D でジャケット変更できるようにする変数で、
+    デフォが 300 だったため最初に 1度だけ編集していいのかの問い合わせが入り、
+    これとは別に画像ロード側にも問い合わせがあるので、
+    2重に問い合わせが出るようでとまどうので、素の設定のときそうならなくするのと
+    安全性向上のための措置. (よく見ると一応メッセージは違う)
+    
+    関連する変数 `wtag-load-without-query' (デフォルト nil).
+    これが t か keep になっていると、画像ロード時の問い合わせが抑止されるため、
+    `wtag-force-load' が non-nil で問い合わせが出ても違和感が出ない.
+
+    : ;; 自分的設定
+    : (setq wtag-load-without-query 'keep)
+    : (setq wtag-force-load 300)
+
+    問い合わせ処理をひとつにまとめようともしたが、
+    プログラム側からすると出す箇所が違うのでひとつにはできなかった.
+    
+*** Fix インデックス・バッファにもサフィクスを追加
+    アルバム名をそのままバッファ名にしていたが、
+    アルバム・ディレクトリが dired でも開かれていると、
+    バッファ名が衝突してしまうため.(何故か開けていて今まで気づかず)
+
+*** イメージ・バッファのモードラインにピクセル・サイズの表示
+    本来右側に表示すべきだが、タイトルが長いと見切れて表示されなくなるので、
+    タイトルの手前(左側)に表示されます.
+    face `wtag-image-size' で色が変更できます.
+    : (set-face-attribute `wtag-image-size nil :foreground "green" :weight 'bold)
+      
+*** ソートタグの中身を対応タグにバルーンする.
+    例えば曲名の上にマウスポインタが重なると、
+    対応するソートタグがあれば、そこにバルーン表示される.
+    ;; Windows 以外だとどうなるのか知らない.
+
+*** ウインドウの開く幅の調整
+    インデックス・ウィンドウが曲数に合わせフィットする.
+    変数 `wtag-pop-action' を nil にすると以前と同じ等分割になる.
+    但しアートワークが上側になるようにしたので、
+    位置関係まで同じにするなら以下のようにする.
+
+    : (setq wtag-pop-action '(display-buffer-in-direction (window-height) (direction . above)))
+
+** mf-lib-mp3 時間取得できないと明示的にエラーにする
+   計算箇所で意図しないでエラーになりおかしな止まり方をしていた.
+
+
 * wtag 1.18
 ** wtag
 *** mf-tag-read: 時間とビットレートの取得
@@ -10,7 +58,7 @@
     m4p は可変長でも何も付きません(現在未調査で未対応のため).
 
 #+BEGIN_SRC emacs-lisp
-(assoc '*time (mf-tag-read-alias "01-Take It Easy.mp3"))
+(assq '*time (mf-tag-read-alias "01-Take It Easy.mp3"))
 ;; --> (*time " *time" 214 128 vbr)
 
 ;; assoc-default (または alist-get) なら CAR にタグ、 CDR にその値が得られる
