@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.19 $$Name:  $
+;; Version: @(#)$Revision: 1.20 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.19 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.20 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -108,6 +108,14 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 (defcustom wtag-track-prefix-rename t
   "Track tag が変更されていればファイル名プレフィクスの数値もそれに合わせ変更する."
   :type  'boolean
+  :group 'wtag)
+
+(defcustom wtag-sort-filter
+  (if (memq system-type '(ms-dos windows-nt))
+      'wtag-kakashi-filter
+    'wtag-kakashi-filter2)
+  "文字列 LIST 引数 1つを持ち、そのエレメンツをフィルタリングして戻す関数."
+  :type  'function
   :group 'wtag)
 
 (defcustom wtag-kakashi
@@ -323,7 +331,8 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   :group 'wtag-faces)
 
 (defcustom wtag-read-length-alist
-  '(("mp3" . 10) ("oma" . 33) ("mp4" . 60) ("m4a" . 10) ("flac" . 3) ("wav" . 3))
+  '(("mp3" . 10) ("oma" . 33) ("mp4" . 60) ("m4a" . 10)
+    ("flac" . 3) ("wav" . 3))
   "拡張子毎の読み込みパーセント. データが小さいほどこの数値が大きくなる."
   :type  '(repeat (cons (string :tag "ext") (integer :tag "%  ")))
   :group 'wtag)
@@ -341,7 +350,8 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 整数をコンスセルにして指定."
   (let ((len
          (assoc-default
-          (downcase (file-name-extension file)) wtag-read-length-alist #'string=)))
+          (downcase (file-name-extension file))
+          wtag-read-length-alist #'string=)))
     (and len
          (round (* (/ (or (mf-eighth (file-attributes file)) 0) 100.0) len)))))
 
@@ -511,6 +521,8 @@ PREFIX は廃止になり互換のためのダミー.
       (and (get-buffer art-buff) (switch-to-buffer art-buff))
       (pop-to-buffer buff wtag-pop-action))))
 
+(defvar wtag-total-track 0)
+
 
 (defun wtag-insert-index (index dir)
   "Tag plist INDEX を取得した DIR."
@@ -555,11 +567,13 @@ PREFIX は廃止になり互換のためのダミー.
                  'face 'wtag-release-year)
      "\n")
 
+    (setq wtag-total-track 0)
     (dolist (a index)
       (setq file  (wtag-alias-value 'filename a)
-            title (or (wtag-alias-value 'title a)
-                      (concat wtag-not-available-string " "
-                              (file-name-nondirectory file)))
+            title (let ((tmp (wtag-alias-value 'title a)))
+                    (if (string-equal tmp wtag-not-available-string)
+                        (format "%s(%s)" tmp (file-name-nondirectory file))
+                      tmp))
             mode  (wtag-alias-value '*type a))
       (insert
        (propertize " "
@@ -593,7 +607,9 @@ PREFIX は廃止になり互換のためのダミー.
        (propertize title 'title t 'mouse-face 'highlight 'face 'wtag-title
                    'help-echo (wtag-alias-value 's-title a))
        ;; (wtag-padding-string (wtag-alias-value 'title a) max-width-title)
-       "\n"))))
+       
+       "\n")
+      (setq wtag-total-track (1+ wtag-total-track)))))
 
 (defun wtag-stat (lst)
   "LST からバイナリ系を取り除いた list を返す."
@@ -798,18 +814,16 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
 
 (defun wtag-track-prefix-rename (file track)
   "FILE のプレフィクスがトラック番号なら(2桁数値とハイフン)
-その部分を TRACK 番号文字列にした名前にリネームする.
-FILE 開始位置がトラック番号でなければ TRACK を付け足した名前にリネーム"
+その部分を TRACK 番号文字列にした名前にリネームする."
   (let ((dir   (file-name-directory file))
         (node  (file-name-nondirectory file))
         (track (format "%02d" (string-to-number track)))
         new-name)
     (save-match-data
-      (if (string-match "\\`\\(?1:[0-9]+\\)\\(?2:-.+\\)\\'" node)
-          (setq new-name (concat  track (match-string 2 node)))
-        (setq new-name (concat track "-" node)))
-      (rename-file file (expand-file-name new-name dir))
-      (wtag-message "Renmae file: \"%s\" -> \"%s\"" file new-name))))
+      (when (string-match "\\`\\(?1:[0-9]+\\)\\(?2:-.+\\)\\'" node)
+        (setq new-name (concat  track (match-string 2 node)))
+        (rename-file file (expand-file-name new-name dir))
+        (wtag-message "Renmae file: \"%s\" -> \"%s\"" file new-name)))))
 
 
 (defun wtag-flush-tag-ask (prefix)
@@ -867,14 +881,17 @@ FILE 開始位置がトラック番号でなければ TRACK を付け足した�
              (old-disk      (if prefix (wtag-alias-value 'disk stat)  old-disk))
              (old-aartist   (if prefix
                                 (wtag-alias-value 'a-artist stat) old-aartist))
-             (old-album     (if prefix (wtag-alias-value 'album stat) old-album))
-             (old-genre     (if prefix (wtag-alias-value 'genre stat) old-genre))
+             (old-album     (if prefix
+                                (wtag-alias-value 'album stat) old-album))
+             (old-genre     (if prefix
+                                (wtag-alias-value 'genre stat) old-genre))
              (old-year      (if prefix (wtag-alias-value 'year stat)  old-year))
              (filename      (wtag-get-property-value 'filename))
              (ext           (downcase (file-name-extension filename)))
              (mp3           (and (string-equal ext "mp3") mode))
              (mp4           (member ext '("mp4" "m4a")))
-             (sort          (or mp3 mp4 (member ext '("flac" "oma")) wtag-sort-extend))
+             (sort          (or mp3 mp4 (member ext '("flac" "oma"))
+                                wtag-sort-extend))
              tags)
         ;; Disk number.
         (and (or mp4 mp3) (not (string-equal old-disk new-disk))
@@ -1255,6 +1272,36 @@ PREFIX をふたつ打つとリバースになる."
           (forward-line))))
     (message nil)))
 
+(defvar wtag-track-number-adjust-without-query nil)
+
+(defun wtag-track-number-adjust ()
+  "すべてのトラックバンバーを \"トラック/トラック数\" というフォーマットにする."
+  (interactive)
+  (let ((total wtag-total-track)
+        trk
+        beg end)
+    (when (or wtag-track-number-adjust-without-query
+              (y-or-n-p "Track number adjust?"))
+      (save-excursion
+        (goto-char (point-min))
+        (setq trk (wtag-get-name 'old-disk 'end-disk)
+              beg (wtag-move-to-property 'disk)
+              end (wtag-move-to-property 'end-disk))
+        (delete-region beg end)
+        (insert (format "%d/%d" (string-to-number trk)
+                        (if (string-match "/\\(?1:.*\\)" trk)
+                            (string-to-number (match-string 1 trk))
+                          1)))
+        (forward-line 2)
+        (while (not (eobp))
+          (setq trk (string-to-number (wtag-get-property-value 'old-track))
+                beg (wtag-move-to-property 'old-track)
+                end (wtag-move-to-property 'end-track))
+          (delete-region beg end)
+          (insert (format "%d/%d" trk total))
+          (forward-line))))
+    (message nil)))
+
 (defun wtag-point-file-name (prefix)
   "ポイントの曲に対応するファイル名をエコーエリアに表示.
 対応ファイルがなければ読み込みしたカレントディレクトリを表示."
@@ -1265,7 +1312,8 @@ PREFIX をふたつ打つとリバースになる."
     (and prefix (kill-new str))))
 
 (defun wtag-point-file-name-to-kill-buffer (prefix)
-  "ポイントの `wtag-point-file-name-to-kill-buffer-tag' の CAR をキルバッファに入れる.
+  "ポイントの `wtag-point-file-name-to-kill-buffer-tag' の CAR を\
+キルバッファに入れる.
 PREFIX があれば CDR が使われる.
 Line 1..2 の場合 `wtag-point-file-name-to-kill-buffer-list' の設定が使われる."
   (interactive "P")
@@ -1300,9 +1348,10 @@ Line 1..2 の場合 `wtag-point-file-name-to-kill-buffer-list' の設定が使�
 
 (defun wtag-get-jpg-blocks ()
   "Buffer に読み込まれている jpg のセグメント・リストをある程度返す.
-\((maker point length) ...) の形式で
-maker は #xffd8 等 16bit の jpeg のマーカー識別子.
-point は maker の先頭位置、 length は maker の 2バイト分を除いたセグメントの長さ.
+\((marker point length) ...) の形式で
+marker は #xffd8 等 16bit の jpeg のマーカー識別子.
+point は marker の先頭位置、 \
+length は marker の 2バイト分を除いたセグメントの長さ.
 得られるのは SOS(Start of scan segment) まで."
   (let* ((pnt (point))
          (mak (mf-buffer-read-word pnt))
@@ -1646,7 +1695,8 @@ point が 1行目ならすべてマークする."
     (erase-buffer)
     (setq result (wtag-directory-files-list dir))
     (wtag-insert-index result dir)
-    (rename-buffer (wtag-get-common-property-value 'old-album) 'unique)
+    (setq wtag-base-name (wtag-get-common-property-value 'old-album))
+    (rename-buffer (wtag-index-buffer-name wtag-base-name) 'unique)
     (set-buffer-modified-p nil)
     (goto-char (point-min))
     (wtag-view-mode)
@@ -1788,32 +1838,66 @@ buffer ならその `default-directory' になる. "
         (match-string-no-properties 2 str)
       str)))
 
-(defun wtag-filter-variable (value program &rest args)
-  "文字列 VALUE をフィルタ PROGRAM の標準入力通しその結果を戻す.
-ARGS は PROGRAM への引数."
-  (with-temp-buffer
-    (insert value)
-    (apply #'call-process-region
-           (point-min) (point-max) program 'delete t nil args)
-    (buffer-substring-no-properties (point-min) (point-max))))
-
 (defun wtag-to-sort-symbol (sym)
   (intern (concat "s-" (symbol-name sym))))
 
-(defun wtag-kakasi-list (lst)
-  "文字列リスト LST を改行で区切ったテキストの塊にして
-まとめて1度にフィルタリングし再びリストにして戻して返す.
-`wtag-kakashi' が nil なら LST がそのまま返る."
-  (let ((exe wtag-kakashi)
-        (dic (or wtag-kakashi-usrdic "")))
-    (if exe
-        (and lst
-             (split-string
-              (wtag-filter-variable
-               (mapconcat #'identity lst "\n")
-               exe "-JK" "-HK" "-aE" dic)
-              "\n"))
-      lst)))
+(defvar wtag-safe-sort-code '(japanese-shift-jis undecided))
+
+(defun wtag-safe-sjis (lst)
+  "LST の中の sjis にできない文字列を \"\"(空文字) にしたリストを戻す."
+  (mapcar
+   #'(lambda (str)
+       (if (cl-member wtag-safe-sort-code
+                      (find-coding-systems-string str)
+                      :test #'(lambda (a b) (memq b a)))
+           str
+         (wtag-message "Can't convert `%s'" str)
+         ""))
+   lst))
+
+(defun wtag-kakashi-filter (lst)
+  "文字列 LST のエレメンツを `wtag-kakashi' の標準入力に通しその結果を戻す.
+winカカシが漢字ASCII混合の場合、
+冒頭ASCIIが化けるので ASCII全角化を Emacs で事前に行なっている.
+更に sjis にできないキャラクタは案山子に渡さず素通ししてワーニングを表示する."
+  (let* ((exe wtag-kakashi)
+         (dic (or wtag-kakashi-usrdic ""))
+         (args (list "-JK" "-HK" dic))
+         (lst (mapcar #'wtag-make-sort-string lst))
+         tmp)
+    (with-temp-buffer
+      (insert (japanese-zenkaku
+               (mapconcat #'identity (wtag-safe-sjis lst) "\n")))
+      (apply #'call-process-region
+             (point-min) (point-max) exe 'delete t nil args)
+      (setq tmp (split-string
+                 (buffer-substring-no-properties (point-min) (point-max))
+                 "\n")))
+    (cl-mapcar #'(lambda (a b) (if (equal a "") b a)) tmp lst)))
+
+(defun wtag-kakashi-filter2 (lst)
+  "文字列 LST のエレメンツを `wtag-kakashi' の標準入力に通しその結果を戻す."
+  (let* ((exe wtag-kakashi)
+         (dic (or wtag-kakashi-usrdic ""))
+         (args (list "-JK" "-HK" "-aE" dic))
+         (lst (mapcar #'wtag-make-sort-string lst))
+         tmp)
+    (with-temp-buffer
+      (insert (mapconcat #'identity (wtag-safe-sjis lst) "\n"))
+      (apply #'call-process-region
+             (point-min) (point-max) exe 'delete t nil args)
+      (split-string
+       (buffer-substring-no-properties (point-min) (point-max))
+       "\n"))))
+
+(defun wtag-sort-filter (alst)
+  "タグリスト ALST の各 CDR を \
+変数 `wtag-sort-filter' にセットされた関数でフィルタリングして戻す.
+変数 `wtag-sort-filter' が nil なら LST をそのまま戻す."
+  (if (and wtag-sort-filter alst)
+      (let ((ret (funcall wtag-sort-filter (mapcar #'cdr alst))))
+        (cl-mapcar #'(lambda (a b) (cons (car a) b)) alst ret))
+    alst))
 
 (defun wtag-new-append (alist new)
   "ALIST から car が NEW とかぶる要素を取り除いた後 NEW を append して返す."
@@ -1825,79 +1909,80 @@ ARGS は PROGRAM への引数."
 
 ;;;###autoload
 (defun wtag-add-sort-tags (alist)
-  "ALIAST に sort tag を追加したリストで返す.
-ALIST にハナから sort tag が含まれていれば除去され
-対応するタグを元に新しく生成したものに置き換えられる."
+  "タグリスト ALIST に sort tag を追加して返す.
+元から含まれている sort tag は、\
+対応するタグを元に新たに生成されたタグに置き換えられる.\n
+注: `mf-tag-read-alias' で得られるリストを使う場合は
+\(mapcar #'(lambda (a) (cons (car a) (cddr a))) ALIST) \
+等として CDR を組替え \(ALIAS . DATA) の\
+単純な alist にして渡さなければいけない."
   (let ((syms '(title artist album a-artist))
-        srs flt res)
+        ret)
     (dolist (a syms)
-      (let ((tmp (assoc a alist)))
-        (and tmp (setq srs (cons tmp srs)))))
-    (setq flt (wtag-kakasi-list
-               (mapcar #'(lambda (a) (wtag-make-sort-string (cdr a))) srs)))
-    (while srs
-      (setq res (cons (cons (wtag-to-sort-symbol (caar srs)) (car flt)) res))
-      (setq srs (cdr srs)
-            flt (cdr flt)))
-    (wtag-new-append alist res)))
+      (let ((tmp (assq a alist)))
+        (and tmp
+             (setq ret (cons (cons (wtag-to-sort-symbol (car tmp)) (cdr tmp))
+                             ret)))))
+    (wtag-new-append alist (wtag-sort-filter ret))))
 
-(defvar wtag-writable-mode-map nil "`wtag-writable-mode' 用キーマップ.")
-(if wtag-writable-mode-map
-    nil
-  (setq wtag-writable-mode-map
-        (let ((map (make-sparse-keymap))
-              (menu-map (make-sparse-keymap "WTAG")))
-          (define-key map
-            [remap move-beginning-of-line] 'wtag-beginning-of-line)
-          (define-key map [remap move-end-of-line] 'wtag-end-of-line)
-          (define-key map [remap kill-line]        'wtag-kill-line)
-          (define-key map [remap next-line]        'wtag-next-line)
-          (define-key map [remap previous-line]    'wtag-previous-line)
-          (define-key map "\C-i"          'wtag-next-tag)
-          (define-key map [S-tab]         'wtag-previous-tag)
-          (define-key map "\M-{"          'wtag-backward-jump-points)
-          (define-key map "\M-}"          'wtag-forward-jump-points)
-          (define-key map "\M->"          'wtag-end-of-buffer)
-          (define-key map "\C-j"          'undefined)
-          (define-key map "\C-o"          'undefined)
-          (define-key map "\C-m"          'wtag-next-line-tag)
-          (define-key map "\C-x\C-t"      'wtag-transpose-lines)
-          (define-key map "\C-c\C-c"      'wtag-flush-tag-ask)
-          (define-key map "\C-c\C-l"      'wtag-truncate-lines)
-          (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
-          (define-key map "\C-c\C-s"      'wtag-sort-tracks)
-          (define-key map "\C-c="         'wtag-point-file-name)
-          (define-key map "\C-x\C-q"      'wtag-writable-tag-cancel)
-          (define-key map "\C-c\C-q"      'wtag-writable-tag-cancel)
-          (define-key map "\C-x\C-k"      'wtag-writable-tag-cancel)
-          (define-key map "\C-c\C-k"      'wtag-writable-tag-cancel)
-          (define-key map "\C-c\C-i"      'wtag-artwork-load)
-          (define-key map "\C-c\C-o"      'wtag-open-frame)
-          (define-key map "\C-c\C-f"      'wtag-fit-artwork-toggle)
-          (define-key map [drag-n-drop]   'wtag-mouse-load)
-          (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
-          ;; (define-key menu-map [vis-read-only] '("Visualyse rad-only text" . vis-read-only))
-          (define-key menu-map [wtag-point-file-name]
-            '("Point File Name" . wtag-point-file-name))
-          (define-key menu-map [wtag-truncate-lines]
-            '("Truncate Lines" . wtag-truncate-lines))
-          (define-key menu-map [dashes1] '("--"))
-          (define-key menu-map [wtag-fit-artwork-toggle]
-            '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
-          (define-key menu-map [wtag-open-frame]
-            '("Artwork On Other Frame" . wtag-open-frame))
-          (define-key menu-map [wtag-artwork-load]
-            '("Artwork Image Load" . wtag-artwork-load))
-          (define-key menu-map [dashes2] '("--"))
-          (define-key menu-map [wtag-sort-tracks]
-            '("Album Name Sort" . wtag-sort-tracks))
-          (define-key menu-map [wtag-artistname-copy-all]
-            '("Album Artist Name Set All" . wtag-artistname-copy-all))
-          (define-key menu-map [wtag-flush-tag-ask]
-            '("Write And Quit" . wtag-flush-tag-ask))
-          (define-key menu-map [wtag-writable-tag-cancel]
-            '("Cancel" . wtag-writable-tag-cancel))
-          map)))
+(defvar wtag-writable-mode-map
+  (let ((map (make-sparse-keymap))
+        (menu-map (make-sparse-keymap "WTAG")))
+    (define-key map
+      [remap move-beginning-of-line] 'wtag-beginning-of-line)
+    (define-key map [remap move-end-of-line] 'wtag-end-of-line)
+    (define-key map [remap kill-line]        'wtag-kill-line)
+    (define-key map [remap next-line]        'wtag-next-line)
+    (define-key map [remap previous-line]    'wtag-previous-line)
+    (define-key map "\C-i"          'wtag-next-tag)
+    (define-key map [S-tab]         'wtag-previous-tag)
+    (define-key map "\M-{"          'wtag-backward-jump-points)
+    (define-key map "\M-}"          'wtag-forward-jump-points)
+    (define-key map "\M->"          'wtag-end-of-buffer)
+    (define-key map "\C-j"          'undefined)
+    (define-key map "\C-o"          'undefined)
+    (define-key map "\C-m"          'wtag-next-line-tag)
+    (define-key map "\C-x\C-t"      'wtag-transpose-lines)
+    (define-key map "\C-c\C-c"      'wtag-flush-tag-ask)
+    (define-key map "\C-c\C-l"      'wtag-truncate-lines)
+    (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
+    (define-key map "\C-c\C-t"      'wtag-track-number-adjust)
+    (define-key map "\C-c\C-s"      'wtag-sort-tracks)
+    (define-key map "\C-c="         'wtag-point-file-name)
+    (define-key map "\C-x\C-q"      'wtag-writable-tag-cancel)
+    (define-key map "\C-c\C-q"      'wtag-writable-tag-cancel)
+    (define-key map "\C-x\C-k"      'wtag-writable-tag-cancel)
+    (define-key map "\C-c\C-k"      'wtag-writable-tag-cancel)
+    (define-key map "\C-c\C-i"      'wtag-artwork-load)
+    (define-key map "\C-c\C-o"      'wtag-open-frame)
+    (define-key map "\C-c\C-f"      'wtag-fit-artwork-toggle)
+    (define-key map [drag-n-drop]   'wtag-mouse-load)
+    (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
+    ;; (define-key menu-map [vis-read-only] '("Visualyse rad-only text" . vis-read-only))
+    (define-key menu-map [wtag-point-file-name]
+      '("Point File Name" . wtag-point-file-name))
+    (define-key menu-map [wtag-truncate-lines]
+      '("Truncate Lines" . wtag-truncate-lines))
+    (define-key menu-map [dashes1] '("--"))
+    (define-key menu-map [wtag-fit-artwork-toggle]
+      '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
+    (define-key menu-map [wtag-open-frame]
+      '("Artwork On Other Frame" . wtag-open-frame))
+    (define-key menu-map [wtag-artwork-load]
+      '("Artwork Image Load" . wtag-artwork-load))
+    (define-key menu-map [dashes2] '("--"))
+    (define-key menu-map [wtag-sort-tracks]
+      '("Album Name Sort" . wtag-sort-tracks))
+    (define-key menu-map [wtag-track-number-adjust]
+      '("Track Number Adjust" . wtag-track-number-adjust))
+    (define-key menu-map [wtag-artistname-copy-all]
+      '("Album Artist Name Set All" . wtag-artistname-copy-all))
+    (define-key menu-map [wtag-flush-tag-ask]
+      '("Write And Quit" . wtag-flush-tag-ask))
+    (define-key menu-map [wtag-writable-tag-cancel]
+      '("Cancel" . wtag-writable-tag-cancel))
+    map)
+  "`wtag-writable-mode' 用キーマップ.")
 
 (define-derived-mode wtag-writable-mode text-mode "Editable Tag"
   "Music file writable tag mode.
@@ -1914,83 +1999,81 @@ ALIST にハナから sort tag が含まれていれば除去され
   (set (make-local-variable 'query-replace-skip-read-only) t)
   (setq-local truncate-lines wtag-truncate-lines))
 
-(defvar wtag-view-mode-map nil "`wtag-view-mode' 用キーマップ.")
-(if wtag-view-mode-map
-    nil
-  (setq wtag-view-mode-map
-	(let ((map (make-sparse-keymap))
-              (menu-map (make-sparse-keymap "WTAG")))
-	  (define-key map "0"               'digit-argument)
-	  (define-key map "1"               'digit-argument)
-	  (define-key map "2"               'digit-argument)
-	  (define-key map "3"               'digit-argument)
-	  (define-key map "4"               'digit-argument)
-	  (define-key map "5"               'digit-argument)
-	  (define-key map "6"               'digit-argument)
-	  (define-key map "7"               'digit-argument)
-	  (define-key map "8"               'digit-argument)
-	  (define-key map "9"               'digit-argument)
-	  (define-key map "\M-g"            'wtag-goto-line)
-	  (define-key map " "               'next-line)
-	  (define-key map [tab]             'next-line)
-	  (define-key map [backtab]         'previous-line)
-          (define-key map [?\S- ]           'previous-line)
-	  (define-key map "\C-m"            'next-line)
-	  (define-key map "n"               'next-line)
-	  (define-key map "p"               'previous-line)
-	  (define-key map "\C-c\C-l"        'wtag-truncate-lines)
-          (define-key map "w"               'wtag-point-file-name-to-kill-buffer)
-          (define-key map "="               'wtag-point-file-name)
-          (define-key map "f"               'wtag-fit-artwork-toggle)
-          (define-key map "\C-c\C-f"        'wtag-fit-artwork-toggle)
-          (define-key map "F"               'wtag-open-frame)
-          (define-key map "\C-c\C-a"        'wtag-popup-artwark)
-          (define-key map "g"               'wtag-reload-buffer)
-          (define-key map "m"               'wtag-mark-file)
-          (define-key map "d"               'wtag-mark-delete)
-          (define-key map "x"               'wtag-delete)
-          (define-key map "u"               'wtag-unmark-file)
-          (define-key map [backspace]       'wtag-unmark-previous-file)
-          (define-key map "U"               'wtag-unmark-all-file)
-          (define-key map "C"               'wtag-copy)
-          (define-key map "P"               'wtag-music-play)
-          (define-key map "\C-c\C-c"        'wtag-kill-process)
-          (define-key map "\C-c="           'wtag-stat-view)
-	  (define-key map "q"               'quit-window)
-	  (define-key map "Q"               'wtag-exit)
-          (define-key map [drag-n-drop]     'wtag-mouse-load)
-	  (define-key map "\C-x\C-q"        'wtag-writable-tag)
-          (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
-          (define-key menu-map
-            [wtag-stat-view] '("Point File Status" . wtag-stat-view))
-          (define-key menu-map
-            [wtag-point-file-name] '("Point File Name" . wtag-point-file-name))
-          (define-key menu-map
-            [wtag-truncate-lines] '("Truncate Lines" . wtag-truncate-lines))
-          (define-key menu-map
-            [wtag-mark-delete] '("Delete Point File" . wtag-mark-delete))
-          (define-key menu-map
-            [wtag-mark-file]     '("Mark Point File" . wtag-mark-file))
-          (define-key menu-map [dashes1] '("--"))
-          (define-key menu-map
-            [wtag-kill-process] '("Kill Paly Process" . wtag-kill-process))
-          (define-key menu-map
-            [wtag-music-play]   '("Play Point File" . wtag-music-play))
-          (define-key menu-map [dashes2] '("--"))
-          (define-key menu-map
-            [wtag-reload-buffer] '("Reload Buffer" . wtag-reload-buffer))
-          (define-key menu-map
-            [wtag-open-frame] '("Artwork On Other Frame" . wtag-open-frame))
-          (define-key menu-map
-            [wtag-fit-artwork-toggle]
-            '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
-          (define-key menu-map [dashes3] '("--"))
-          (define-key menu-map
-            [wtag-writable-tag] '("Writable Tag Mode" . wtag-writable-tag))
-          (define-key menu-map
-            [wtag-exit]   '("Quit & Kill Buffer" . wtag-exit))
-          (define-key menu-map [quit-window] '("Quit" . quit-window))
-	  map)))
+(defvar wtag-view-mode-map 
+  (let ((map (make-sparse-keymap))
+        (menu-map (make-sparse-keymap "WTAG")))
+    (define-key map "0"               'digit-argument)
+    (define-key map "1"               'digit-argument)
+    (define-key map "2"               'digit-argument)
+    (define-key map "3"               'digit-argument)
+    (define-key map "4"               'digit-argument)
+    (define-key map "5"               'digit-argument)
+    (define-key map "6"               'digit-argument)
+    (define-key map "7"               'digit-argument)
+    (define-key map "8"               'digit-argument)
+    (define-key map "9"               'digit-argument)
+    (define-key map "\M-g"            'wtag-goto-line)
+    (define-key map " "               'next-line)
+    (define-key map [tab]             'next-line)
+    (define-key map [backtab]         'previous-line)
+    (define-key map [?\S- ]           'previous-line)
+    (define-key map "\C-m"            'next-line)
+    (define-key map "n"               'next-line)
+    (define-key map "p"               'previous-line)
+    (define-key map "\C-c\C-l"        'wtag-truncate-lines)
+    (define-key map "w"               'wtag-point-file-name-to-kill-buffer)
+    (define-key map "="               'wtag-point-file-name)
+    (define-key map "f"               'wtag-fit-artwork-toggle)
+    (define-key map "\C-c\C-f"        'wtag-fit-artwork-toggle)
+    (define-key map "F"               'wtag-open-frame)
+    (define-key map "\C-c\C-a"        'wtag-popup-artwark)
+    (define-key map "g"               'wtag-reload-buffer)
+    (define-key map "m"               'wtag-mark-file)
+    (define-key map "d"               'wtag-mark-delete)
+    (define-key map "x"               'wtag-delete)
+    (define-key map "u"               'wtag-unmark-file)
+    (define-key map [backspace]       'wtag-unmark-previous-file)
+    (define-key map "U"               'wtag-unmark-all-file)
+    (define-key map "C"               'wtag-copy)
+    (define-key map "P"               'wtag-music-play)
+    (define-key map "\C-c\C-c"        'wtag-kill-process)
+    (define-key map "\C-c="           'wtag-stat-view)
+    (define-key map "q"               'quit-window)
+    (define-key map "Q"               'wtag-exit)
+    (define-key map [drag-n-drop]     'wtag-mouse-load)
+    (define-key map "\C-x\C-q"        'wtag-writable-tag)
+    (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
+    (define-key menu-map
+      [wtag-stat-view] '("Point File Status" . wtag-stat-view))
+    (define-key menu-map
+      [wtag-point-file-name] '("Point File Name" . wtag-point-file-name))
+    (define-key menu-map
+      [wtag-truncate-lines] '("Truncate Lines" . wtag-truncate-lines))
+    (define-key menu-map
+      [wtag-mark-delete] '("Delete Point File" . wtag-mark-delete))
+    (define-key menu-map
+      [wtag-mark-file]     '("Mark Point File" . wtag-mark-file))
+    (define-key menu-map [dashes1] '("--"))
+    (define-key menu-map
+      [wtag-kill-process] '("Kill Paly Process" . wtag-kill-process))
+    (define-key menu-map
+      [wtag-music-play]   '("Play Point File" . wtag-music-play))
+    (define-key menu-map [dashes2] '("--"))
+    (define-key menu-map
+      [wtag-reload-buffer] '("Reload Buffer" . wtag-reload-buffer))
+    (define-key menu-map
+      [wtag-open-frame] '("Artwork On Other Frame" . wtag-open-frame))
+    (define-key menu-map
+      [wtag-fit-artwork-toggle]
+      '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
+    (define-key menu-map [dashes3] '("--"))
+    (define-key menu-map
+      [wtag-writable-tag] '("Writable Tag Mode" . wtag-writable-tag))
+    (define-key menu-map
+      [wtag-exit]   '("Quit & Kill Buffer" . wtag-exit))
+    (define-key menu-map [quit-window] '("Quit" . quit-window))
+    map)
+  "`wtag-view-mode' 用キーマップ.")
 
 (define-derived-mode wtag-view-mode text-mode "Wtag"
   "Music file tag view mode.
@@ -2001,25 +2084,23 @@ ALIST にハナから sort tag が含まれていれば除去され
   (setq-local default-directory (wtag-get-common-property-value 'directory))
   (setq-local wtag-beginning-line-of-track 3))
 
-(defvar wtag-image-mode-map nil "`wtag-image-mode' 用キーマップ.")
-(if wtag-image-mode-map
-    nil
-  (setq wtag-image-mode-map
-        (let ((map (make-sparse-keymap))
-              (menu-map (make-sparse-keymap "WTAG")))
-          (define-key map "\C-c\C-f"      'wtag-fit-artwork-toggle)
-          (define-key map "f"             'wtag-fit-artwork-toggle)
-          (define-key map "\C-c\C-i"      'wtag-artwork-load)
-          (define-key map "\C-c\C-c"      'undefined)
-          (define-key map "Q"             'quit-window)
-          (define-key map "q"             'wtag-quit)
-          (define-key map [drag-n-drop]   'wtag-mouse-load)
-          (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
-          (define-key menu-map [wtag-fit-artwork-toggle]
-            '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
-          (define-key menu-map
-            [wtag-artwork-load] '("Artwork load" . wtag-artwork-load))
-          map)))
+(defvar wtag-image-mode-map
+  (let ((map (make-sparse-keymap))
+        (menu-map (make-sparse-keymap "WTAG")))
+    (define-key map "\C-c\C-f"      'wtag-fit-artwork-toggle)
+    (define-key map "f"             'wtag-fit-artwork-toggle)
+    (define-key map "\C-c\C-i"      'wtag-artwork-load)
+    (define-key map "\C-c\C-c"      'undefined)
+    (define-key map "Q"             'quit-window)
+    (define-key map "q"             'wtag-quit)
+    (define-key map [drag-n-drop]   'wtag-mouse-load)
+    (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
+    (define-key menu-map [wtag-fit-artwork-toggle]
+      '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
+    (define-key menu-map
+      [wtag-artwork-load] '("Artwork load" . wtag-artwork-load))
+    map)
+  "`wtag-image-mode' 用キーマップ.")
 
 (define-derived-mode wtag-image-mode image-mode "wtag-image"
   "Music file tag image mode.

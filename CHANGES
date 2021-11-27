@@ -1,5 +1,26 @@
 # -*- mode: org -*-
-#+date: Fri Oct 15 15:03:01 2021
+#+date: Fri Nov 26 17:10:54 2021
+#+author: fubuki
+* wtag 1.20
+** wtag
+*** Change: kakasi の挙動調整 for Windows
+    MS版カカシがかなり昔にメンテ停止していて SJIS にしか対応していない為の措置。
+    変数 `system-type' が windows-nt(または ms-dos)の場合、
+    エラー回避するため sjis に無い文字を含むタグは kakasi.exe に渡さないようにする(無変換のまま戻る).
+
+*** fix: タイトルタグが無いときファイル名がタイトルになる
+    これがいつのまにか死んでいたので修正.
+
+*** Add: function `wtag-track-number-adjust'. variable `wtag-track-number-adjust-without-query'. 
+    すべてのトラックバンバーを分数番号("トラック/トラック数")化する.
+    ライタブルモードの C-c C-t にバインド.
+
+** mf-lib-mp3
+   (wtag から呼ばれて)ソートタグが追加されたとき、alias が解決できなかったのを修正.
+   `mf-id33-tag-default-add-alias' にセットされた alias が追加されるようにした.
+   デフォルトではこの変数が `mf-id33-tag-musiccenter-alias' で MusicCenter タイプになる.
+   `mf-id33-tag-lame-alias' にしておくことによって LAME type にできる.
+
 * wtag 1.19
 ** wtag
 *** カスタマイズ変数 `wtag-force-load' のデフォルトを nil に変更

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.6 $$Name:  $
+;; Version: $Revision: 1.7 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.6 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 1.7 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -176,6 +176,11 @@
   '((s-album . "ALBUMSORT") (s-a-artist . "ALBUMARTISTSORT")
     (s-title . "TITLESORT") (s-artist . "ARTISTSORT")))
 
+(defcustom mf-id33-tag-default-add-alias mf-id33-tag-musiccenter-alias
+  "Default sort tag style."
+  :type  '(repeat (cons symbol string))
+  :group 'music-file)
+
 (defcustom mf-id32-tag-alias
   '((title . "TT2") (artist . "TP1") (album . "TAL") (genre . "TCO") (composer . "TCM") (artist3 . "TP3") (track . "TRK") (disk . "TPA") (year . "TYE") (a-artist . "TP2") (comment . "COM") (copy . "TCR") (cover . "PIC") (artwork . "PIC") (lyric . "ULT") (enc . "TEN") (group . "GP1") (bpm . "TBP"))
   "mp3 id32 tag alias."
@@ -291,7 +296,8 @@ Bug.同期形式には対応していない."
       (setq sym (cdr (assoc "ID3\3" (nth 4 mf-mp3-function-list))))
       (or (member (car alias-list) (eval sym))
           (set sym (append (eval sym) alias-list))))))
-    
+
+
 (defun mf-oma-tags-analyze (tags &optional no-binary)
   "`mf-oma-tags-collect' が生成した TAGS からそれが指している値を読み出しプロパティリストとして返す.
 プロパティの概要は以下の通り.
@@ -304,7 +310,7 @@ Bug.同期形式には対応していない."
 :file File Name 文字列データ. 無ければ空文字. これもコーディングに関しては :dsc と同じ.
 NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに加えない."
   (let (result)
-    (dolist (a tags (reverse result))
+    (dolist (a tags)
       (cond
        ;; "USLT"<4> len<4> flag<2>  CODE<1> "eng"<3> [dsc] term<1 or 2> str term<1 or 2>
        ((member (car a) '("COMM" "USLT"))
@@ -360,8 +366,8 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
         (let* ((code (cdr (assoc (char-after) mf-oma-encode)))
                (term (mf-term-code code))
                (mime (buffer-substring-no-properties (progn (forward-char) (point))
-                                       (progn (re-search-forward "\0" nil t)
-                                              (match-beginning 0))))
+                                                     (progn (re-search-forward "\0" nil t)
+                                                            (match-beginning 0))))
                (type (prog1 (char-after) (forward-char)))
                (file
                 (mf-chop
@@ -415,7 +421,9 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
                              "unknown")))
           (when (rassoc (car a) mf-id33-tag-musiccenter-alias)
             (mf-set-sort-alias mf-id33-tag-musiccenter-alias))
-          (setq result (cons (list :tag (car a) :data (mf-chop str)) result))))))))
+          (setq result (cons (list :tag (car a) :data (mf-chop str)) result))))))
+    (unless mf-mp3-sort-alias (mf-set-sort-alias mf-id33-tag-default-add-alias))
+    (reverse result)))
 
 (defun mf-geob-file-name-p (code)
   "(point) にファイル名が存在するなら NON-NIL."
