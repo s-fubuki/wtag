@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.20 $$Name:  $
+;; Version: @(#)$Revision: 1.21 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.20 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.21 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -1274,31 +1274,39 @@ PREFIX をふたつ打つとリバースになる."
 
 (defvar wtag-track-number-adjust-without-query nil)
 
+(defun wtag-track-regular (str &optional def)
+  "トラック(ディスク)番号文字列 STR を番号/総数の分数文字列にして返す.
+総数は DEF になるが省略すると STR が持つ総数になり、それも無ければ 1 になる."
+  (let* ((str (if (string-equal str wtag-not-available-string) "1" str))
+         (tmp (split-string str "/"))
+         (def (if def (number-to-string def))))
+    (format "%d/%d"
+            (string-to-number (car tmp))
+            (string-to-number (or def (cadr tmp) "1")))))
+
 (defun wtag-track-number-adjust ()
   "すべてのトラックバンバーを \"トラック/トラック数\" というフォーマットにする."
   (interactive)
   (let ((total wtag-total-track)
-        trk
-        beg end)
+        trk beg end)
     (when (or wtag-track-number-adjust-without-query
               (y-or-n-p "Track number adjust?"))
       (save-excursion
         (goto-char (point-min))
-        (setq trk (wtag-get-name 'old-disk 'end-disk)
-              beg (wtag-move-to-property 'disk)
+        (setq trk (wtag-get-property-value 'old-disk)
+              beg (wtag-move-to-property 'old-disk)
               end (wtag-move-to-property 'end-disk))
+        (setq trk (if (zerop (string-to-number trk)) (buffer-substring beg end) trk))
         (delete-region beg end)
-        (insert (format "%d/%d" (string-to-number trk)
-                        (if (string-match "/\\(?1:.*\\)" trk)
-                            (string-to-number (match-string 1 trk))
-                          1)))
+        (insert (wtag-track-regular trk))
         (forward-line 2)
         (while (not (eobp))
-          (setq trk (string-to-number (wtag-get-property-value 'old-track))
+          (setq trk (wtag-get-property-value 'old-track)
                 beg (wtag-move-to-property 'old-track)
                 end (wtag-move-to-property 'end-track))
+          (setq trk (if (zerop (string-to-number trk)) (buffer-substring beg end) trk))
           (delete-region beg end)
-          (insert (format "%d/%d" trk total))
+          (insert (wtag-track-regular trk total))
           (forward-line))))
     (message nil)))
 

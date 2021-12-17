@@ -1,7 +1,12 @@
 # -*- mode: org -*-
-#+date: Fri Nov 26 17:10:54 2021
+#+date: Fri Dec 17 14:09:18 2021
 #+author: fubuki
-* wtag 1.20
+* wtag 1.21 Fri Dec 17 14:09:18 2021
+** fix: `wtag-track-number-adjust'
+   元ファイルにトラックタグが無ければエディットバッファに書かれた数値を使う.
+   但し分母側の総数は実際の総数になる.
+
+* wtag 1.20 Fri Nov 26 17:10:54 2021
 ** wtag
 *** Change: kakasi の挙動調整 for Windows
     MS版カカシがかなり昔にメンテ停止していて SJIS にしか対応していない為の措置。
