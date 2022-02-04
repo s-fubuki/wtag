@@ -1,32 +1,67 @@
 # -*- mode: org -*-
-#+date: Fri Dec 17 14:09:18 2021
-#+author: fubuki
-* wtag 1.21 Fri Dec 17 14:09:18 2021
-** fix: `wtag-track-number-adjust'
-   元ファイルにトラックタグが無ければエディットバッファに書かれた数値を使う.
-   但し分母側の総数は実際の総数になる.
+#+date: Mon Jan 31 14:51:12 2022
+* mf-lib-flac 1.52 - Mon Jan 31 14:51:12 2022
+** Fix: 時間用のダミータグもヘッダに含めて書き込んでいたのを修正.
+   読み込み等でエラーになる場合がありました. 申し訳ありませんでした.
 
-* wtag 1.20 Fri Nov 26 17:10:54 2021
-** wtag
-*** Change: kakasi の挙動調整 for Windows
-    MS版カカシがかなり昔にメンテ停止していて SJIS にしか対応していない為の措置。
-    変数 `system-type' が windows-nt(または ms-dos)の場合、
-    エラー回避するため sjis に無い文字を含むタグは kakasi.exe に渡さないようにする(無変換のまま戻る).
+*** バグ版で生成してしまったデータの修復法
+    mf-lib-flac.el をこの版に差替えて Emacs を再起動し、
+    タグ無指定で mf-tag-write を実行すれば、ゴミを除去してヘッダを再パックします.
 
-*** fix: タイトルタグが無いときファイル名がタイトルになる
-    これがいつのまにか死んでいたので修正.
+    : (mf-tag-write "file.flac")
 
-*** Add: function `wtag-track-number-adjust'. variable `wtag-track-number-adjust-without-query'. 
-    すべてのトラックバンバーを分数番号("トラック/トラック数")化する.
-    ライタブルモードの C-c C-t にバインド.
+    Backup を作らず、タイムスタンプを継承する場合
 
-** mf-lib-mp3
-   (wtag から呼ばれて)ソートタグが追加されたとき、alias が解決できなかったのを修正.
-   `mf-id33-tag-default-add-alias' にセットされた alias が追加されるようにした.
-   デフォルトではこの変数が `mf-id33-tag-musiccenter-alias' で MusicCenter タイプになる.
-   `mf-id33-tag-lame-alias' にしておくことによって LAME type にできる.
+    : (mf-tag-write "file.flac" nil 'no-backup 'stamp-copy)
 
-* wtag 1.19
+    ディレクトリごと指定できるコマンド repac-tag もつけておきます.
+    指定したディレクトリ内の汚染された flac file だけを書き直しします.
+    prefix 起動すると backup を作らず、タイムスタンプを継承します.
+
+#+BEGIN_SRC emacs-lisp
+(require 'mf-tag-write)
+(defun repac-tag (dir prefix)
+  "DIR 下 の flac が汚染されていればクリーンアップする.
+PREFIX 在りだとバックアップなし、タイムスタンプ継承になります."
+  (interactive "D: \nP")
+  (let ((files (directory-files dir t "\\.flac\\'")))
+    (dolist (f files)
+      (if (tag-pollution-p f)
+          (apply #'mf-tag-write f (and prefix '(nil no-backup stamp-copy)))
+        (message "It's Clean: %s" f)))))
+
+(defun tag-pollution-p (flac)
+  "flac が汚染タグなら non-nil を戻す."
+  (let ((tags (mf-tag-read-alist flac nil t))
+        result)
+    (dolist (tag tags)
+      (if (equal (car tag) mf-time-dummy)
+          (setq result (cons tag result))))
+    (if (= 2 (length result))
+        'pollution)))
+
+(provide 'repac-tag)
+#+END_SRC
+
+** Add: 変数 `mf-flac-delete-block'
+   Music Center 2.5.0 で flac 取り込みをすると APPLICATION ブロックがつくようになったので
+   これも削除できるようにしました.
+   デリートしたいブロックがある場合、変数 `mf-flac-delete-block' にリストで指定します.
+
+   これに伴ない PADDING 削除指定専用だった変数 `mf-flac-write-safe-pad' は廃止にしたので
+   こちらで再設定してください.
+   指定できるのは PADDING と APPLICATION で、
+   削除したいメタブロックシンボルを指定します(以前の変数とは逆なので注意).
+
+   : (setq mf-flac-delete-block '(PADDING APPLICATION))
+
+** Change: 変数 `mf-lib-flac-version' について
+   Source 管理法を変更したため数値が大きく上がっています.
+   あとこのファイルが元々見辛いとは思っていましたが、
+   あとから見たとき追加履歴ごとに日付が無いのが致命的に判り難いと今頃気づいたので(遅すぎ)、
+   卑近のもので判るものだけざっと追加しておきました.
+
+* wtag 1.19 - Fri Oct 15 15:03:01 2021
 ** wtag
 *** カスタマイズ変数 `wtag-force-load' のデフォルトを nil に変更
     編集モードになっていなくても D&D でジャケット変更できるようにする変数で、
@@ -74,7 +109,7 @@
    計算箇所で意図しないでエラーになりおかしな止まり方をしていた.
 
 
-* wtag 1.18
+* wtag 1.18 - Sat Sep 18 11:12:21 2021
 ** wtag
 *** mf-tag-read: 時間とビットレートの取得
     ダミータグ " *time" に秒数とビットレート(1/1000)をリストで得ます.
@@ -137,11 +172,11 @@
   以前からグシャグシャな utility はサンプルとして如何なものかと思っていたので、
   lib-wav 追加でまたファイルが増えたのを契機に除外しました.
 
-* wtag 1.17
+* wtag 1.17 - Sat Aug  8 08:06:36 2020
 ** wtag:wtag-regular-file-name
    <> 追加と変数化.
 
-* wtag 1.16
+* wtag 1.16 - Fri May 29 10:15:49 2020
 ** Add: トラック・ナンバー・タグを変更するとファイル名もそれに合わせてリネームする.
    変数 `wtag-track-prefix-rename' が non-nil なら
    トラック番号を変更すると書き出すときにファイル名もそれに合わせてリネームする.

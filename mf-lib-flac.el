@@ -1,8 +1,8 @@
 ;;; mf-lib-flac.el -- This library for mf-tag-write.el  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2020, 2021 fubuki
+;; Copyright (C) 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.4 $$Nmae$
+;; Version: @(#)$Revision: 1.52 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.4 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.52 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -80,9 +80,22 @@ flac の tag は case insensitive らしいので注意.
   :type  '(repeat (cons symbol string))
   :group 'music-file)
 
+(make-obsolete-variable
+ 'mf-flac-write-safe-pad
+ "逆に `mf-flac-delete-block' に削除したいブロックをリスト指定する."
+ "1.25")
 (defcustom mf-flac-write-safe-pad t
-  "*non-nil なら PADDING ブロックを削除しない."
+  "*non-nil なら PADDING, APPLICATION ブロックを削除しない."
   :type  'boolean
+  :group 'music-file)
+
+(defcustom mf-flac-delete-block
+  (if (and (boundp 'mf-flac-write-safe-pad)
+           (null mf-flac-write-safe-pad))
+      '(PADDING))
+  "削除するブロックのリスト."
+  :type  '(choice (const nil)
+                  (repeat (choice (const PADDING) (const APPLICATION))))
   :group 'music-file)
 
 (defconst mf-flac-meta-data-type
@@ -103,28 +116,32 @@ flac の tag は case insensitive らしいので注意.
 ;;       `- mf-flac-picture-analyze
 ;;           `- mf-split-picture-header
 
-(defun read-flac (file)
-  "テスト用実行関数.
-C-x C-e でエコーエリアに結果を吐き出すと重いので.
-C-u を付けるべし."
-  (interactive "fflac file: ")
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (insert-file-contents-literally file)
-    (goto-char (point-min))
-    (unless (looking-at "fLaC") (error "Not Flac file %s" file))
-    (mf-flac-analyze (mf-flac-meta-block-collect (match-end 0)))))
-
-(defun mf-flac-meta-read (file &optional length)
-  "flac FILE の meta block のリストを返す."
+(defun mf-read-flac (file &optional block-only)
+    "テスト用実行関数.
+基本的にタグリストを返すが BLOCK-ONLY が non-nil ならブロック list を返す."
   (interactive "fFlac: ")
-  (let ((length (or length (* 1024 10))))
+  (let (result)
     (with-temp-buffer
-      (insert-file-contents-literally file nil 0 length)
+      (insert-file-contents-literally file)
       (set-buffer-multibyte nil)
-      (goto-char (point-min))
       (unless (looking-at "fLaC") (error "Not FLAC file %s" file))
-      (message "%s" (mf-flac-meta-block-collect (match-end 0))))))
+      (setq result (mf-flac-meta-block-collect (match-end 0)))
+      (if block-only
+          result
+        (mf-flac-analyze result)))))
+
+(defun mf-flac-APPLICATION-identifier (file)
+  "flac FILE の APPLICATION ブロックの識別子の文字列を得る.
+当該ブロックが無ければ nil."
+  (interactive "fFlac: ")
+  (let (app pnt)
+    (with-temp-buffer
+      (insert-file-contents-literally file)
+      (set-buffer-multibyte nil)
+      (unless (looking-at "fLaC") (error "Not FLAC file %s" file))
+      (when (setq app (assq 'APPLICATION (mf-flac-meta-block-collect (match-end 0))))
+        (setq pnt (+ (cadr app) 4))
+        (buffer-substring pnt (+ pnt 4))))))
 
 (defun mf-flac-analyze (meta &optional no-binary)
   "flac ファイルが開かれたバッファから
@@ -228,25 +245,40 @@ POS が省略されると現在のポイントが使われる.
           (cons nil (reverse result))
         (reverse result)))))
 
+(defun mf-flac-repiriod (pos last)
+  "POS にメタブロックエリアの先頭を指定し、
+シンボル LAST のブロックまでブロック先頭のマーカをすべて打ち直す."
+  (let ((table mf-flac-meta-data-type)
+        meta len term)
+    (save-excursion
+      (goto-char pos)
+      (while (and (not (eobp)) (not term))
+        (setq meta (logand (char-after) 127)
+              len  (mf-buffer-read-3-bytes (1+ (point))))
+        (delete-char 1)
+        (if (eq (cdr (assq meta table)) last)
+            (progn
+              (insert-char (logior meta 128))
+              (setq term t))
+          (insert-char meta))
+        (goto-char (+ 4 len (1- (point))))))))
+
 (defun mf-tag-alias-decode (tag)
   (let ((alias mf-flac-tag-alias))
     (cdr (assq tag alias))))
 
-(defun mf-flac-vorbis-comment-pack (plist &optional last)
+(defun mf-flac-vorbis-comment-pack (plist)
   "PLIST の束から VORBIS_COMMENT META 要素だけまとめヘッダ形式のバイナリの塊にする.
-`flac-cover-tag-name' 等は弾かれる.
-LAST が NON-NIL なら最終メタブロックの印を付ける."
+`flac-cover-tag-name' 等は弾かれる."
   (let (type meta vendor frame (count 0))
     (setq type (car (rassq 'VORBIS_COMMENT mf-flac-meta-data-type)))
-    (when last (setq type (logior type 128)))
     (dolist (a (reverse plist))
       (let ((tag (plist-get a :tag)))
         (cond
          ((string-equal tag mf-flac-vendor)
           (setq vendor
                 (encode-coding-string (or (plist-get a :data) "") 'utf-8)))
-         ((or (string-match tag mf-type-dummy)
-              (string-match tag flac-cover-tag-name))
+         ((or (equal tag flac-cover-tag-name) (string-match "\\` " tag))
           nil)
          (t
           (setq frame (encode-coding-string
@@ -279,15 +311,12 @@ LAST が NON-NIL なら最終メタブロックの印を付ける."
       (if (equal (upcase (plist-get a :tag)) (upcase tag-data))
           (throw 'break a)))))
 
-(defun mf-flac-picture-pack (plist &optional last)
-  "PLIST の束から PICTURE META Block の塊にして返す.
-LAST が NON-NIL ならラストブロックの印をつける."
+(defun mf-flac-picture-pack (plist)
+  "PLIST の束からアートワークが在れば PICTURE META Block の塊にして返す.無いなら nil."
   (let ((type (car (rassq 'PICTURE mf-flac-meta-data-type)))
         ;; APIC がなければここで NIL.
         (lst (mf-match-tag flac-cover-tag-name plist))
         meta tmp)
-    (when last (setq type (logior type 128)))
-    ;; last ならひとつ前のブロックにラストビットを立てなけりゃいけない!
     (if (null lst)
         nil
       (dolist (p '(:type :mime :pdsc :width :height :depth :index :data) meta)
@@ -302,13 +331,11 @@ LAST が NON-NIL ならラストブロックの印をつける."
           (setq meta (concat meta (mf-long-word (plist-get lst p)))))))
       (concat (format "%c" type) (mf-3-byte-char (length meta)) meta))))
 
-(defun mf-pack-flac (tags last)
+(defun mf-pack-flac (tags)
   "TAGS をバイナリパックにして(生の META TAG にする)
 '((VORBIS_COMMENT . textmeta) (PICTURE . picturemeta)) の alist で返す."
-  (let* ((pic-last (if (eq 'PICTURE last) t))
-         (com-last (if (eq 'VORBIS_COMMENT last) t))
-         (pics (mf-flac-picture-pack tags pic-last))
-         (coms (mf-flac-vorbis-comment-pack tags com-last)))
+  (let ((pics (mf-flac-picture-pack tags))
+        (coms (mf-flac-vorbis-comment-pack tags)))
     (append (list (cons 'VORBIS_COMMENT coms))
             (and pics (list (cons 'PICTURE pics))))))
 
@@ -323,14 +350,27 @@ LAST が NON-NIL ならラストブロックの印をつける."
 (defun mf-nodelete-last (meta del pictag)
   "META の最後尾の要素を返す.
 但し DEL に含まれる場合はスキップされその次のものになる.
-tag で PICTURE 追加させる場合も PICTAG non-nil になり例外処理." ; 判りにく!
-  (let* ((meta (mapcar #'car meta))
-         (del  (delq 'VORBIS_COMMENT (mapcar #'car del)))
-         (del  (if pictag (delq 'PICTURE del) del)))
-    (catch 'break
-      (dolist (a (reverse meta))
-        (unless (memq a del)
-          (throw 'break a))))))
+tag で PICTURE を追加させる場合も PICTAG non-nil になり例外処理." ; 判りにく!
+  (let ((meta (mapcar #'car meta))
+        (del  (mapcar #'car del)))
+    (mapc #'(lambda (c) (setq meta (remq c meta)))
+          (list 'VORBIS_COMMENT (and pictag 'PICTURE) nil))
+    (car (reverse meta))))
+
+(defun mf-sym-append (main sub)
+  "MAIN と重複した要素を取り除いた SUB を MAIN にアペンドする."
+  (let (ap)
+    (dolist (s sub)
+      (unless (assq (car s) main)
+        (setq ap (cons s ap))))
+    (append main ap)))
+
+(defun mf-now-blocks (org del pac)
+  "最終的な(書き戻し予定の)メタブロックリストを返す.
+ORG は元の, DEL は削除する, PAC は追加されるブロックリスト."
+  (mapc #'(lambda (s) (setq del (remove (assq (car s) del) del))) pac)
+  (mapc #'(lambda (s) (setq org (remove (assq (car s) org) org))) del)
+  (mf-sym-append org pac))
 
 (defun mf-flac-write-buffer (tags &optional no-backup safe-pad)
   "カレントバッファに読み込まれている flac バイナリのタグを TAGS に差し替える.
@@ -338,12 +378,11 @@ NO-BACKUP が 非NIL なら元ファイイルを残さない."
   (let* ((file   mf-current-file)
          (mf-current-case 'fold)
          ;; この段階で tmp に元のメタブロックデータが順通りに入っている
-         (tmp    (mf-flac-meta-block-collect
-                  (progn (goto-char (point-min))
-                         (search-forward "fLaC" nil t) (point))))
-         ;; tmp に PADDING があり削除するなら別途保存
-         (pad    (and (null (or safe-pad mf-flac-write-safe-pad))
-                      (assq 'PADDING tmp)))
+         (meta   (progn (goto-char (point-min))
+                        (search-forward "fLaC" nil t) (point)))
+         (tmp    (mf-flac-meta-block-collect meta))
+         ;; tmp に `mf-flac-delete-block' (削除リスト)があれば別途保存
+         (del    (remq nil (mapcar #'(lambda (b) (assq b tmp)) mf-flac-delete-block)))
          (com    (assq 'VORBIS_COMMENT tmp)) ; PICTURE 追加位置を得るため保存
          ;; PICTURE があれば tmp から保管 tmp には残す.
          ;; 無ければブロック最後尾にある体で削除用ダミーをセット.
@@ -354,25 +393,20 @@ NO-BACKUP が 非NIL なら元ファイイルを残さない."
          ;; 後方アドレスから処理するが
          ;; 同アドレスの場合ここでのセット順になるので注意.
          ;; 念のため降順ソートしているが『安定なソート」である必要がある.
-         ;; no PICTURE & PADDING out & PICTURE in の場合
-         ;; PICTURE と PADDING が同じ位置になるので
-         ;; PICTURE in を先にするとその後の PADDING out でデータが壊れてしまう.
-         ;; 但しこの仕様は 「PADDING はブロック最後にある」という前提.
-         (blocks (sort (append (list com) (and pad (list pad)) (list pic))
+         ;; no PICTURE & `mf-flac-delete-block' & PICTURE in の場合
+         ;; PICTURE と `mf-flac-delete-block' が同じ位置になるので
+         ;; PICTURE in を先にするとその後の `mf-flac-delete-block' out で
+         ;; データが壊れてしまう.
+         ;; 但しこの仕様は 「`mf-flac-delete-block' はブロック最後にある」という前提.
+         (blocks (sort (append (list com) (and del del) (list pic))
                        #'(lambda (a b) (> (cadr a) (cadr b)))))
-         (pictag (mf-picture-tag-exist tags))
-         ;; この時点で tmp の最後が最終ブロックになっているが
-         ;; PADDING が無く(無くなり) PICTURE が追加されるなら
-         ;; PICTURE がラストになる
-         (last   (cond
-                  ((not pad)
-                   (mf-nodelete-last tmp blocks pictag))
-                  ((or pad pictag)
-                   'PICTURE))) ;  t だとどうなる?
-         ;; TAG をバイナリにパック ラストブロックを含んでいればここでセット
-         (packs  (mf-pack-flac tags last))
+         ;; (pictag (mf-picture-tag-exist tags))
+         ;; TAG をバイナリにパック
+         (packs  (mf-pack-flac tags))
+         ;; 書き戻し時点での最終ブロックを算出.
+         (last   (car (reverse (mf-now-blocks tmp del packs))))
          (text-quoting-style 'grave)
-         offset meta delete-list)
+         offset)
 
     (run-hooks 'mf-flac-write-hook)
 
@@ -391,20 +425,9 @@ NO-BACKUP が 非NIL なら元ファイイルを残さない."
             (- psize bsize)))
 
     ;; シークブロックの位置がズレる前に Seek Block にオフセットをかける(あれば).
-    (and (setq meta (assq 'SEEKTABLE tmp))
+    (and (assq 'SEEKTABLE tmp)
          (not (zerop offset))
-         (mf-seek-block-update meta offset))
-
-    ;; ラスト・ブロックになるブロックがカバーでもコメでもないなら
-    ;; 念のためここでラスト位置に直接ラストマークを打ち直す.
-    ;; 差替挿入対象のブロックならバイナリ生成時に既にマークは打ち込まれている.
-    (unless (or (eq last 'PICTURE) (eq last 'VORBIS_COMMENT))
-      (let* ((lst (car (last tmp)))
-             (p  (cadr lst))
-             (c (char-after p)))
-        (goto-char p)
-        (delete-char 1)
-        (insert-char (logior c 128))))
+         (mf-seek-block-update (assq 'SEEKTABLE tmp) offset))
 
     ;; 後から順に差し替え. 今の処タグ変更無しでも書き換えしてしまう.
     (while (car blocks)
@@ -413,15 +436,19 @@ NO-BACKUP が 非NIL なら元ファイイルを残さない."
              (beg  (cadr  blk))
              (len  (caddr blk))
              (end  (+ beg (if (zerop len) 0 4) len)))
-        (and (eq mode 'PADDING)
+        (and (memq mode mf-flac-delete-block)
              (message
-              "Delete PADDING Block `%s' (%dkb)..." file (/ (- end beg) 1024)))
+              "Delete %s Block `%s' (%dkb)..." mode file (/ (- end beg) 1024)))
         (delete-region beg end)
         (goto-char beg)
         (and (assq mode packs) (insert (cdr (assq mode packs))))
         (setq blocks (cdr blocks))))
+    
+    ;; ラストマーク位置を調整.
+    (mf-flac-repiriod meta (car last))
+    ;; (mf-flac-meta-block-collect meta) ;; ##DEBUG
 
-    ;; あとはバックアップするならして書き換えたバッファを書き出すだけ.
+    ;; あとはバックアップするならして書き換えたバッファを書き出す.
     (mf-write-file file no-backup)))
 
 ;; ソニーのアプリが作る Flac はシークテーブルを作らない.
