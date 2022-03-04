@@ -1,8 +1,8 @@
 ;;; wtag.el -- Music file writable tags. -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2019, 2020, 2021 fubuki
+;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.21 $$Name:  $
+;; Version: @(#)$Revision: 1.189 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.21 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.189 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -374,8 +374,9 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   `(or (mf-alias-get ,alias ,lst) wtag-not-available-string))
 
 (defun wtag-base-name (name)
-  "NAME 末尾から wtag-artwork-buffer-suffix または wtag-index-buffer-suffix を\
-削除して戻す. 末尾がそれらでないなら NAME がそのまま戻る."
+  "NAME 末尾から `wtag-artwork-buffer-suffix' または `wtag-index-buffer-suffix' を\
+削除して戻す.
+末尾がそれらでないなら NAME がそのまま戻る."
   (let ((result name)
         pnt)
     (catch 'out
@@ -585,10 +586,10 @@ PREFIX は廃止になり互換のためのダミー.
                    'face 'wtag-track-number)
        ;; Time.
        " "
-       (if (not (wtag-alias-value mf-time-dummy-symbol a))
-           "---"
-         (cl-multiple-value-bind (sec bitrate vbr)
-             (cdr (alist-get mf-time-dummy-symbol a))
+       (cl-multiple-value-bind (sec bitrate vbr)
+           (cdr (alist-get mf-time-dummy-symbol a))
+         (if (or (null (wtag-alias-value mf-time-dummy-symbol a)) (null sec))
+             "---"
            (propertize (format-seconds wtag-time-foram sec)
                        'help-echo (format "%s %dkbps%s" mode (or bitrate 0)
                                           (if (eq vbr 'vbr) "(VBR)" ""))
@@ -937,7 +938,8 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
     ;; Salvage old cover.
     (when (and wtag-old-cover modify-cover (eq wtag-load-without-query 'keep))
       (let* ((coding-system-for-write 'no-conversion)
-             (ext  (if (eq 'png (mf-image-type wtag-old-cover)) "png" "jpg"))
+             (ext  (or (mf-image-type wtag-old-cover) ""))
+             (ext  (if (eq ext 'jpeg) "jpg" (symbol-name ext)))
              (file (expand-file-name (concat keep-name "." ext) directory)))
         (when (file-exists-p file)
           (rename-file file (wtag-safe-keep-name file)))
@@ -1198,7 +1200,7 @@ ARG 等は `wtag-beginning-of-line' を参照."
          'choice
          (cons
           '(const nil)
-          (mapcar (lambda (k) (list 'const (car k)))
+          (mapcar #'(lambda (k) (list 'const (car k)))
                   wtag-sort-key-function)))
   :group 'wtag)
 
@@ -1345,15 +1347,6 @@ Line 1..2 の場合 `wtag-point-file-name-to-kill-buffer-list' の設定が使�
   (wtag-music-file-copy file (current-buffer))
   (wtag-init-buffer))
 
-(defun wtag-set-mode-line (sym &optional pos)
-  (let ((pos (or pos 'mode-line-position)))
-    (setq-local
-     mode-line-format
-     (append
-      (reverse (cdr (memq pos (reverse mode-line-format))))
-      (list sym " ")
-      (memq pos mode-line-format)))))
-
 (defun wtag-get-jpg-blocks ()
   "Buffer に読み込まれている jpg のセグメント・リストをある程度返す.
 \((marker point length) ...) の形式で
@@ -1436,7 +1429,7 @@ length は marker の 2バイト分を除いたセグメントの長さ.
                (progn (when wtag-force-timer (cancel-timer wtag-force-timer)) t)
                (setq wtag-force-timer
                      (run-at-time
-                      wtag-force-load nil '(lambda () (setq wtag-force-timer nil)))))
+                      wtag-force-load nil #'(lambda () (setq wtag-force-timer nil)))))
           (with-current-buffer (wtag-index-buffer-name wtag-base-name)
             (wtag-writable-tag))
           (funcall func file)))
@@ -1447,7 +1440,7 @@ length は marker の 2バイト分を除いたセグメントの長さ.
         (funcall func file))))))
 
 (defun wtag-artwork-load (file-or-object &optional name no-disp no-modified)
-  "ファイルまたはバイナリをカレントバッファを元に生成した名前の画像バッファに表示する.
+  "ファイルまたはオブジェクトをカレントバッファを元に生成した名前の画像バッファに表示する.
 既に画像バッファがあるときは読み込んでいいか通常問い合わせをするが
 `wtag-load-without-query' が NON-NIL だと確認をしない.
 NAME があればその名前そのものでバッファを作る.
@@ -1455,7 +1448,8 @@ NO-DISP が NON-NIL なら load 後再表示を試みない.
 NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをクリアする."
   (interactive "fImage: ")
   (let ((buff (or name (wtag-artwork-buffer-name wtag-base-name)))
-        (image-auto-resize wtag-image-auto-resize))
+        (image-auto-resize wtag-image-auto-resize)
+        (ext (downcase (or (file-name-extension file-or-object) ""))))
     (if (or (not (get-buffer buff))
             wtag-load-without-query
             (y-or-n-p "Change artwork?"))
@@ -1465,7 +1459,8 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
             (kill-all-local-variables)
             (set-buffer-multibyte nil)
             (erase-buffer)
-            (if (file-exists-p file-or-object)
+            (if (and (member ext '("jpg" "jpeg" "png"))
+                     (file-exists-p file-or-object))
                 (progn
                   (insert-file-contents-literally file-or-object)
                   (setq wtag-image-filename (expand-file-name file-or-object)))
@@ -2113,11 +2108,12 @@ winカカシが漢字ASCII混合の場合、
 (define-derived-mode wtag-image-mode image-mode "wtag-image"
   "Music file tag image mode.
 \\{wtag-image-mode-map}"
-  (wtag-set-mode-line
-   (list :propertize
-         (list "*" (apply #'format "%s %dx%d" (wtag-image-size)) "*")
-         'face 'wtag-image-size)
-   'mode-line-buffer-identification))
+  (setq mode-line-buffer-identification
+        (cons
+         (list :propertize
+               (list "*" (apply #'format "%s %dx%d" (wtag-image-size)) "* ")
+               'face 'wtag-image-size)
+         mode-line-buffer-identification)))
 
 (provide 'wtag)
 ;; fin.

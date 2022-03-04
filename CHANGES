@@ -1,24 +1,37 @@
 # -*- mode: org -*-
-#+date: Mon Jan 31 14:51:12 2022
-* mf-lib-flac 1.52 - Mon Jan 31 14:51:12 2022
-** Fix: 時間用のダミータグもヘッダに含めて書き込んでいたのを修正.
-   読み込み等でエラーになる場合がありました. 申し訳ありませんでした.
+* Sat Mar  5 07:34:41 2022
+** wtag.el:1.189
+*** Emacs 28.91, 29.0.50 で動かくなったのを修正
+    file-exists-p が変更されたようで、不正なファイル名だとエラーになってしまうので、
+    拡張子によるチェックにして回避.
 
-*** バグ版で生成してしまったデータの修復法
-    mf-lib-flac.el をこの版に差替えて Emacs を再起動し、
-    タグ無指定で mf-tag-write を実行すれば、ゴミを除去してヘッダを再パックします.
+*** 他のファイル同様リビジョンが大きく変わっている.
+    今までの変更過程を RCS file にすべてぶっこんだので.
 
-    : (mf-tag-write "file.flac")
+** mf-tag-write.el:1.60
+*** mf-image-type に gif, webp 等も追加(とりあえず使い道はない).
+*** 他のファイル同様リビジョンが大きく変わっている.
 
-    Backup を作らず、タイムスタンプを継承する場合
+* Mon Jan 31 14:51:12 2022
+** mf-lib-flac:1.52
+*** Fix: 時間用のダミータグもヘッダに含めて書き込んでいたのを修正.
+    読み込み等でエラーになる場合がありました. 申し訳ありませんでした.
 
-    : (mf-tag-write "file.flac" nil 'no-backup 'stamp-copy)
+**** バグ版で生成してしまったデータの修復法
+     mf-lib-flac.el をこの版に差替えて Emacs を再起動し、
+     タグ無指定で mf-tag-write を実行すれば、ゴミを除去してヘッダを再パックします.
 
-    ディレクトリごと指定できるコマンド repac-tag もつけておきます.
-    指定したディレクトリ内の汚染された flac file だけを書き直しします.
-    prefix 起動すると backup を作らず、タイムスタンプを継承します.
+     : (mf-tag-write "file.flac")
 
-#+BEGIN_SRC emacs-lisp
+     Backup を作らず、タイムスタンプを継承する場合
+
+     : (mf-tag-write "file.flac" nil 'no-backup 'stamp-copy)
+
+     ディレクトリごと指定できるコマンド repac-tag もつけておきます.
+     指定したディレクトリ内の汚染された flac file だけを書き直しします.
+     prefix 起動すると backup を作らず、タイムスタンプを継承します.
+
+ #+BEGIN_SRC emacs-lisp
 (require 'mf-tag-write)
 (defun repac-tag (dir prefix)
   "DIR 下 の flac が汚染されていればクリーンアップする.
@@ -41,25 +54,25 @@ PREFIX 在りだとバックアップなし、タイムスタンプ継承にな�
         'pollution)))
 
 (provide 'repac-tag)
-#+END_SRC
+ #+END_SRC
 
-** Add: 変数 `mf-flac-delete-block'
-   Music Center 2.5.0 で flac 取り込みをすると APPLICATION ブロックがつくようになったので
-   これも削除できるようにしました.
-   デリートしたいブロックがある場合、変数 `mf-flac-delete-block' にリストで指定します.
+*** Add: 変数 `mf-flac-delete-block'
+    Music Center 2.5.0 で flac 取り込みをすると APPLICATION ブロックがつくようになったので
+    これも削除できるようにしました.
+    デリートしたいブロックがある場合、変数 `mf-flac-delete-block' にリストで指定します.
 
-   これに伴ない PADDING 削除指定専用だった変数 `mf-flac-write-safe-pad' は廃止にしたので
-   こちらで再設定してください.
-   指定できるのは PADDING と APPLICATION で、
-   削除したいメタブロックシンボルを指定します(以前の変数とは逆なので注意).
+    これに伴ない PADDING 削除指定専用だった変数 `mf-flac-write-safe-pad' は廃止にしたので
+    こちらで再設定してください.
+    指定できるのは PADDING と APPLICATION で、
+    削除したいメタブロックシンボルを指定します(以前の変数とは逆なので注意).
 
-   : (setq mf-flac-delete-block '(PADDING APPLICATION))
+    : (setq mf-flac-delete-block '(PADDING APPLICATION))
 
-** Change: 変数 `mf-lib-flac-version' について
-   Source 管理法を変更したため数値が大きく上がっています.
-   あとこのファイルが元々見辛いとは思っていましたが、
-   あとから見たとき追加履歴ごとに日付が無いのが致命的に判り難いと今頃気づいたので(遅すぎ)、
-   卑近のもので判るものだけざっと追加しておきました.
+*** Change: 変数 `mf-lib-flac-version' について
+    Source 管理法を変更したため数値が大きく上がっています.
+    あとこのファイルが元々見辛いとは思っていましたが、
+    あとから見たとき追加履歴ごとに日付が無いのが致命的に判り難いと今頃気づいたので(遅すぎ)、
+    卑近のもので判るものだけざっと追加しておきました.
 
 * wtag 1.19 - Fri Oct 15 15:03:01 2021
 ** wtag

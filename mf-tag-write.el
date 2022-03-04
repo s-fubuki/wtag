@@ -1,8 +1,8 @@
 ;;; mf-tag-write.el -- Music file tag write.  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
+;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.7 $
+;; Version: $Revision: 1.60 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.7 $")
+(defconst mf-tag-write-version "$Revision: 1.60 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -85,13 +85,12 @@
         (throw 'break (plist-get a :data))))))
 
 (defun mf-image-type (obj)
-  "jpeg/png バイナリ OBJ のタイプを \"jpeg\" or \"png\" で返す."
-  (let (beg)
-    (cond
-     ((string-match "\xdIHDR" obj)
-      'png)
-     ((string-match "\xff\xd8" obj)
-      'jpeg))))
+  "バイナリ OBJ のタイプを jpeg or png で返す."
+  (assoc-default obj '(("\\`\xff\xd8"                . jpeg)
+                       ("\\`\x89PNG\x0d\x0a\x1a\x0a" . png)
+                       ("\\`GIF8[79]a"               . gif)
+                       ("\\`RIFF....WEBP"            . webp))
+                 #'string-match))
 
 (defun mf-set-file-tag (mode pair alias)
   "PAIR のセルが画像かテキストかで振り分ける.
