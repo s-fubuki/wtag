@@ -1,8 +1,8 @@
 ;;; mf-lib-mp3.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
+;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.28 $$Name:  $
+;; Version: $Revision: 1.30 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.28 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 1.30 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -146,7 +146,7 @@
     ("GRP1" "GP1" "Group"      300) ; iTunes Only?
     ("TBPM" "TBP" "Beat/Sec"   300)
     ("PRIV" "nil" "NIL"        300))
-  "ID3.3 ID3.2 の対応テーブル.  '(ID33 ID32 ラベル ソート用整数) の順序.")
+  "ID3v2.3 ID3v2.2 の対応テーブル.  '(ID33 ID32 ラベル ソート用整数) の順序.")
 
 (defconst mf-oma-sort-table
   `(("TIT2" . 1) ("TPE1" . 2) ("TALB" . 3) ("TCON" . 4)
@@ -299,7 +299,8 @@ Bug.同期形式には対応していない."
 
 
 (defun mf-oma-tags-analyze (tags &optional no-binary)
-  "`mf-oma-tags-collect' が生成した TAGS からそれが指している値を読み出しプロパティリストとして返す.
+  "`mf-oma-tags-collect' が生成した TAGS からそれが指している値を読み出し\
+プロパティリストとして返す.
 プロパティの概要は以下の通り.
 :tag  tag のテキスト(シンボルではない).
 :data tag に対する文字列またはバイナリオブジェクト.
@@ -490,7 +491,7 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
 
 (defun mf-oma-tag-read (file &optional length no-binary)
   "カレントバッファに oma/mp3 FILE を読み込み tag plist を返す.
-LENGTH があれば整数を見なしその長さだけ読み込む.
+LENGTH があれば整数と見なしその長さだけ読み込む.
 指定した値が解析に足りなければヘッダの値を見て必要最小限の長さを読み直す.
 なのでここをどんな値にしていても解析に失敗することはないので,
 タグ情報だけが必要で書き戻す必要が無いなら, この数値をファイルサイズの 10% 等の値にしておくと
@@ -538,7 +539,7 @@ NO-BINARY が非NIL ならバイナリ系タグは含めない."
   (or (member (car cell) mf-ignore-tags-list) (member (cdr cell) mf-ignore-tags-list)))
 
 (defun mf-id33-to-id32 (tags &optional table)
-  "plist TAGS の car を 3.3 から 3.2 へ対応するフレームタグに置換する.
+  "plist TAGS の car を ID3v2.3 から ID3v2.2 へ対応するフレームタグに置換する.
 ひとつでも置換に失敗すると NIL を返す.
 TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から生成する.
 ここで `mf-ignore-tags-list' に設定された TAG は振り落とされる."
@@ -554,7 +555,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
                  (setq result (cons (plist-put a :tag (cdr r)) result)))))))))
 
 (defun mf-id32-to-id33 (tags &optional table)
-  "plist TAGS の car を 3.2 から 3.3 へ対応するフレームタグに置換したリストを返す.
+  "plist TAGS の car を ID3v2.2 から ID3v2.3 へ対応するフレームタグに置換したリストを返す.
 ひとつでも置換に失敗すると NIL を返す.
 TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から生成する.
 ここで `mf-ignore-tags-list' に設定された TAG は振り落とされる."
@@ -580,12 +581,12 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
    'iso-8859-1))
 
 ;;
-;; Frame make byte for ID3v2
+;; Frame make byte for ID3v2.2
 ;;
 ;; * このライブラリ内部では文字列を 0 term せず
 ;;   mf-byte-* 関数でバイナリパッキンッグするときに付け足す仕様に統一してある.
 (defun mf-byte-frame-32 (tag str)
-  "TAG に 3バイトで現わした STR の長さと STR を加えた ID3v2 のフレームのフォームで返す."
+  "TAG に 3バイトで現わした STR の長さと STR を加えた ID3v2.2 のフレームのフォームで返す."
   (let ((len (length str)))
     (concat  tag (mf-3-byte-char len) str)))
 
@@ -640,7 +641,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
        (format "%c%s\0" 0 str)))))
 
 (defun mf-byte-tco (plist)
-  "`mf-tag-tco' テーブルから STR に対応する v2 のカテゴリ番号文字列を括弧で括って返す.
+  "`mf-tag-tco' テーブルから STR に対応する v2.2 のカテゴリ番号文字列を括弧で括って返す.
 一致文字列がなければテーブル最大値にするが動作は未確認."
   (let* ((tag (plist-get plist :tag))
          (str (plist-get plist :data))
@@ -649,7 +650,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
     (mf-byte-frame-32 tag (format "\0(%s)\0" new))))
 
 (defun mf-pack-id32 (tags)
-  "TAGS の alist を ID3v2 ヘッダ形式にパックして返す."
+  "TAGS の alist を ID3v2.2 ヘッダ形式にパックして返す."
   (let (result)
     (dolist (a tags result)
       (let ((tag (plist-get a :tag)))
@@ -671,7 +672,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
     (concat "ID3\2\0\0" (mf-long-word-pack7 (length result)) result)))
 
 ;;
-;; Frame make byte for ID3v3
+;; Frame make byte for ID3v2.3
 ;;
 (defun mf-byte-frame-33 (tag str)
   (let ((len (length str)))
@@ -760,7 +761,7 @@ Walkman で表示されないのでそうしてある. "
                  (or (cdr (assoc (or (plist-get b :dsc) (plist-get b :tag)) tbl)) 0))))))
 
 (defun mf-pack-id33 (tags &optional no-mc-delete)
-  "TAGS の alist を ID3v3 ヘッダ形式にパックして返す.
+  "TAGS の alist を ID3v2.3 ヘッダ形式にパックして返す.
 NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしない."
   (let ((id mf-current-mode)
         (no-mc-delete (or no-mc-delete mf-no-mc-delete))
@@ -797,13 +798,15 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
     (concat (format "%s\0\0" id) (mf-long-word-pack7 (length result)) result)))
 
 (defun mf-pack-id32-for-id33 (tags)
-  "ID32 のとき ID33 にコンバートしてバイナリパックし ID33 ならそのままバイナリパックする."
+  "ID3v2.2 のとき ID3v2.3 にコンバートしてバイナリパックし\
+ ID3v2.3 ならそのままバイナリパックする."
   (if (string-equal mf-current-mode "ID3\2")
       (mf-pack-id33 (mf-id32-to-id33 (reverse tags)))
     (mf-pack-id33 tags)))
       
 (defun mf-pack-id33-for-id32 (tags)
-  "ID33 のとき ID32 にコンバートしてバイナリパックし ID32 ならそのままバイナリパックする."
+  "ID3v2.3 のとき ID3v2.2 にコンバートしてバイナリパックし \
+ID3v2.2 ならそのままバイナリパックする."
   (if (string-equal mf-current-mode "ID3\3")
       (mf-pack-id32 (mf-id33-to-id32 (reverse tags)))
     (mf-pack-id32 tags)))
@@ -826,7 +829,6 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
     (goto-char (point-min))
     (insert header)
     (mf-write-file file no-backup)))
-
 
 ;; A Sync header. All 11 bits are 1.
 ;; B Version. 00 : MPEG2.5, 01 : Reserved, 10 : MPEG2, 11 : MPEG1

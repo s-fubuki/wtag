@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.197 $$Name:  $
+;; Version: @(#)$Revision: 1.202 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -54,6 +54,7 @@
 (defvar wtag-old-point nil)
 (make-variable-buffer-local 'wtag-old-point)
 (defvar wtag-process nil "Work.")
+(make-variable-buffer-local 'wtag-process)
 (defvar wtag-process-name "*wtag process*")
 (defvar wtag-image-filename nil "for buffer local variable.")
 (make-variable-buffer-local 'wtag-image-filename)
@@ -71,7 +72,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.197 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.202 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -102,6 +103,7 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   :type  'boolean
   :group 'wtag)
 
+(make-obsolete-variable 'wtag-sort-extend "Abolition." "1.198")
 (defcustom wtag-sort-extend nil
   "sort tag を追加したいファイルタイプの追加用."
   :type  'sexp
@@ -167,6 +169,11 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
                  (choice (repeat string) (const nil)))))
   :group 'wtag)
 
+(defcustom wtag-process-break nil
+  "Writable mode に入るときプロセスがあれば問い合わせなくブレイクする."
+  :type  'boolean
+  :group 'wtag)
+  
 (defconst wtag-beginning-line-of-track 3)
 (make-variable-buffer-local 'wtag-beginning-line-of-track)
 
@@ -432,7 +439,7 @@ Convert index buffer name to artwork buffer name."
                        (progn
                          (message "Read file %s..." (file-name-nondirectory f))
                          (mf-tag-read-alias f len))
-                     (error nil)))
+                     (error (error "File read error `%s'" f))))
              (tags (cons (cons 'filename (cons nil f)) tags)))
         (when tags
           (setq result (cons tags result)))))))
@@ -472,6 +479,11 @@ Convert index buffer name to artwork buffer name."
     (dolist (a lst total)
       (setq n (cadr (alist-get mf-time-dummy-symbol a))
             total (+ (or n 0) total)))))
+
+(defun wtag-include-sort-tag-p (lst)
+  (catch 'out
+    (dolist (s '(s-title s-a-artist s-album s-genre s-artist))
+      (if (assq s lst) (throw 'out t)))))
 
 ;;;###autoload
 (defun dired-wtag (&optional prefix)
@@ -581,7 +593,7 @@ PREFIX は廃止になり互換のためのダミー.
       (insert
        (propertize " "
                    'old-track (wtag-alias-value 'track a)
-                   'mode mode 'stat (wtag-stat a))
+                   'mode mode 'sort (wtag-include-sort-tag-p a) 'stat (wtag-stat a))
        ;; Track number.
        (propertize (format form (wtag-alias-value 'track a))
                    'track t 'mouse-face 'highlight
@@ -633,11 +645,14 @@ PREFIX は廃止になり互換のためのダミー.
   "タグの書き換えできるモードに入る."
   (interactive)
   (let ((inhibit-read-only t))
-    (setq buffer-read-only nil))
-  (wtag-protect)
-  (wtag-writable-mode)
-  (when wtag-cursor-intangible (cursor-intangible-mode 1))
-  (buffer-enable-undo))
+    (when (and wtag-process (or wtag-process-break (y-or-n-p "Stop process?")))
+      (wtag-kill-process))
+    (unless wtag-process
+      (setq buffer-read-only nil)
+      (wtag-protect)
+      (wtag-writable-mode)
+      (when wtag-cursor-intangible (cursor-intangible-mode 1))
+      (buffer-enable-undo))))
 
 (defun wtag-read-only-visualiz ()
   "text property read-only の箇所を可視化. 手抜き"
@@ -805,22 +820,6 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
                (cons (cons s (cons nil (wtag-get-common-property-value s)))
                      lst)))))))
 
-(defun wtag-include-sort-tag-p (tags)
-  "TAGS の中に sort 用タグが含まれていれば sort mode シンボルを返す.
-MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
-  (let ((mc   mf-id33-tag-musiccenter-alias)
-        (lame mf-id33-tag-lame-alias)
-        mode)
-    (catch 'out
-      (dolist (tag tags)
-        (if (or (prog1
-                    (rassoc (cadr tag) mc)
-                  (setq mode 'mc))
-                (prog1
-                    (rassoc (cadr tag) lame)
-                  (setq mode 'lame)))
-            (throw 'out mode))))))
-
 (defun wtag-track-prefix-rename (file track)
   "FILE のプレフィクスがトラック番号なら(2桁数値とハイフン)
 その部分を TRACK 番号文字列にした名前にリネームする."
@@ -833,7 +832,6 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
         (setq new-name (concat  track (match-string 2 node)))
         (rename-file file (expand-file-name new-name dir))
         (wtag-message "Renmae file: \"%s\" -> \"%s\"" file new-name)))))
-
 
 (defun wtag-flush-tag-ask (prefix)
   "フィニッシュ時バッファが read-only なら問合せる."
@@ -880,6 +878,7 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
     
     (while (not (eobp))
       (let* ((mode          (wtag-get-property-value 'mode))
+             (sort          (wtag-get-property-value 'sort))
              (old-track     (wtag-get-property-value 'old-track))
              (old-performer (wtag-get-property-value 'old-performer))
              (old-title     (wtag-get-property-value 'old-title))
@@ -899,8 +898,6 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
              (ext           (downcase (file-name-extension filename)))
              (mp3           (and (string-equal ext "mp3") mode))
              (mp4           (member ext '("mp4" "m4a")))
-             (sort          (or mp3 mp4 (member ext '("flac" "oma"))
-                                wtag-sort-extend))
              tags)
         ;; Disk number.
         (and (or mp4 mp3) (not (string-equal old-disk new-disk))
@@ -936,7 +933,7 @@ MusicCenter なら mc, LAME なら lame, どちらでもなければ nil."
           (wtag-message "wtag re-write tags: \"%s\" %s" filename tags)
           (condition-case err
               (progn
-                (run-hooks 'wtag-flush-tag-hook)
+                (run-hooks 'wtag-flush-tag-hook) ; Obsolete.
                 (when wtag-flush-hook
                   (setq tags
                         (run-hook-with-args-until-success 'wtag-flush-hook tags)))
@@ -1594,12 +1591,14 @@ PREFIX は整数で指定があればその行に移動してから実行され�
                (proc wtag-process-name)
                (buff proc))
           (message (file-name-nondirectory file))
-          (setq-local wtag-process (apply #'start-process proc buff prog args)))
+          (setq wtag-process (apply #'start-process proc buff prog args)))
       (error "Undefined or does not exist `%s'" (or file "NIL")))))
 
 (defun wtag-kill-process ()
   (interactive)
-  (and wtag-process (kill-process wtag-process) (setq wtag-process nil)))
+  (and wtag-process (get-process wtag-process-name)
+       (kill-process wtag-process))
+  (setq wtag-process nil))
 
 (defun wtag-goto-line (prefix)
   (interactive "p")
@@ -1730,6 +1729,7 @@ point が 1行目ならすべてマークする."
     (goto-char (point-min))
     (wtag-view-mode)
     (and (setq obj (wtag-alias-value 'cover (car result)))
+         (if (equal obj wtag-not-available-string) (setq obj nil) t)
          (wtag-artwork-load
           obj (wtag-artwork-buffer-name wtag-base-name) 'no-disp t))
     (and obj (switch-to-buffer (wtag-artwork-buffer-name wtag-base-name)))
