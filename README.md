@@ -6,7 +6,7 @@ Emacs 28.0用 音楽ファイルのタグ修正 lisp 関数集です.
 
 # このセットのバージョン
 
-番号で管理する能力がないので Aug 13 2022 版とします.
+番号で管理する能力がないので Aug 20 2022 版とします.
 
 # 基本関数(必須)
 
@@ -19,13 +19,13 @@ Emacs 28.0用 音楽ファイルのタグ修正 lisp 関数集です.
 
 # ユーティリティ(サンプル)
 
-1.  wtag.el           - mf-tag-write アルバム・エディット・インターエイス
+1.  wtag.el           - mf-tag-write アルバム・タグ・エディット・インターエイス
 
 # ドキュメント
 
-1.  MF-TAG-WRITE.org
-2.  ALIAS-TABLE.org - mf-tag-write で使える TAG の alias 表.
-3.  WTAG.org
+1.  mf-tag-write.org
+2.  alias-table.org - mf-tag-write で使える TAG の alias 表.
+3.  wtag.org
 4.  CHENGES
 5.  README.org もしくは README.md
 

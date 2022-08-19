@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.202 $$Name:  $
+;; Version: @(#)$Revision: 1.207 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -72,7 +72,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.202 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.207 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -568,7 +568,8 @@ PREFIX は廃止になり互換のためのダミー.
       (format-seconds wtag-time-all-foram total)
       'face 'wtag-time
       'help-echo (format-seconds wtag-time-all-foram-balloon total)
-      'mouse-face 'highlight)
+      'mouse-face 'highlight
+      'margin t)
      "\n"
 
      (propertize
@@ -600,7 +601,7 @@ PREFIX は廃止になり互換のためのダミー.
                    'face 'wtag-track-number)
        ;; Time.
        " "
-       (cl-multiple-value-bind (sec bitrate vbr)
+       (cl-multiple-value-bind (sec bitrate opt1 opt2 opt3)
            (cdr (alist-get mf-time-dummy-symbol a))
          (if (or (null (wtag-alias-value mf-time-dummy-symbol a)) (null sec))
              "---"
@@ -608,9 +609,13 @@ PREFIX は廃止になり互換のためのダミー.
                        'help-echo (format "%s %dkbps%s"
                                           (wtag-mode-name-alias mode)
                                           (or bitrate 0)
-                                          (if (eq vbr 'vbr) "(VBR)" ""))
+                                          (cond ((eq opt1 'vbr) "(VBR)")
+                                                ((and opt1 opt3)
+                                                 (format "(%.1fkHz/%dbit)"
+                                                         (/ opt1 1000.0) opt3))
+                                                (t "")))
                        'mouse-face 'highlight
-                       'face (if (eq vbr '*) 'wtag-time-other 'wtag-time))))
+                       'face (if (eq opt1 '*) 'wtag-time-other 'wtag-time))))
        (propertize " "
                    'old-performer (wtag-alias-value 'artist a) 'filename file)
        ;; Performer.
@@ -682,29 +687,32 @@ PREFIX は廃止になり互換のためのダミー.
       (goto-char (point-min))
       (add-text-properties (point) (1+ (point)) '(front-sticky t common t))
       (setq protect (point))
-      (dolist (a '((disk  . end-disk) (a-artist . end-aartist)
+      (dolist (p '((disk  . end-disk) (a-artist . end-aartist)
                    (album . end-album) skip
                    (genre . end-genre) (year . end-year) skip))
-        (if (eq a 'skip)
+        (if (eq p 'skip)
             (forward-line)
-          (wtag-move-to-property (car a))
+          (wtag-move-to-property (car p))
           (put-text-property (1- (point)) (point) 'rear-nonsticky t)
+          ;; (add-text-properties (1- (point)) (point) '(rear-nonsticky t beg-block t))
           (add-text-properties protect
                                (point) '(read-only t cursor-intangible t))
-          (setq protect (wtag-move-to-end-property (car a)))
-          (put-text-property (point) (1+ (point)) (cdr a) t)))
+          (setq protect (wtag-move-to-end-property (car p)))
+          (put-text-property (point) (1+ (point)) (cdr p) t))) ;; end of
+          ;; (add-text-properties (point) (1+ (point)) `(,(cdr p) t end-block t)))) ;; end of
       (put-text-property (1- (point)) (point) 'common-end t)
-
       (while (not (eobp))
-        (dolist (a '((track     . end-track)
+        (dolist (p '((track     . end-track)
                      (performer . end-performer)
                      (title     . end-title)))
-          (wtag-move-to-property (car a))
+          (wtag-move-to-property (car p))
           (put-text-property (1- (point)) (point) 'rear-nonsticky t)
+          ;; (add-text-properties (1- (point)) (point) '(rear-nonsticky t beg-block t))
           (add-text-properties protect (point)
                                '(read-only t cursor-intangible t))
-          (setq protect (wtag-move-to-end-property (car a)))
-          (put-text-property (point) (1+ (point)) (cdr a) t))
+          (setq protect (wtag-move-to-end-property (car p)))
+          (put-text-property (point) (1+ (point)) (cdr p) t))
+          ;; (add-text-properties (point) (1+ (point)) `(,(cdr p) t end-block t)))
         (forward-line))
       (put-text-property protect (point-max) 'read-only t)
       (set-buffer-modified-p nil))))
@@ -716,6 +724,19 @@ PREFIX は廃止になり互換のためのダミー.
     (while (get-text-property (point) 'read-only)
       (forward-char))
     (point)))
+
+;; (defun wtag-edit-end-limit ()
+;;   (let* ((limit (line-end-position)))
+;;     (if (get-text-property (1- limit) 'read-only)
+;;         (previous-single-property-change limit 'read-only)
+;;       limit)))
+
+(defun wtag-edit-end-limit ()
+  (let* ((beg (line-beginning-position))
+         (limit (line-end-position)))
+    (if (get-text-property (1- limit) 'margin)
+        (1- (previous-single-property-change (1- limit) 'margin))
+      limit)))
 
 (defun wtag-get-name (beg-prop end-prop)
   "text property が BEG-PROP END-PROP の間のバッファ文字列を返す."
@@ -1081,8 +1102,7 @@ ARG はリピート回数.
 これは単純な行頭移動になる."
   (interactive "p")
   (let* ((arg (if (equal current-prefix-arg '(4)) 5 arg))
-         (limit (wtag-beg-limit))
-         mv)
+         (limit (wtag-beg-limit)))
     (while (and (not (bolp)) (not (zerop arg)))
       (goto-char (previous-single-property-change (point) 'read-only nil limit))
       (setq arg (1- arg)))))
@@ -1094,11 +1114,20 @@ ARG はリピート回数.
 ARG 等は `wtag-beginning-of-line' を参照."
   (interactive "p")
   (let* ((arg (if (equal current-prefix-arg '(4)) 5 arg))
-         (limit (line-end-position))
-         mv)
-    (while (and (not (eolp)) (not (zerop arg)))
+         (limit (wtag-edit-end-limit)))
+    (while (and (not (get-pos-property  (point) 'margin))
+                (not (eolp)) (not (zerop arg)))
       (goto-char (next-single-property-change (point) 'read-only nil limit))
       (setq arg (1- arg)))))
+
+;; (defun wtag-end-of-line (arg)
+;;   "wtag 用 end-of-line.
+;; 一旦編集エリアの終端で止まるが更に押すと前方の編集エリアへ移動.
+;; これを行末まで繰り返す.
+;; ARG 等は `wtag-beginning-of-line' を参照."
+;;   (interactive "p")
+;;   (let ((limit (line-end-position)))
+;;     (goto-char (next-single-property-change (point) 'end-block nil limit))))
 
 (defun wtag-next-tag (&optional arg)
   "次の編集ブロックへ移動."

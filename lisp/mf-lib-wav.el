@@ -1,8 +1,8 @@
 ;;; mf-lib-wav.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2021 fubuki
+;; Copyright (C) 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.12 $$Name:  $
+;; Version: $Revision: 1.14 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-wav-version "$Revision: 1.12 $$Name:  $")
+(defconst mf-lib-wav-version "$Revision: 1.14 $$Name:  $")
 (require 'mf-lib-var)
 ;; (require 'mf-tag-write)
 
@@ -173,7 +173,8 @@ CODING は wav で認識される iso-8859-1(ascii) , utf-8, cp920(sjis) 系の�
   (insert (mf-long-word-le size)))
 
 (defun mf-get-wave-time (chunks)
-  "演奏時間秒とビットレートをコンスセルで戻す.
+  "CHUNKS plist を渡し演奏時間とビットレートを計算して戻す.
+リストはサンプリングレート, チャンネル数, ビット長の整数がその後に続く.
 CHUNKS は file から `mf-get-chunks' で得た chunk list.
 list 内に \"fmt \" と \"data\" が無ければ nil を戻す."
   (let* ((fmt (assoc-default "fmt " chunks #'string-equal))
@@ -186,7 +187,11 @@ list 内に \"fmt \" と \"data\" が無ければ nil を戻す."
          (/ (* (plist-get chk 'samples)
                (plist-get chk 'bsample)
                (plist-get chk 'channels))
-            1000)))))
+            1000)
+         ;; lib-flac 合わせの順列
+         (plist-get chk 'samples)
+         (plist-get chk 'channels)
+         (plist-get chk 'bsample)))))
 
 (defun mf-get-wav-fmt (pos)
   "POS に \"fmt \" チャンクのデータ部先頭に合わせておくと
@@ -246,7 +251,7 @@ NO-BINARY が非NIL ならイメージタグは含めない."
 
 
 (defun mf-wav-write-buffer (tags &optional no-backup)
-  "カレントバッファに読み込まれている wav バイナリのタグを TAGS(lID3形式) に差し替える.
+  "カレントバッファに読み込まれている wav バイナリのタグを TAGS(ID3形式) に差し替える.
 それを元に LIST タグも作り CP932 にエンコードし fmt の前に挿し直す.
 つまり ID3 タグの追加と共に元々の wav の LIST タグも tags に書換えされ
 MSアプリで認識されるようファイル内での位置も修正される.

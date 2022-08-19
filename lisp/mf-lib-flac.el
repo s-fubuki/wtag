@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.52 $$Nmae$
+;; Version: @(#)$Revision: 1.54 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.52 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.54 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -562,32 +562,37 @@ MSX-C のライブラリみたいだな."
           p
         v)))))
 
-(defun mf-flac-time (meta data-size)
-  (let* ((pos (+ (nth 1 (assq 'STREAMINFO meta)) 4 10))
-         ;; lst -> (minBlockSize(16bit) maxBlockSize(16) minFrameSize(24) maxFlameSize(24)
-         ;;         SampleRate(20) Channel-1(3) bit/SAmple(5) totalSample(36))
+(defun mf-flac-time (info size)
+  "STREAMINFO 内のデータをリストで返す.
+INFO block のアドレスとサウンドデータの長さ SIZE を与えると
+MusicSec, BitRate, SampleRate, Channel, Bits/Sample, TotalSample
+の整数から成る list を返す."
+  ;; info ->  (minBlockSize(16bit) maxBlockSize(16) minFrameSize(24) maxFlameSize(24)
+  ;;           SampleRate(20) Channel-1(3) bits/Sample-1(5) totalSample(36))
+  (let* ((pos (+ (nth 1 info) 4 10))
          (lst (mf-flac-disbits pos))
          (sec (/ (nth 3 lst) (nth 0 lst))) ; totalSample / SampleRate
-         (brate (ceiling (/ (/ data-size 125.0) sec))))
-    (list sec brate)))
+         (brate (ceiling (/ (/ size 125.0) sec))))
+    ;; LST 0:SampleRate 1:Channel 2:Bits/Sample 3:TotalSample
+    (append (list sec brate) lst)))
 
 (defun mf-flac-disbits (&optional pos)
   "POS 位置からの内容を  20bit 3bit 5bit 36bit にビット分解してリストで戻す.
 POS を省略すると現在ポイントになる."
-;; * 32bit Emacs では total が(フルに使われていると)正常値が得られない可能性がある.
-;; 16bit/44,100Hz で 23分あるデータまで試したが 
-;; Total sampling 数が 29bit(32bit Emacs で扱える最大整数値)を越える大きさではなかった.
-;; (Live/Dead - 01-Dark Star.flac  23'07\")
-;; このデータのトータルサンプル数 ->  61171712
-;;               (1- (expt 2 29)) -> 536870911
+  ;; * 32bit Emacs では total が(フルに使われていると)正常値が得られない可能性がある.
+  ;; 16bit/44.100Hz で 23分あるデータまで試したが 
+  ;; Total sampling 数が 29bit(32bit Emacs で扱える最大整数値)を越える大きさではなかった.
+  ;; (Live/Dead - 01-Dark Star.flac  23'07\")
+  ;; このデータのトータルサンプル数 ->  61171712
+  ;;               (1- (expt 2 29)) -> 536870911
   (let ((pos (or pos (point)))
         tmp srate ch bps total)
     (setq tmp   (mf-buffer-read-3-bytes pos))
     (setq srate (lsh tmp -4)
-          ch    (logand (lsh tmp -1) 7))
-    (setq bps   (lsh (logand tmp 1) 5)
+          ch    (1+ (logand (lsh tmp -1) 7)))
+    (setq bps   (lsh (logand tmp 1) 4)
           tmp   (char-after (+ pos 3))
-          bps   (+ bps (lsh tmp  -4)))
+          bps   (+ bps (lsh tmp -4) 1))
     (setq total (+ (lsh (logand tmp 15) 32)
                    (mf-buffer-read-long-word (+ pos 4))))
     (list srate ch bps total)))
@@ -627,7 +632,7 @@ NO-BINARY が non-nil ならイメージタグは含めない."
       (setq hsize (let ((las (car (last meta))))
                     (+ (nth 1 las) (nth 2 las))))))
 
-    (setq sec (mf-flac-time meta (- fsize hsize)))
+    (setq sec (mf-flac-time (assq 'STREAMINFO meta) (- fsize hsize)))
     (setq tags (mf-flac-analyze meta no-binary))
     (setq mf-current-mode "flac"
           origin (buffer-substring (point-min) (+ 4 (point-min))))
