@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.54 $$Nmae$
+;; Version: @(#)$Revision: 1.56 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.54 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.56 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -119,7 +119,7 @@ flac の tag は case insensitive らしいので注意.
 (defun mf-read-flac (file &optional block-only)
     "テスト用実行関数.
 基本的にタグリストを返すが BLOCK-ONLY が non-nil ならブロック list を返す."
-  (interactive "fFlac: ")
+  (interactive "fFlac: \nP")
   (let (result)
     (with-temp-buffer
       (insert-file-contents-literally file)
@@ -485,7 +485,7 @@ META は meta block のポインタやサイズが格納されたリストで me
 ;; Calc for long long word.
 ;;
 ;; 16bit ごとに分割 list 化された 64bit 値は
-;; すべて MSB ... LSB のモトローラ的ビッグエンディアン順列です。
+;; すべて MSB ... LSB のモトローラ的ビッグエンディアン順列です.
 ;; (mf-add-longlong '(65535 65535 65535 65535) '(65535 65535 65535 65535))
 
 (defun mf-expand-to-longlong (val)
@@ -494,8 +494,7 @@ META は meta block のポインタやサイズが格納されたリストで me
     (list pad pad (logand (ash val -16) 65535) (logand val 65535))))
 
 (defun mf-add-longlong (arg1 arg2)
-  "64bit を 16bit ごとに分割した ARG1 と ARG2 を加算し 同じ形式のリストで返す.
-MSX-C のライブラリみたいだな."
+  "64bit を 16bit ごとに分割した ARG1 と ARG2 を加算し 同じ形式のリストで返す."
   (let ((lst1 (reverse arg1))
         (lst2 (reverse arg2))
         (carry 0)
@@ -565,19 +564,19 @@ MSX-C のライブラリみたいだな."
 (defun mf-flac-time (info size)
   "STREAMINFO 内のデータをリストで返す.
 INFO block のアドレスとサウンドデータの長さ SIZE を与えると
-MusicSec, BitRate, SampleRate, Channel, Bits/Sample, TotalSample
-の整数から成る list を返す."
+0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
+の 6つの整数から成る list を返す."
   ;; info ->  (minBlockSize(16bit) maxBlockSize(16) minFrameSize(24) maxFlameSize(24)
   ;;           SampleRate(20) Channel-1(3) bits/Sample-1(5) totalSample(36))
   (let* ((pos (+ (nth 1 info) 4 10))
          (lst (mf-flac-disbits pos))
          (sec (/ (nth 3 lst) (nth 0 lst))) ; totalSample / SampleRate
          (brate (ceiling (/ (/ size 125.0) sec))))
-    ;; LST 0:SampleRate 1:Channel 2:Bits/Sample 3:TotalSample
     (append (list sec brate) lst)))
 
 (defun mf-flac-disbits (&optional pos)
   "POS 位置からの内容を  20bit 3bit 5bit 36bit にビット分解してリストで戻す.
+但し CH とBPS は -1 で格納されているので、得た値に 1加算した値にする.
 POS を省略すると現在ポイントになる."
   ;; * 32bit Emacs では total が(フルに使われていると)正常値が得られない可能性がある.
   ;; 16bit/44.100Hz で 23分あるデータまで試したが 
@@ -599,11 +598,13 @@ POS を省略すると現在ポイントになる."
 
 (defun mf-flac-tag-read (file &optional length no-binary)
   "FILE のタグを plist にして返す.
-`mf-type-dummy' を擬似タグとした tag の種別も追加される.
+変数 `mf-type-dummy' を擬似タグとした tag の種別と
+変数 `mf-time-dummy' を擬似タグとした
+演奏時間やビットレート等を含むタグも追加される(関数 `mf-flac-time' を参照).
 LENGTH が non-nil ならその整数分だけ読み込む.
 読み込み時間を早める為にある特殊な引数であり
 データ部が巨大である FLAC では特に有用ですが
-堅牢ではないのでメタヘッダの構造を理解していて必要な場合のみ利用してください.
+堅牢ではないのである程度メタヘッダの構造を理解していて必要な場合のみ利用してください.
 NO-BINARY が non-nil ならイメージタグは含めない."
   (let* ((fsize (file-attribute-size (file-attributes file)))
          hsize pos meta tags origin sec)
@@ -621,16 +622,16 @@ NO-BINARY が non-nil ならイメージタグは含めない."
      ((null (car meta))
       (setq meta (cdr meta)
             hsize (let ((las (mf-flac-meta-last meta)))
-                    (+ (nth 1 las) (nth 2 las))))
+                      (+ (nth 1 las) (nth 2 las) 4)))
       (message "Reload file %s size %d header %d(%d%%)."
                file fsize hsize (round (/ (* hsize 100.0) fsize)))
       (erase-buffer)
-      (insert-file-contents-literally file nil 0 (+ hsize 4))
+      (insert-file-contents-literally file nil 0 hsize)
       (goto-char pos))
      ;; ヘッダがすべて得られてデータサイズが判るので時間計算ができる.
      (t
       (setq hsize (let ((las (car (last meta))))
-                    (+ (nth 1 las) (nth 2 las))))))
+                    (+ (nth 1 las) (nth 2 las) 4)))))
 
     (setq sec (mf-flac-time (assq 'STREAMINFO meta) (- fsize hsize)))
     (setq tags (mf-flac-analyze meta no-binary))

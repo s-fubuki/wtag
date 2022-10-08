@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.207 $$Name:  $
+;; Version: @(#)$Revision: 1.219 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -66,13 +66,15 @@
 (put 'wtag-window-configuration 'permanent-local t)
 (defvar-local wtag-base-name nil)
 (put 'wtag-base-name 'permanent-local t)
+(defvar-local wtag-init-prefix nil)
+(put 'wtag-init-prefix 'permanent-local t)
 
 (defvar wtag-mode-name nil)
 
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.207 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.219 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -214,17 +216,34 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 
 (make-obsolete-variable 'wtag-qrt "この変数は廃止されました." "Revision 1.9")
 
-(defcustom wtag-time-foram "%2m'%02s\""
-  "時間表示のフォーマット.  `format-seconds' にそのまま渡す."
+(defcustom wtag-vbr nil
+  "mp3 で VBR のとき non-nil ならビットレートで正しい平均値を表示します."
+  :type  '(choice (const nil) (const t) function)
+  :group 'wtag)
+
+(defvar-local wtag-times* nil)
+(defvar wtag-time-format-alist
+  '((?b . wtag-time-b)  ; ビットレート
+    (?o . wtag-time-o)) ; オプション(flac なら ビット/サンプル, mp3 でバリアブルなら VBR)
+  "`wtag-time-form' 用 対応関数リスト.")
+
+(defcustom wtag-time-form '("%2m'%02s\"" . "%2m'%02s\"%4bkbps%o")
+  "時間表示のフォーマット文字列. 変数 `wtag-time-format-alist' に対応.
+コンスセルで指定すると cdr が prefix 時に使われる."
+  :type '(choice string (cons (string :tag "Normal") (string :tag "Prefix")))
+  :group 'wtag)
+
+(defcustom wtag-time-form-balloon "%bkbps%o" ;
+  "help-echo用  時間表示のフォーマット. 変数 `wtag-time-format-alist' に対応."
   :type 'string
   :group 'wtag)
 
-(defcustom wtag-time-all-foram wtag-time-foram
+(defcustom wtag-time-all-form "%m'%02s\""
   "総時間表示のフォーマット.  `format-seconds' にそのまま渡す."
   :type 'string
   :group 'wtag)
 
-(defcustom wtag-time-all-foram-balloon "%2h@%2m'%02s\""
+(defcustom wtag-time-all-form-balloon "%2h@%2m'%02s\""
   "help-echo用 総時間表示のフォーマット.  `format-seconds' にそのまま渡す."
   :type 'string
   :group 'wtag)
@@ -362,6 +381,44 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   :type  '(repeat (cons (regexp :tag "Regexp") (string :tag "Letter")))
   :group 'wtag)
 
+(defun wtag-format (form val)
+  (setq wtag-times* (if (consp val) val (list val)))
+  (format-seconds
+   (format-spec form
+                (mapcar
+                 #'(lambda (a) (cons (car a) (funcall (cdr a))))
+                 wtag-time-format-alist)
+                'ignore)
+   (car wtag-times*)))
+
+(defun wtag-time-b ()
+  (or (nth 1 wtag-times*) 0))
+
+;; (defun wtag-time-o ()
+;;   (let ((opt1 (nth 2 wtag-times*))
+;;         (opt2 (nth 3 wtag-times*))
+;;         (opt3 (nth 4 wtag-times*)))
+;;     (cond ((eq opt1 'vbr) " VBR")
+;;           ((and opt1 opt3)
+;;            (format " %d/%.1f"
+;;                    opt3 (/ opt1 1000.0)))
+;;           (t ""))))
+
+(defvar wtag-time-o-mp3-vbr    " VBR")
+(defvar wtag-time-o-flac-format " %B/%r")
+
+(defun wtag-time-o ()
+  (let ((opt1 (nth 2 wtag-times*))
+        (opt2 (nth 3 wtag-times*))
+        (opt3 (nth 4 wtag-times*)))
+    (cond ((eq opt1 'vbr) wtag-time-o-mp3-vbr)
+          ((and opt1 opt3)
+           (format-spec wtag-time-o-flac-format
+                        (list (cons ?B opt3)
+                              (cons ?c opt2)
+                              (cons ?r (format "%.1f" (/ opt1 1000.0))))))
+          (t ""))))
+
 (defun wtag-max-width (lst sym)
   "SYM 文字列の LST から最大`幅'を返す.
 `wtag-directory-set' が生成する alist の束から SYM の要素の最長値を返す."
@@ -444,13 +501,24 @@ Convert index buffer name to artwork buffer name."
         (when tags
           (setq result (cons tags result)))))))
 
+(defvar wtag-sort-track #'wtag-sort-track
+  "通常 #'wtag-sort-track で良いが、
+タグ無きファイル集かつトラックナンバーがファイル名先頭にあるがゼロパディングされていない.
+そんなときは #'wtag-sort-track-2 にすると良いかもしれない.")
+
 (defun wtag-sort-track (a b)
-  "sort プリディケイド for trkn. trkn に加えて disk も鑑みる."
+  "ソート秩序. Trk num に加えて Disk num も鑑みる."
   (setq a (+ (* (string-to-number (or (mf-alias-get 'disk a) "1")) 100)
              (string-to-number (or (mf-alias-get 'track a) "1")))
         b (+ (* (string-to-number (or (mf-alias-get 'disk b) "1")) 100)
              (string-to-number (or (mf-alias-get 'track b) "1"))))
   (< a b))
+
+(defun wtag-sort-track-2 (a b)
+  "File Name の数値の箇所を文字ではなく数値としてソート.
+0 パディングされていない場合に効果."
+  (string-version-lessp (mf-alias-get 'filename a)
+                        (mf-alias-get 'filename b)))
 
 (defun wtag-sort-album (a b)
   "sort プリディケイド for album."
@@ -466,12 +534,13 @@ Convert index buffer name to artwork buffer name."
 
 (defun wtag-directory-files-list (dir)
   "DIRECTORY の中のファイルのタグリストを返す."
-  (let* ((suffixs (mf-re-suffix mf-lib-suffix-all))
+  (let* ((sorts   wtag-sort-track)
+         (suffixs (mf-re-suffix mf-lib-suffix-all))
          (files   (if (and (file-regular-p dir)
                            (assoc-default dir mf-function-list 'string-match))
                       (list dir)
                     (directory-files dir t suffixs))))
-    (sort (wtag-directory-set files) 'wtag-sort-track)))
+    (sort (wtag-directory-set files) sorts)))
 
 (defun wtag-total-time (lst)
   (let ((total 0)
@@ -485,6 +554,11 @@ Convert index buffer name to artwork buffer name."
     (dolist (s '(s-title s-a-artist s-album s-genre s-artist))
       (if (assq s lst) (throw 'out t)))))
 
+(defun wtag-time-form-set (arg prefix)
+  (if (consp arg)
+      (if prefix (cdr arg) (car arg))
+    arg))
+
 ;;;###autoload
 (defun dired-wtag (&optional prefix)
   "`wtag' の Dired 用ラッパー.
@@ -497,13 +571,14 @@ Convert index buffer name to artwork buffer name."
 \\{wtag-image-mode-map}"
   (interactive "P")
   (let ((dir (dired-get-filename)))
-    (wtag (file-name-as-directory dir))))
+    (wtag (file-name-as-directory dir) prefix)))
 
 ;;;###autoload
 (defun wtag (dir &optional prefix)
   "DiR 内の `mf-lib-suffix-all' にある拡張子ファイルの\
 タイトル一覧をバッファに表示する.
-PREFIX は廃止になり互換のためのダミー.
+PREFIX があると mp3 で VBR のときビットレートに平均値を表示します.
+但し遅くなります.
 
 * wtag view mode
 \\{wtag-view-mode-map}
@@ -513,10 +588,11 @@ PREFIX は廃止になり互換のためのダミー.
 \\{wtag-image-mode-map}"
   (interactive "DAlbum Directory: \nP")
   (let* ((wconf (current-window-configuration))
-         (dir (file-name-as-directory dir))
-         (result (wtag-directory-files-list dir))
+         (mf-mp3-vbr (or wtag-vbr (if (consp prefix) prefix)))
          (kill-read-only-ok t)
-         buff art-buff obj base)
+         (dir (file-name-as-directory dir))
+         result buff art-buff obj base)
+    (setq result (wtag-directory-files-list dir))
     (unless result (error "No music file"))
     (setq base (or (mf-alias-get 'album (car result)) "*NULL*")
           buff     (wtag-index-buffer-name base)
@@ -527,7 +603,10 @@ PREFIX は廃止になり互換のためのダミー.
          (wtag-artwork-load obj art-buff 'no-disp t))
     (with-current-buffer (get-buffer-create buff)
       (setq wtag-window-configuration wconf
-            wtag-base-name base)
+            wtag-base-name base
+            wtag-init-prefix (if (and prefix (atom prefix))
+                                 (list prefix)
+                               prefix))
       (buffer-disable-undo)
       (wtag-insert-index result dir)
       (set-buffer-modified-p nil)
@@ -535,6 +614,9 @@ PREFIX は廃止になり互換のためのダミー.
       (wtag-view-mode)
       (and (get-buffer art-buff) (switch-to-buffer art-buff))
       (pop-to-buffer buff wtag-pop-action))))
+
+(defsubst wtag-get-cache-time (alst file)
+  (and alst (cdr (assoc file alst))))
 
 (defvar wtag-total-track 0)
 
@@ -546,7 +628,8 @@ PREFIX は廃止になり互換のためのダミー.
          (form (concat "%" (number-to-string max-width-track) "s"))
          (total (wtag-total-time index))
          (mode  (wtag-alias-value '*type (car index)))
-         title file modes)
+         (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
+         title file modes cache)
     (insert ; Common part.
      (propertize " " 'directory dir
                  'old-disk (wtag-alias-value 'disk (car index)))
@@ -565,9 +648,9 @@ PREFIX は廃止になり互換のためのダミー.
                  'help-echo (wtag-alias-value 's-album (car index)))
      " "
      (propertize
-      (format-seconds wtag-time-all-foram total)
+      (wtag-format wtag-time-all-form total)
       'face 'wtag-time
-      'help-echo (format-seconds wtag-time-all-foram-balloon total)
+      'help-echo (wtag-format wtag-time-all-form-balloon total)
       'mouse-face 'highlight
       'margin t)
      "\n"
@@ -591,6 +674,13 @@ PREFIX は廃止になり互換のためのダミー.
                       tmp))
             mode  (wtag-alias-value '*type a)
             modes (or (member mode modes) (cons mode modes)))
+      (and wtag-init-prefix
+           (not (assq 'cache wtag-init-prefix))
+           (setq cache
+                 (cons
+                  (cons (wtag-alias-value 'filename a)
+                        (wtag-alias-value mf-time-dummy-symbol a))
+                  cache)))
       (insert
        (propertize " "
                    'old-track (wtag-alias-value 'track a)
@@ -601,21 +691,14 @@ PREFIX は廃止になり互換のためのダミー.
                    'face 'wtag-track-number)
        ;; Time.
        " "
-       (cl-multiple-value-bind (sec bitrate opt1 opt2 opt3)
-           (cdr (alist-get mf-time-dummy-symbol a))
-         (if (or (null (wtag-alias-value mf-time-dummy-symbol a)) (null sec))
-             "---"
-           (propertize (format-seconds wtag-time-foram sec)
-                       'help-echo (format "%s %dkbps%s"
-                                          (wtag-mode-name-alias mode)
-                                          (or bitrate 0)
-                                          (cond ((eq opt1 'vbr) "(VBR)")
-                                                ((and opt1 opt3)
-                                                 (format "(%.1fkHz/%dbit)"
-                                                         (/ opt1 1000.0) opt3))
-                                                (t "")))
+       (let ((times (or (wtag-get-cache-time (assq 'cache wtag-init-prefix) file)
+                        (cdr (alist-get mf-time-dummy-symbol a)))))
+         (if (null times)
+             " -----"
+           (propertize (wtag-format wtag-time-form times)
+                       'help-echo (wtag-format wtag-time-form-balloon times)
                        'mouse-face 'highlight
-                       'face (if (eq opt1 '*) 'wtag-time-other 'wtag-time))))
+                       'face (if (eq (nth 2 times) '*) 'wtag-time-other 'wtag-time))))
        (propertize " "
                    'old-performer (wtag-alias-value 'artist a) 'filename file)
        ;; Performer.
@@ -632,7 +715,10 @@ PREFIX は廃止になり互換のためのダミー.
        
        "\n")
       (setq wtag-total-track (1+ wtag-total-track)))
-    (setq wtag-mode-name (reverse modes))))
+    (setq wtag-mode-name (reverse modes))
+    (and wtag-init-prefix
+         (not (assq 'cache wtag-init-prefix))
+         (setq wtag-init-prefix (cons (cons 'cache cache) wtag-init-prefix)))))
 
 (defun wtag-mode-name-alias (mode)
   (or (assoc-default mode wtag-mode-name-alias #'string-match-p) mode))
@@ -1741,6 +1827,7 @@ point が 1行目ならすべてマークする."
 カレントバッファが BUFF に変更されたままになる."
   (let* ((buff (or buff (current-buffer)))
          (dir  (or dir (wtag-buffer-directory buff)))
+         ;; (mf-mp3-vbr (or wtag-vbr wtag-init-prefix))
          abuff result obj)
     (set-buffer buff)
     (setq abuff (wtag-artwork-buffer-name wtag-base-name))

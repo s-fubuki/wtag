@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.30 $$Name:  $
+;; Version: $Revision: 1.36 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.30 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 1.36 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -297,6 +297,7 @@ Bug.同期形式には対応していない."
       (or (member (car alias-list) (eval sym))
           (set sym (append (eval sym) alias-list))))))
 
+(defvar mf-mp3-vbr nil "*Check mp3 vbr bittrate.")
 
 (defun mf-oma-tags-analyze (tags &optional no-binary)
   "`mf-oma-tags-collect' が生成した TAGS からそれが指している値を読み出し\
@@ -500,6 +501,7 @@ NO-BINARY が非NIL ならバイナリ系タグは含めない."
   (let ((func mf-mp3-analyze-function-list)
         (fsize (file-attribute-size (file-attributes file)))
         hsize tags sec)
+    (if (and mf-mp3-vbr (string-match "\\.mp3\\'" file)) (setq length nil)) ; for VBR
     (setq length (cadr (insert-file-contents-literally file nil 0 length)))
     (set-buffer-multibyte nil)
     ;; Set `mf-current-mode' is buffer local variable.
@@ -515,7 +517,7 @@ NO-BINARY が非NIL ならバイナリ系タグは含めない."
     (setq tags (funcall (mf-second (assoc mf-current-mode func)) hsize) ; Collection.
           tags (funcall (mf-third  (assoc mf-current-mode func)) tags no-binary) ; Analyze.
           tags (cons (list :tag mf-type-dummy :data mf-current-mode) tags))
-    (setq sec  (mf-mp3-times file fsize hsize tags))
+    (setq sec  (mf-mp3-times file (- fsize (+ hsize 10)) hsize tags))
     (cons (list :tag mf-time-dummy :data sec) tags)))
 
 (defun mf-oma-tag-complete-read (file &optional length no-binary)
@@ -830,164 +832,121 @@ ID3v2.2 ならそのままバイナリパックする."
     (insert header)
     (mf-write-file file no-backup)))
 
-;; A Sync header. All 11 bits are 1.
-;; B Version. 00 : MPEG2.5, 01 : Reserved, 10 : MPEG2, 11 : MPEG1
-;; C layer. 00 : Reserved, 01 : Layer3, 10 : Layer2, 11 : Layer1
-;; D Error protection. 0 : Yes, 1 : No
-;; E Bit rate. Use as an index for the defined table.
-;; F Sampling rate. Used as an index for the defined table.
-;; G Padding. 0 : None, 1 : Yes
-;; H Extension.
-;; I Channel mode. 00 : stereo, 01 : joint stereo, 10 : dual monaural, 11 : single channel
-;; J Extended mode. Used when the channel mode is joint stereo.
-;; K Copyright. 0 : None, 1 : Yes
-;; L Original. 0 : copy, 1 : original
-;; M Enfasis. 00 : None, 01 : 50 / 15ms, 10 : Reserved, 11 : CCITTj.17
-
-(defvar mf-mp3-audio-frame
-  '((sync) ; 11bit
-    (version   mpeg2.5 reserve mpeg2 mpeg1)  ; 2
-    (layer     reserve layer3 layer2 layer1) ; 2
-    (protection) ; 1
-    ;; bitrate 値 15(xff) は仕様では bad ということで nil にしてあったが
-    ;; エクスプローラでは 320 として(不正データ回避して)いるので一律で 320 にしてある.
-    (bitrate ; 4
-     (mpeg1
-      (layer1  0 32 64 96 128 160 192 224 256 288 320 352 384 416 448  320)
-      (layer2  0 32 48 56 64 80 96 112 128 160 192 224 256 320 384     320)
-      (layer3  0 32 40 48 56 64 80 96 112 128 160 192 224 256 320      320)
-      (reserve 0 32 40 48 56 64 80 96 112 128 160 192 224 256 320      320)) ; dummy
-     ((mpeg2 mpeg2.5)
-      (layer1  0 32 64 96 128 160 192 224 256 288 320 352 384 416 448  320)
-      (layer2  0 32 48 56 64 80 96 112 128 160 192 224 256 320 384     320)
-      (layer3  0 8 16 24 32 64 80 56 64 128 160 112 128 256 320        320)
-      (reserve 0 32 40 48 56 64 80 96 112 128 160 192 224 256 320      320))) ; dummy
-      ;; (layer3-oher 0 8 16 24 32 40 48 56 64 80 96 112 128 144 160 320) ; 統一されていない?
-    (frequency (mpeg1   44100 48000 32000) ; sampling rate 2
-               (mpeg2   22050 24000 16000)
-               (mpeg2.5 11025 12000 8000))
-    (padding) ; 1
-    (extend)  ; 1
-    (channel   stereo joint-stereo deal-mono single-mono) ; 2
-    (extend-mode) ; 2
-    (copyright none yes) ; 1
-    (original  copy original) ; 1
-    (emphasis  "none" "50/15ms" "reserve" "CCITTj.17"))) ; 2
-
-(defvar mf-oma-bitrate
+(defconst mf-oma-bitrate
   '((#x22 . 48) (#x2e . 64) (#x30 . 132) (#x45 . 96) (#x5c . 128)
     (#xb9 . 256) (#xff . 352)))
 
-;; AAAAAAAA AAABBCCD EEEEFFGH IIJJKLMM
-(defvar mf-frame-bits
-  '((sync . 11) (version . 2) (layer . 2) (protection . 1)
-    (bitrate . 4)  (frequency . 2)
-    (pading . 1)  (ext . 1) (channel . 2) (mode . 2)
-    (copyright . 1)  (original . 1) (emphasis . 2))
-  "分解する各ビット数.")
+(defconst mf-mp3-bitrate   '(free 32 40 48 56 64 80 96 112 128 160 192 224 256 320 reserve))
+(defconst mf-mp3-frequency '(44100 48000 32000 reserve))
+(defconst mf-mp3-channel   '(stereo joint dual mono))
 
-(defun mf-read-frame-alist (point)
-  "POINT から 2バイトのワード値を読み取り
-Audio frame としてビット分解しシンボルと値を対にした alist として戻す."
-  (mf-mp3-audio-frame-val-to-symbol (mf-read-audio-frame point)))
+(defsubst mf-mp3-get-frame-size (bitrate frequency)
+  "mpeg フレームサイズを求める公式.
+BITRATE は 1/1000 で指定することを想定している."
+  (/ (* 144 (* bitrate 1000)) frequency))
 
-(defun mf-read-audio-frame (point)
-  "バッファの POINT から 4バイトをビット分解して alist にして戻す."
-  (let* ((bits mf-frame-bits)
-         (val (mf-buffer-read-long-word point))
-         (ls1 (mapcar #'car bits))
-         (ls2 (mf-disbits val (mapcar #'cdr bits)))
-         result)
-    (while ls1
-      (setq result (cons (cons (car ls1) (car ls2)) result)
-            ls1 (cdr ls1) ls2 (cdr ls2)))
-    (reverse result)))
+(defun mf-mp3-vbr-average-list (pos)
+  "POS 以降の mpeg フレームから使われているビットレート種別をリストで返す."
+  (let (tmp all result)
+    (goto-char (or pos (point)))
+    (while (and (not (eobp)) (setq tmp (mf-mp3-mpeg-frame-p)))
+      (setq all (cons (car tmp) all))
+      (if (not (memq (car tmp) result))
+          (setq result (cons (car tmp) result)))
+      (goto-char (+ (point) (mf-mp3-get-frame-size (nth 0 tmp) (nth 1 tmp)))))
+    (setq tmp (length all))
+    (append
+     (sort result #'<)
+     (list ":" (/ (apply #'+ all) tmp)))))
 
-(defun mf-mp3-audio-frame-val-to-symbol (frame)
-  "`mf-read-audio-frame' の戻値を変数 `mf-mp3-audio-frame' を元に意味の判る値に変換.
-sync 等対応させる値がないものは元の値のままになる."
-  (let (version layer)
-    (mapcar #'(lambda (val)
-                (let ((lst (assoc-default (car val) mf-mp3-audio-frame)))
-                  (cond
-                   ((eq (car val) 'version)
-                    (setq version (nth (cdr val) lst)))
-                   ((eq (car val) 'layer)
-                    (setq layer (nth (cdr val) lst)))
-                   ((eq (car val) 'bitrate)
-                    (setq lst 
-                          (assoc-default
-                           layer
-                           (assoc-default
-                            version lst
-                            #'(lambda (a b) (if (consp a) (memq b a) (eq a b)))))))
-                   ((eq (car val) 'frequency)
-                    (setq lst (assoc-default version lst))))
-                  (cons (car val) (or (nth (cdr val) lst) (cdr val)))))
-            frame)))
+(defun mf-mp3-vbr-average (pos)
+  "POS 以降の mpeg フレームのビットレートの平均値を返す."
+  (let (tmp result)
+    (goto-char (or pos (point)))
+    (while (and (not (eobp)) (setq tmp (mf-mp3-mpeg-frame-p)))
+      (setq result (cons (car tmp) result))
+      (goto-char (+ (point) (mf-mp3-get-frame-size (nth 0 tmp) (nth 1 tmp)))))
+    (setq tmp (length result))
+    (/ (apply #'+ result) tmp)))
+
+(defun mf-mp3-mpeg-frame-p (&optional pos)
+  "POS が mpeg1 layer3 の frame 先頭なら \(bitrate sampling-frequency channel) を返す.
+さもなくば nil."
+  (let ((pos (or pos (point)))
+        tmp)
+    ;; [11111111 111 11 01 ?] sync(11):2047 mpeg1(2):3 layer3(2):1
+    (when (and (eq 255 (char-after pos))
+               (eq 250 (logand (char-after (1+ pos)) 254)))
+      (setq tmp (char-after (+ pos 2)))
+      (list (nth (lsh tmp -4) mf-mp3-bitrate)
+            (nth (logand (lsh tmp -2) 3) mf-mp3-frequency)
+            (progn
+              (setq tmp (char-after (+ pos 3)))
+              (nth (logand (lsh tmp -6) 3) mf-mp3-channel))))))
+
+(defun mf-mp3-xing-p (&optional pos)
+  "POS に mpegフレーム先頭ポイントを指定し,
+Xing として使われているフレームなら総フレーム数を返す.
+さもなくば nil."
+  (let ((pos (or pos (point)))
+        tmp)
+    (when (setq tmp (mf-mp3-mpeg-frame-p pos))
+      (setq tmp (nth 2 tmp))
+      (setq pos (+ pos 4 (if (eq 'mono tmp) 17 32)))
+      (if (equal (buffer-substring pos (+ pos 4)) "Xing")
+          (mf-buffer-read-long-word (+ pos 8))))))
 
 (defun mf-mp3-time-exp (size bitrate)
   "MP3 の演奏秒数を得る.
-SIZE はデータの大きさ, BIT はビットレート.
-BIT は 128k なら 128 と指定する."
+SIZE はデータの大きさ, BITRATE はビットレート.
+BITRATE は 128k なら 128 と 1/1000 の値で指定する."
   (* 8 (/ size (* (or bitrate 0) 1000.0))))
 
-(defun mf-mp3-time-from-buffer (fsize hsize)
-  "カレントバッファに読み込まれている mp3 の時間秒とビットレートをリストで戻す.
-VBR data ならリスト末尾に non-nil が追加される.
-バッファには 1st Audio Frame まで読み込まれている必要がある.
-FSIZE はファイルの大きさ HSIZE はヘッダの大きさ.
-フレームヘッダがおかしいとエラーになる\
-(HSIZEが違っている場合位置の特定を誤りに起きうる)."
-  (save-excursion
-    (let* ((frame   (mf-read-frame-alist (+ 11 hsize)))
-           (sync    (assoc-default 'sync frame))
-           (bitrate (assoc-default 'bitrate frame))
-           (frq     (assoc-default 'frequency frame))
-           (offset  (mf-xing-offset frame))
-           sec vbr)
-      (unless (= sync 2047) (error "Illegal frame header"))
-      (goto-char (+ 11 hsize 4 offset)) ; Padding skip.
-      (setq sec
-            (if (mf-xing-p)
-                ;; 曲長[sec] = MPEG フレーム数 * (1152 / サンプリングレート[Hz])
-                (progn
-                  (forward-char 8)
-                  (setq vbr '(vbr))
-                  (round (* (mf-buffer-read-long-word) (/ 1152.0 frq))))
-              ;; 曲長[sec] = 8 * データサイズ[byte] / ビットレート[bps]
-              (round (mf-mp3-time-exp (- fsize (+ hsize 10)) bitrate))))
-      (append (list sec bitrate) vbr))))
+(defun mf-mp3-time-from-buffer (datasize hsize &optional prefix)
+  "mp3 FILE の演奏時間とビットレートをリストで得る.
+DATASIZE は音楽データ部分の大きさ、HSIZE はヘッダの大きさ.
+mp3 が VBR の場合ダミー値(たいていは 128)と 'vbr というシンボルのリストで返す.
+PREFIX が non-nil なら VBR のときビットレートが正確な平均値になるが
+ファイルをすべて読み込むので遅くなる."
+  (let ((prefix (or prefix mf-mp3-vbr))
+        (hsize (+ hsize 11))
+        frame xing func)
+    (setq frame (mf-mp3-mpeg-frame-p hsize) ; 1st frame
+          xing  (mf-mp3-xing-p hsize))
+      (cond
+       ((and frame xing)
+        (cons
+         (round (* xing (/ 1152.0 (nth 1 frame))))
+         (list
+          (if prefix
+              (progn
+                (setq func (if (functionp prefix) prefix #'mf-mp3-vbr-average))
+                (funcall func
+                         (+ hsize (mf-mp3-get-frame-size (nth 0 frame) (nth 1 frame)))))
+            (car frame))
+          'vbr)))
+       (t
+        (list (round (mf-mp3-time-exp datasize (car frame)))
+              (car frame))))))
 
-(defun mf-xing-p ()
-  "Xing ブロックは 120 バイト
-なので ヘッダ+ フレームヘッダx1 スキップバイト + 120 だけ読み込んでいないといけない."
-  (string-equal "Xing" (buffer-substring (point) (+ (point) 4))))
-
-(defun mf-xing-offset (frame)
-  "channel mode よって違う Xing までのオフセット値を返す."
-  (if (memq (assoc-default 'channel frame) '(stereo joint-stereo))
-      32
-    17))
-
-(defun mf-oma-time-from-buffer (fsize hsize tags)
+(defun mf-oma-time-from-buffer (datasize hsize tags)
   "oma file の時間とビットレートをリストで戻す."
   (let* ((pnt     (+ hsize 10 36))
          (bitrate (assoc-default (char-after pnt) mf-oma-bitrate))
          (tlen    (plist-get (mf-plist-get-list "TLEN" tags) :data)))
     (if (null tlen)
         ;; 稀に TLEN の無いデータが在る. その場合 MP3 式で得るが誤差が出る.
-        (list (floor (mf-mp3-time-exp (- fsize (+ hsize 10)) bitrate)) bitrate '*)
+        (list (floor (mf-mp3-time-exp datasize bitrate)) bitrate '*)
       ;; TLEN の 1/1000 が曲長[sec].
       (list (floor (/ (string-to-number tlen) 1000.0)) bitrate))))
   
-(defun mf-mp3-times (file fsize hsize tags)
+(defun mf-mp3-times (file datasize hsize tags)
   "FILE の種類によって時間関数をチョイスし実行."
   (cond
    ((string-match"\\.mp3\\'" file)
-    (mf-mp3-time-from-buffer fsize hsize))
+    (mf-mp3-time-from-buffer datasize hsize))
    ((string-match "\\.oma\\'" file)
-    (mf-oma-time-from-buffer fsize hsize tags))))
+    (mf-oma-time-from-buffer datasize hsize tags))))
 
 (provide 'mf-lib-mp3)
 ;; fin.
