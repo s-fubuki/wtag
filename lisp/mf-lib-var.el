@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020, 2021, 2022
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.14 $$Name:  $
+;; Version: $Revision: 1.16 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.14 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.16 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -123,11 +123,11 @@
   :group 'music-file)
 
 (defvar mf-list-pack-partition
-  '(((ll longlong)      mf-buffer-read-longlong-word 8)
-    ((l  long longword) mf-buffer-read-long-word     4)
-    ((t  twenty-four)   mf-buffer-read-3-bytes       3)
-    ((w  word s short)  mf-buffer-read-word          2)
-    ((b  byte c char)   mf-char-after                1)))
+  '(((q ll longlong qword quad quadword) mf-buffer-read-longlong-word 8)
+    ((l long longword) mf-buffer-read-long-word 4)
+    ((t twenty-four)   mf-buffer-read-3-bytes   3)
+    ((w word s short)  mf-buffer-read-word      2)
+    ((b byte c char)   mf-char-after            1)))
 
 (defun mf-buffer-substring (start end)
   (ignore-errors (buffer-substring start end)))
@@ -156,7 +156,8 @@ POS を省略するとカレント point になる."
         nil
       (+ (* high 65536) low))))
 
-(defun mf-buffer-read-longlong-word (&optional pos wlst)
+(defalias 'mf-buffer-read-longlong-word 'mf-buffer-read-quad-word)
+(defun mf-buffer-read-quad-word (&optional pos wlst)
   "POS から 8バイト読んで整数として返す. POS が範囲外なら NIL を返す.
 WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした形式で戻す."
   (let* ((pos (or pos (point)))
@@ -165,8 +166,8 @@ WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした�
     (if (null (and high low))
         nil
       (if wlst
-          (list (lsh high -16 ) (logand high 65536)
-                (lsh low -16 ) (logand low 65536))
+          (list (logand (ash high -16) 65535) (logand high 65535)
+                (logand (ash low -16)  65535) (logand low 65535))
         (+ (* high (expt 2 32)) low)))))
 
 (defun mf-buffer-read-3-bytes (&optional pos opt)
@@ -205,6 +206,21 @@ POS が範囲外なら NIL を返す."
             low  (+ (* d 256) c))
       (+ (* low 65536) high))))
 
+(defun mf-buffer-read-quad-word-le (&optional pos wlst)
+  "POS から Little Endian として 8バイト読んで整数として返す.
+POS が範囲外なら nil を返す.
+WLST が non-nil ならバイトに分解し Big Endian の並びにしたリスト形式で戻す."
+  (let* ((pos (or pos (point)))
+         (low  (mf-buffer-read-long-word-le pos))
+         (high (mf-buffer-read-long-word-le (+ 4 pos))))
+    (if (null (and high low))
+        nil
+      (if wlst
+          (list 
+           (logand (ash high -16) 65535) (logand high 65535)
+           (logand (ash low -16)  65535) (logand low 65535))
+        (+ (* high (expt 2 32)) low)))))
+
 (defun mf-buffer-read-word-le-fd ()
   "point から word 長を little endian で返し、その分 point を進める."
     (prog1
@@ -220,26 +236,26 @@ POS が範囲外なら NIL を返す."
 (defun mf-3-byte-char (int)
   "INT を char char char の 24ビットで構成されたバイトの並びにする."
   (encode-coding-string
-   (string (logand (lsh int -16) 255) (logand (lsh int -8) 255) (logand int 255))
+   (string (logand (ash int -16) 255) (logand (ash int -8) 255) (logand int 255))
    'iso-8859-1))
 
 (defun mf-long-word (value)
   "VALUE をバイト分解し  4 bytes 文字列にする."
   (encode-coding-string
    (string
-    (lsh value -24)
-    (logand (lsh value -16) 255)
-    (logand (lsh value  -8) 255)
+    (logand (ash value -24) 255)
+    (logand (ash value -16) 255)
+    (logand (ash value  -8) 255)
     (logand value           255))
    'iso-8859-1))
 
 (defun mf-list-pack (point partition wlst)
   "POINT からバッファの内容を PARTITION に従いバイトレベルで小分けしてリストにパック.
-指定可能な長さは 64bit longlongword までで 各値は符合無しの整数になる.
+指定可能な長さは 64bit Qword までで 各値は符合無しの整数になる.
 数値変換せずバイトの羅列としてそのまま切り出すときは\
 整数を指定するとその長さだけ切り出される.
 PARTITION は `mf-list-pack-partition' の 各 car で定義されたシンボルをリストで羅列する.
-Example. \(mf-list-pack point '(l l w l c))
+Example. \(mf-list-pack point \\='(l l w l c))
 WLST が non-nil なら 64bit 値  16bit ごとに分割したリストにした形式で戻す."
   (let (fun result)
     (dolist (a partition (reverse result))
@@ -258,7 +274,7 @@ WLST が non-nil なら 64bit 値  16bit ごとに分割したリストにした
   "VAL をビット長 WIDTH として PARTITION に従いビット分解しリストにして戻す.
 PARTITION はビット数をリストで羅列する.
 WIDTH を省略すると PARTITION の合計補正し自動的に計算する.
-Example: \(mf-disbits val '(20 3 5 36))"
+Example: \(mf-disbits val \\='(20 3 5 36))"
   (let ((width
          (or width
              (let ((w (apply #'+ partition)))
@@ -267,7 +283,7 @@ Example: \(mf-disbits val '(20 3 5 36))"
                  (+ (- 8 (% w 8)) w)))))
         result tmp)
     (dolist (elt partition (reverse result))
-      (setq tmp (lsh val (* (- width elt) -1))
+      (setq tmp (ash val (* (- width elt) -1))
             width (- width elt))
       (setq result (cons (logand tmp (1- (expt 2 elt))) result)))))
 
@@ -284,7 +300,7 @@ Example: \(mf-disbits val '(20 3 5 36))"
 ちなみに変数 result が 16ビット幅以上でない場合正しく動作しない.
 BUG: 負の引数は考慮されていない."
   (let* ((result (apply '+ args))
-         (carry (if (not (zerop (logand (lsh result -16) 65535))) 'carry)))
+         (carry (if (not (zerop (logand (ash result -16) 65535))) 'carry)))
     (cons (logand result 65535) carry)))
 
 (defun mf-write-file (file no-backup)

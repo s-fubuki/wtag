@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.56 $$Nmae$
+;; Version: @(#)$Revision: 1.57 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.56 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.57 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -294,10 +294,10 @@ POS が省略されると現在のポイントが使われる.
 (defun mf-long-word-le (value)
   "VALUE をバイト分解し little endian の 4 bytes 文字列にする. 気狂いそう."
   (let ((tmp (list
-              (lsh value -24)
-              (logand (lsh value -16) 255)
-              (logand (lsh value  -8) 255)
-              (logand value           255))))
+              (logand (ash value -24) 255)
+              (logand (ash value -16) 255)
+              (logand (ash value  -8) 255)
+              (logand value 255))))
     (encode-coding-string
      (string
       (nth 3 tmp) (nth 2 tmp)
@@ -333,7 +333,7 @@ POS が省略されると現在のポイントが使われる.
 
 (defun mf-pack-flac (tags)
   "TAGS をバイナリパックにして(生の META TAG にする)
-'((VORBIS_COMMENT . textmeta) (PICTURE . picturemeta)) の alist で返す."
+\((VORBIS_COMMENT . textmeta) (PICTURE . picturemeta)) の alist で返す."
   (let ((pics (mf-flac-picture-pack tags))
         (coms (mf-flac-vorbis-comment-pack tags)))
     (append (list (cons 'VORBIS_COMMENT coms))
@@ -509,9 +509,7 @@ META は meta block のポインタやサイズが格納されたリストで me
 
 (defun mf-word-to-split-byte (word)
   "WORD を 上位下位に分割したコンスセルにする."
-  (cons
-   (logand (lsh word -8))
-   (logand 255 word)))
+  (cons (ash word -8) (logand 255 word)))
 
 (defun mf-byte-list-to-word (b1 b2)
   "B1 をワード上位 B2 をワード下位の 16ビット値にする."
@@ -542,8 +540,8 @@ META は meta block のポインタやサイズが格納されたリストで me
   (let (result)
     (dolist (a lst (encode-coding-string result 'iso-8859-1))
       (setq result
-            (concat result (string (logand (lsh a -8)) (logand 255 a) ))))))
-
+            (concat result
+                    (string (logand (ash a -8) 255) (logand a 255) ))))))
 ;; end of 64 bit calc.
 
 (defun mf-flac-meta-last (meta)
@@ -571,7 +569,8 @@ INFO block のアドレスとサウンドデータの長さ SIZE を与えると
   (let* ((pos (+ (nth 1 info) 4 10))
          (lst (mf-flac-disbits pos))
          (sec (/ (nth 3 lst) (nth 0 lst))) ; totalSample / SampleRate
-         (brate (ceiling (/ (/ size 125.0) sec))))
+         ;; (brate (ceiling (/ (/ size 125.0) sec))))
+         (brate (/ (/ size 125) sec)))
     (append (list sec brate) lst)))
 
 (defun mf-flac-disbits (&optional pos)
@@ -579,20 +578,22 @@ INFO block のアドレスとサウンドデータの長さ SIZE を与えると
 但し CH とBPS は -1 で格納されているので、得た値に 1加算した値にする.
 POS を省略すると現在ポイントになる."
   ;; * 32bit Emacs では total が(フルに使われていると)正常値が得られない可能性がある.
-  ;; 16bit/44.100Hz で 23分あるデータまで試したが 
+  ;; 24bit/96kHz で 29'46\"あるデータまで試したが 
   ;; Total sampling 数が 29bit(32bit Emacs で扱える最大整数値)を越える大きさではなかった.
-  ;; (Live/Dead - 01-Dark Star.flac  23'07\")
-  ;; このデータのトータルサンプル数 ->  61171712
-  ;;               (1- (expt 2 29)) -> 536870911
+  ;; "Lyceum Theatre 1972: The Complete Recordings (5/24/72) [Live] [2022 Remaster]"
+  ;; "The Other One (Live at the Lyceum Theatre, London, England 5/24/72) [2022 Remaster]"
+  ;; (*time " *TIME" 1786 2840 96000 2 24 171539200)
+  ;; このデータのトータルサンプル数 -> 171,539,200
+  ;;               (1- (expt 2 29)) -> 536,870,911
   (let ((pos (or pos (point)))
         tmp srate ch bps total)
     (setq tmp   (mf-buffer-read-3-bytes pos))
-    (setq srate (lsh tmp -4)
-          ch    (1+ (logand (lsh tmp -1) 7)))
-    (setq bps   (lsh (logand tmp 1) 4)
+    (setq srate (logand (ash tmp -4) #xfffff)
+          ch    (1+ (logand (ash tmp -1) 7)))
+    (setq bps   (ash (logand tmp 1) 4)
           tmp   (char-after (+ pos 3))
-          bps   (+ bps (lsh tmp -4) 1))
-    (setq total (+ (lsh (logand tmp 15) 32)
+          bps   (+ bps (logand (ash tmp -4) 15) 1))
+    (setq total (+ (ash (logand tmp 15) 32)
                    (mf-buffer-read-long-word (+ pos 4))))
     (list srate ch bps total)))
 

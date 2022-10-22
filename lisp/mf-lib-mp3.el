@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.36 $$Name:  $
+;; Version: $Revision: 1.38 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.36 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 1.38 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -146,7 +146,7 @@
     ("GRP1" "GP1" "Group"      300) ; iTunes Only?
     ("TBPM" "TBP" "Beat/Sec"   300)
     ("PRIV" "nil" "NIL"        300))
-  "ID3v2.3 ID3v2.2 の対応テーブル.  '(ID33 ID32 ラベル ソート用整数) の順序.")
+  "ID3v2.3 ID3v2.2 の対応テーブル.  \\='(ID33 ID32 ラベル ソート用整数) の順序.")
 
 (defconst mf-oma-sort-table
   `(("TIT2" . 1) ("TPE1" . 2) ("TALB" . 3) ("TCON" . 4)
@@ -197,9 +197,9 @@
   "POS から ロングワードのヘッダサイズを取得. MP3 と同形式の模様.
 それぞれのバイトの有効長は下位7ビットでそれを詰めてロングワード(有効長は内28bit)とする."
   (or pos (setq pos (point)))
-  (+ (lsh (logand (char-after pos) 127) 21)
-     (lsh (logand (char-after (+ pos 1)) 127) 14)
-     (lsh (logand (char-after (+ pos 2)) 127) 7)
+  (+ (ash (char-after pos) 21)
+     (ash (char-after (+ pos 1)) 14)
+     (ash (char-after (+ pos 2)) 7)
      (logand (char-after (+ pos 3)) 127)))
 
 (defvar mf-mime-image-header 
@@ -255,7 +255,7 @@ MIME は APIC フレームの mime パラメータ文字列.
   "current buffer に読み込まれた oma/mp3 file の tag list を返す.
 そのとき point は最初のヘッダの先頭になくてはならない.
 LENGTH はスキャンする大きさ(ヘッダサイズ).
-'((TAG BEG SIZE) ...) の list を返す.
+\((TAG BEG SIZE) ...) の list を返す.
 TAG は 4バイトの TAG 文字列,
 BEG はデータのポインタ整数(TAG 先頭から 10バイトの位置で MP4 とは違うので注意),
 SIZE はデータのサイズの整数,
@@ -576,9 +576,9 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
   "VALUE を 7bit ごとに分解し 4 bytes に分ける."
   (encode-coding-string
    (string
-    (logand (lsh value -21) 127)
-    (logand (lsh value -14) 127)
-    (logand (lsh value  -7) 127)
+    (logand (ash value -21) 127)
+    (logand (ash value -14) 127)
+    (logand (ash value  -7) 127)
     (logand value           127))
    'iso-8859-1))
 
@@ -665,7 +665,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
                  (mf-byte-pic a))
                 ((string-equal tag "TCO")
                  (mf-byte-tco a))
-                ((string-match "\\` "  tag)
+                ((and tag (string-match "\\` "  tag))
                  "")
                 (t
                  (mf-byte-str a)))
@@ -712,7 +712,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
 
 (defun mf-byte-pic-33 (plist)
   "IMAGE バイナリのフレームデータ生成.
-'(list tag mime type file obj)"
+\(list tag mime type file obj)"
   (let* ((tag  (plist-get plist :tag))
          (mime (mf-get-mime (plist-get plist :mime) 'id33))
          (type (or (plist-get plist :type) 3))
@@ -791,7 +791,7 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
                 ;; ((and (string-equal tag "GEOB") (string-equal dsc mf-geob-image))
                 ((string-equal tag "GEOB")
                  (mf-byte-geob a))
-                ((string-match "\\` " tag)
+                ((and tag (string-match "\\` " tag))
                  "")              
                 (t
                  (mf-byte-str-33 a)))
@@ -878,11 +878,11 @@ BITRATE は 1/1000 で指定することを想定している."
     (when (and (eq 255 (char-after pos))
                (eq 250 (logand (char-after (1+ pos)) 254)))
       (setq tmp (char-after (+ pos 2)))
-      (list (nth (lsh tmp -4) mf-mp3-bitrate)
-            (nth (logand (lsh tmp -2) 3) mf-mp3-frequency)
+      (list (nth (logand (ash tmp -4) 15) mf-mp3-bitrate)
+            (nth (logand (ash tmp -2) 3)  mf-mp3-frequency)
             (progn
               (setq tmp (char-after (+ pos 3)))
-              (nth (logand (lsh tmp -6) 3) mf-mp3-channel))))))
+              (nth (logand (ash tmp -6) 3) mf-mp3-channel))))))
 
 (defun mf-mp3-xing-p (&optional pos)
   "POS に mpegフレーム先頭ポイントを指定し,
@@ -905,7 +905,7 @@ BITRATE は 128k なら 128 と 1/1000 の値で指定する."
 (defun mf-mp3-time-from-buffer (datasize hsize &optional prefix)
   "mp3 FILE の演奏時間とビットレートをリストで得る.
 DATASIZE は音楽データ部分の大きさ、HSIZE はヘッダの大きさ.
-mp3 が VBR の場合ダミー値(たいていは 128)と 'vbr というシンボルのリストで返す.
+mp3 が VBR の場合ダミー値(たいていは 128)と \\='vbr というシンボルのリストで返す.
 PREFIX が non-nil なら VBR のときビットレートが正確な平均値になるが
 ファイルをすべて読み込むので遅くなる."
   (let ((prefix (or prefix mf-mp3-vbr))

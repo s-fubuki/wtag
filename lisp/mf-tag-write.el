@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.62 $
+;; Version: $Revision: 1.64 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.62 $")
+(defconst mf-tag-write-version "$Revision: 1.64 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -183,7 +183,7 @@ ALIAS は 実 tag を得るため."
   "主に手書きで指定するために ALIST を plist に変換.
 要素に :tag があれば素通りする.
 画像や歌詞のタグの場合ファイル名だけでも OK.
-つまり '((\"TAG\" . \"STR\") (\"TAG\" . \"STR\") \"FILE.jpg\" ...) のように指定する.
+つまり \((\"TAG\" . \"STR\") (\"TAG\" . \"STR\") \"FILE.jpg\" ...) のように指定する.
 CDR を NIL とするとそのタグの削除になる."
   (let* ((mode        mf-current-mode)
          (alias       (mf-alias mf-current-func))
@@ -311,7 +311,7 @@ CAR が  ALIAS に EQ の CDDR を返す.
 ;; from mf-write-tag
 (defun mf-func-get (file funclist)
   "FILE にマッチする関数セットを FUNCLIST list より取得. 無ければ NIL.
-FUNCLIST は '((REGEXP READ-FUNC WRITE-FUNC CV-FUNC ALIAS-LIST ) (...)) といった形式."
+FUNCLIST は \((REGEXP READ-FUNC WRITE-FUNC CV-FUNC ALIAS-LIST ) (...)) といった形式."
     (run-hooks 'mf-func-get-hook)
     (assoc-default file funclist 'string-match))
 
@@ -352,7 +352,8 @@ TIME-OPT が非NIL ならタイムスタンプを継承する."
          (wfunc  (mf-wfunc func))
          (cvfunc (mf-cvfunc func))
          tags)
-    (unless func (error "Unknow file type %s" file))
+    (unless func (error "Unknow file type `%s'" file))
+    (unless wfunc (error "Write function not ready `.%s'" (file-name-extension file)))
     (with-temp-buffer
       (set-make-local-variables
        '(mf-current-file mf-current-mode mf-current-func mf-current-case))

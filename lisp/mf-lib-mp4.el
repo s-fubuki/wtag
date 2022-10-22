@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.11 $$Name:  $
+;; Version: $Revision: 1.12 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 1.11 $$Name:  $")
+(defconst mf-lib-mp4-version "$Revision: 1.12 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -500,9 +500,9 @@ ARG1 ARG2 は 32bit を 16bit ずつ (high . low) に分けたコンスセル.
       (setq high   (+ (* (aref tmp i) 256) (aref tmp (+ 1 i)))
             low    (+ (* (aref tmp (+ 2 i)) 256) (aref tmp (+ 3 i)))
             lw-val (mf-add-longword (cons high low) lw-len))
-      (aset tmp i       (lsh    (car lw-val) -8))
+      (aset tmp i       (logand (ash (car lw-val) -8) 255))
       (aset tmp (+ 1 i) (logand (car lw-val) 255))
-      (aset tmp (+ 2 i) (lsh    (cdr lw-val) -8))
+      (aset tmp (+ 2 i) (logand (ash (cdr lw-val) -8) 255))
       (aset tmp (+ 3 i) (logand (cdr lw-val) 255))
       (setq i (+ 4 i)))
     (delete-region beg end)
