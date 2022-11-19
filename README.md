@@ -16,7 +16,7 @@ Emacs 28.0用 音楽ファイルのタグ修正 lisp 関数集です.
 4.  mf-lib-mp3.el     - oma(atrac3plus), mp3(ID3.2v2, ID3.2v3) ライブラリ
 5.  mf-lib-flac.el    - flac ライブラリ
 
-# ユーティリティ(サンプル)
+# ユーティリティ
 
 1.  wtag.el           - mf-tag-write アルバム・タグ・エディット・インターエイス
 
