@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.228 $$Name:  $
+;; Version: @(#)$Revision: 1.233 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -76,7 +76,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.228 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.233 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -254,9 +254,8 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   (if (boundp 'image-auto-resize) image-auto-resize nil)
   "`image-auto-resize' を override."
   :type '(choice (const :tag "No resizing" nil)
-                 (other :tag "Fit height and width" t)
-                 (const :tag "Fit height" fit-height)
-                 (const :tag "Fit width" fit-width)
+                 (const :tag "Fit to window" fit-window)
+                 (other :tag "Scale down to fit window" t)
                  (number :tag "Scale factor" 1))
   :group 'wtag)
 
@@ -436,17 +435,6 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
     (dolist (a lst mx)
       (setq mx (max (string-width (wtag-alias-value sym a)) mx)))))
 
-(defun wtag-read-size (file)
-  "FILE から読み込むバイト数を返す.
-大きさは `wtag-read-length-alist' に拡張子と読み込むパーセントを
-整数をコンスセルにして指定."
-  (let ((len
-         (assoc-default
-          (downcase (file-name-extension file))
-          wtag-read-length-alist #'string=)))
-    (and len
-         (round (* (/ (or (mf-eighth (file-attributes file)) 0) 100.0) len)))))
-
 (defcustom wtag-artwork-buffer-suffix "*art*"
   "*Cover buffer名サフィクス."
   :type  'string
@@ -500,8 +488,9 @@ Convert index buffer name to artwork buffer name."
   (let ((null wtag-not-available-string)
         result message-log-max)
     (dolist (f files (progn (message nil) (reverse result)))
-      (set (make-local-variable 'mf-current-case) (string-match "\\.flac\\'" f))
-      (let* ((len  (wtag-read-size f))
+      (set (make-local-variable 'mf-current-case)
+           (string-match "\\.\\(flac\\|ogg\\)\\'" f))
+      (let* ((len  (mf-read-size f))
              (tags (condition-case nil
                        (progn
                          (message "Read file %s..." (file-name-nondirectory f))
@@ -670,8 +659,9 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
       'old-genre (wtag-alias-value 'genre (car index)))
      (propertize (wtag-alias-value 'genre (car index)) 'genre t
                  'mouse-face 'highlight 'face 'wtag-genre-name)
-     (propertize " " 'old-year (wtag-alias-value 'year(car index)))
-     (propertize (wtag-alias-value 'year (car index)) 'year t 'mouse-face 'highlight
+     (propertize " " 'old-year (wtag-alias-value 'year (car index)))
+     (propertize (wtag-alias-value 'year (car index))
+                 'year t 'mouse-face 'highlight
                  'face 'wtag-release-year)
      "\n")
 
@@ -1404,6 +1394,26 @@ PREFIX をふたつ打つとリバースになる."
           (forward-line))))
     (message nil)))
 
+(defvar wtag-all-title-erase-without-query t)
+
+(defun wtag-all-title-erase ()
+  "すべての曲名を削除し1曲目のタイトル位置にポイントを移動する.
+位置はマークされる."
+  (interactive)
+  (let (beg end pos)
+    (when (or (null wtag-all-title-erase-without-query)
+              (y-or-n-p "Music name clear all?"))
+      (goto-char (point-min))
+      (forward-line 2)
+      (while (not (eobp))
+        (setq beg (wtag-move-to-end-property 'old-title)
+              end (wtag-move-to-property 'end-title))
+        (or pos (progn (setq pos beg) (push-mark)))
+        (kill-region beg end)
+        (forward-line))
+      (goto-char pos))
+    (message nil)))
+
 (defvar wtag-track-number-adjust-without-query nil)
 
 (defun wtag-track-regular (str &optional def)
@@ -1648,8 +1658,8 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
          (dir
           (wtag-alias-value
            'directory (wtag-get-common-properties buff))))
+    (and (one-window-p) (split-window))
     (wtag-init-buffer dir buff)
-    (wtag-popup-artwark)
     (message nil)))
 
 (defun wtag-popup-artwark ()
@@ -1659,7 +1669,6 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
     (and (get-buffer abuff)
          (switch-to-buffer abuff)
          (pop-to-buffer buff wtag-pop-action))))
-
 
 (defun wtag-fit-artwork-toggle ()
   (interactive)
@@ -1678,7 +1687,9 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
   (if (and (boundp 'wtag-frame) wtag-frame)
       (progn
         (setq wtag-frame nil)
-        (delete-frame wtag-frame))
+        (delete-frame wtag-frame)
+        (with-current-buffer (wtag-artwork-buffer-name wtag-base-name)
+          (wtag-image-mode)))
     (quit-window))
   (run-hooks 'wtag-quit-hook))
 
@@ -2108,6 +2119,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "\C-c\C-c"      'wtag-flush-tag-ask)
     (define-key map "\C-c\C-l"      'wtag-truncate-lines)
     (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
+    (define-key map "\C-c\C-e"      'wtag-all-title-erase)
     (define-key map "\C-c\C-t"      'wtag-track-number-adjust)
     (define-key map "\C-c\C-s"      'wtag-sort-tracks)
     (define-key map "\C-c="         'wtag-point-file-name)
@@ -2133,6 +2145,8 @@ winカカシが漢字ASCII混合の場合、
     (define-key menu-map [wtag-artwork-load]
       '("Artwork Image Load" . wtag-artwork-load))
     (define-key menu-map [dashes2] '("--"))
+    (define-key menu-map [wtag-all-title-erase]
+      '("All Title Erase" . wtag-all-title-erase))
     (define-key menu-map [wtag-sort-tracks]
       '("Album Name Sort" . wtag-sort-tracks))
     (define-key menu-map [wtag-track-number-adjust]
@@ -2272,6 +2286,7 @@ winカカシが漢字ASCII混合の場合、
 (define-derived-mode wtag-image-mode image-mode "wtag-image"
   "Music file tag image mode.
 \\{wtag-image-mode-map}"
+  (setq-local image-transform-resize wtag-image-auto-resize)
   (setq mode-line-buffer-identification
         (cons
          (list :propertize

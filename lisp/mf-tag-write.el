@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.64 $
+;; Version: $Revision: 1.65 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.64 $")
+(defconst mf-tag-write-version "$Revision: 1.65 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -245,7 +245,7 @@ CDR を NIL とするとそのタグの削除になる."
 (defun mf-tag-read-alias (file &optional len no-bin)
   "FILE のタグを \(ALIAS TAG . DATA) または \(ALIAS DSC . DATA) の list にして返す."
   (let* ((alist (mf-tag-read-alist file len no-bin))
-         (case  (string-match "\\.flac\\'" file))
+         (case  (string-match "\\.\\(flac\\|ogg\\)\\'" file))
          (mlist (mf-func-get file mf-function-list))
          (mode  (cdr (assoc mf-type-dummy alist)))
          (alias (cons
@@ -261,7 +261,7 @@ CDR を NIL とするとそのタグの削除になる."
 (複数の alias のある artwork cover 等
 car だけ違う大きな list が複数作られるが、
 中身はアドレス参照で実体は増えないのでメモリは特に圧迫されない)
-CASE が NON-NIL(FLAC)のときだけ戻す ALIST の中の TAG が upper case 化される."
+CASE が NON-NIL(FLAC or OGG)のときだけ戻す ALIST の中の TAG が upper case 化される."
   (let ((alist
          (if case
              (mapcar #'(lambda (a) (cons (upcase (car a)) (cdr a))) alist)

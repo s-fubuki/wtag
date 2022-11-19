@@ -1,4 +1,45 @@
 # -*- mode: org -*-
+* Sat Nov 19 09:16:17 2022
+** wtag.el revision 1.233
+*** add: 関数 `wtag-all-title-erase' 全曲タイトルの消去.
+    上記コマンドの問い合わせをするかどうかの変数  'wtag-all-title-erase-without-query'.
+    スクエアコピー(レクタングルコピー)したものを貼り付けたいときに使いたいので付けました.
+
+*** fix: というか Emacs 29.0.50 で image-mode の挙動が変わったのに合わせ
+    アザーフレーム関係で自動フィットしなくなったのを修正.
+
+*** fix: `wtag-reload-buffer' アートワーク窓がダブって開くのを修正.
+*** change: `wtag-image-auto-resize': image-mode の `image-auto-resize' が変更されたので合わせる.
+*** fix: lib-flac で year タグが表示されていなかったのを修正.
+
+** mf-tag-write.el revision 1.65
+*** chnage: `mf-tag-read-alias' Case Insensitive タイプに ogg を追加.
+
+** mf-lib-var.el revision 1.21
+*** add: `mf-write-suffixs' SUFFIXS を書き込み関数のあるものだけにして戻す関数.
+*** add: `mf-buffer-read-unpack'.
+*** chnage: 変数 `mf-read-size' の mp4 を 60 -> 20.
+*** chnage: 関数 `mf-read-size' 100% 指定なら計算せず
+    実際のファイルサイズをそのまま戻すようにする.
+
+** mf-lib-mp3v1.el revision 1.16
+*** chnage: `mf-id31-add-suffix' 実体ファイルがなければ中身を精査せず
+    ファイル名をそのまま戻すようにする.
+    よく考えないでやったので、まだ変更の余地在り.
+
+** mf-lib-ogg.el revision 1.4
+*** Vorbis: file 用新規ライブラリ. 読み込みのみ対応.
+    wtag デフォルトではロードしないので、対応させたい場合は require してください.
+    拡張子は .ogg のみ設定してあります.
+: (require 'mf-lib-ogg)
+
+** mf-lib-flac.el revision 1.60
+*** change: 変数 `mf-flac-vendor' の値を " *vendor" に変更. (lib-ogg に合わせる)
+*** chnage: 変数 `flac-tag-alias' year の値を "DATE" に変更.
+    他のコーデックでは日付タグは "year" だが flac では "DATE".
+    wtag では year として処理していたため flac のとき年が Not Available(n/a) になっていた.
+    なので alias year で引かれると tag "DATE", tag "DATE" で引かれると alias year になるようにし対処.
+
 * Sat Oct 22 08:50:36 2022
 ** wtag Revision: 1.228
 *** fix: 終了時や再読み込み時のウィンドウレイアウトをできるだけ維持

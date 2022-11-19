@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.15 $$Nmae$
+;; Version: $Revision: 1.16 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -34,7 +34,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3v1-version "$Revision: 1.15 $$Nmae$")
+(defconst mf-lib-mp3v1-version "$Revision: 1.16 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -97,7 +97,8 @@ Entity is alias for `ID3v2.3'."
 (defun mf-id31-add-suffix (file)
   "FILE が mp3 id3 v1 (or v1.1) なら suffix \".1\" を FILE 末尾に付け
 さもなくばそのまま返す."
-  (if (string-match "\\.mp3\\'" file)
+  (if (and (file-exists-p file) 
+           (string-match "\\.mp3\\'" file))
       (cond
        ;; ID3[234] と ID31 は共存できるので ID3[234] があればそちら優先.
        ((mf-id32p file)

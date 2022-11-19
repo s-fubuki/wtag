@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020, 2021, 2022
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.16 $$Name:  $
+;; Version: $Revision: 1.21 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.16 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.21 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -81,6 +81,19 @@
 ;;           (mapconcat #'concat (mapcar #'symbol-name (eval lst)) "\\|")
 ;;           "\\)\\'"))
 
+(defun mf-write-suffixs (&optional suffixs)
+  "SUFFIXS を書き込み関数のあるものだけにして戻す.
+SUFFIXS を省略すると `mf-lib-suffix-all' の値を使う."
+  (let ((suffixs (or suffixs mf-lib-suffix-all)))
+    (delq nil
+          (mapcar
+           #'(lambda (ext)
+               (and
+                (mf-wfunc
+                 (mf-func-get (concat "." (symbol-name ext)) mf-function-list))
+                ext))
+           suffixs))))
+
 (defun mf-first   (a) (nth 0 a))
 (defun mf-second  (a) (nth 1 a))
 (defun mf-third   (a) (nth 2 a))
@@ -122,12 +135,15 @@
   :type  'boolean
   :group 'music-file)
 
-(defvar mf-list-pack-partition
-  '(((q ll longlong qword quad quadword) mf-buffer-read-longlong-word 8)
-    ((l long longword) mf-buffer-read-long-word 4)
-    ((t twenty-four)   mf-buffer-read-3-bytes   3)
-    ((w word s short)  mf-buffer-read-word      2)
-    ((b byte c char)   mf-char-after            1)))
+(defvar mf-buffer-read-functions
+  '((c char-after                  1)
+    (S mf-buffer-read-word         2)
+    (s mf-buffer-read-word-le      2)
+    (L mf-buffer-read-long-word    4)
+    (l mf-buffer-read-long-word-le 4)
+    (Q mf-buffer-read-quad-word    8)
+    (q mf-buffer-read-quad-word-le 8))
+  "小文字が LITTLE / 大文字が BIG エンディアン. 末尾数値は進めるポインタ.")
 
 (defun mf-buffer-substring (start end)
   (ignore-errors (buffer-substring start end)))
@@ -143,18 +159,14 @@ POS を省略するとカレント point になる."
         high low)
     (setq high (char-after pos)
           low  (char-after (+ pos 1)))
-    (if (null (and high low))
-        nil
-      (+ (* high 256) low))))
+    (and high low (+ (* high 256) low))))
 
 (defun mf-buffer-read-long-word (&optional pos opt)
   "POS から 4バイト読んで整数として返す. POS が範囲外なら NIL を返す."
   (let* ((pos (or pos (point)))
          (high (mf-buffer-read-word pos opt))
          (low  (mf-buffer-read-word (+ 2 pos) opt)))
-    (if (null (and high low))
-        nil
-      (+ (* high 65536) low))))
+    (and high low (+ (* high 65536) low))))
 
 (defalias 'mf-buffer-read-longlong-word 'mf-buffer-read-quad-word)
 (defun mf-buffer-read-quad-word (&optional pos wlst)
@@ -163,12 +175,11 @@ WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした�
   (let* ((pos (or pos (point)))
          (high (mf-buffer-read-long-word pos))
          (low  (mf-buffer-read-long-word (+ 4 pos))))
-    (if (null (and high low))
-        nil
-      (if wlst
-          (list (logand (ash high -16) 65535) (logand high 65535)
-                (logand (ash low -16)  65535) (logand low 65535))
-        (+ (* high (expt 2 32)) low)))))
+    (and high low
+         (if wlst
+             (list (logand (ash high -16) 65535) (logand high 65535)
+                   (logand (ash low -16)  65535) (logand low 65535))
+           (+ (* high (expt 2 32)) low)))))
 
 (defun mf-buffer-read-3-bytes (&optional pos opt)
   (let (a b c)
@@ -176,9 +187,7 @@ WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした�
     (setq a (char-after pos)
           b (char-after (+ pos 1))
           c (char-after (+ pos 2)))
-    (if (null (and a b c))
-        nil
-      (+ (* a 65536) (* b 256) c))))
+    (and a b c (+ (* a 65536) (* b 256) c))))
 
 (defun mf-buffer-read-word-le (&optional pos opt)
   "POS から word 長を little endian で返す.
@@ -187,9 +196,7 @@ POS を省略するとカレント point になる."
         high low)
     (setq high (char-after pos)
           low  (char-after (+ pos 1)))
-    (if (null (and high low))
-        nil
-      (+ (* low 256) high))))
+    (and high low (+ (* low 256) high))))
 
 (defun mf-buffer-read-long-word-le (&optional pos opt)
   "POS から 4バイトを little endian として読んで整数として返す.
@@ -200,11 +207,10 @@ POS が範囲外なら NIL を返す."
           b (char-after (+ 1 pos))
           c (char-after (+ 2 pos))
           d (char-after (+ 3 pos)))
-    (if (null (and a b c d))
-        nil
-      (setq high (+ (* b 256) a)
-            low  (+ (* d 256) c))
-      (+ (* low 65536) high))))
+    (and a b c d
+         (setq high (+ (* b 256) a)
+               low  (+ (* d 256) c))
+         (+ (* low 65536) high))))
 
 (defun mf-buffer-read-quad-word-le (&optional pos wlst)
   "POS から Little Endian として 8バイト読んで整数として返す.
@@ -213,13 +219,12 @@ WLST が non-nil ならバイトに分解し Big Endian の並びにしたリス
   (let* ((pos (or pos (point)))
          (low  (mf-buffer-read-long-word-le pos))
          (high (mf-buffer-read-long-word-le (+ 4 pos))))
-    (if (null (and high low))
-        nil
-      (if wlst
-          (list 
-           (logand (ash high -16) 65535) (logand high 65535)
-           (logand (ash low -16)  65535) (logand low 65535))
-        (+ (* high (expt 2 32)) low)))))
+    (and high low
+         (if wlst
+             (list 
+              (logand (ash high -16) 65535) (logand high 65535)
+              (logand (ash low -16)  65535) (logand low 65535))
+           (+ (* high (expt 2 32)) low)))))
 
 (defun mf-buffer-read-word-le-fd ()
   "point から word 長を little endian で返し、その分 point を進める."
@@ -249,27 +254,6 @@ WLST が non-nil ならバイトに分解し Big Endian の並びにしたリス
     (logand value           255))
    'iso-8859-1))
 
-(defun mf-list-pack (point partition wlst)
-  "POINT からバッファの内容を PARTITION に従いバイトレベルで小分けしてリストにパック.
-指定可能な長さは 64bit Qword までで 各値は符合無しの整数になる.
-数値変換せずバイトの羅列としてそのまま切り出すときは\
-整数を指定するとその長さだけ切り出される.
-PARTITION は `mf-list-pack-partition' の 各 car で定義されたシンボルをリストで羅列する.
-Example. \(mf-list-pack point \\='(l l w l c))
-WLST が non-nil なら 64bit 値  16bit ごとに分割したリストにした形式で戻す."
-  (let (fun result)
-    (dolist (a partition (reverse result))
-      (setq fun (assoc-default a mf-list-pack-partition #'(lambda (a b) (memq b a))))
-      (cond
-       (fun
-        (setq result (cons (funcall (car fun) point wlst) result)
-              point (+ point (cadr fun))))
-       ((numberp a)
-        (setq result (cons (buffer-substring point (+ point a)) result)
-              point (+ point a)))
-       (t
-        (error "Illegal %s" a))))))
-
 (defun mf-disbits (val partition &optional width)
   "VAL をビット長 WIDTH として PARTITION に従いビット分解しリストにして戻す.
 PARTITION はビット数をリストで羅列する.
@@ -286,6 +270,19 @@ Example: \(mf-disbits val \\='(20 3 5 36))"
       (setq tmp (ash val (* (- width elt) -1))
             width (- width elt))
       (setq result (cons (logand tmp (1- (expt 2 elt))) result)))))
+
+(make-obsolete 'mf-list-pack 'mf-buffer-read-unpack "1.19") 
+(defun mf-buffer-read-unpack (unpack-list &optional pos move)
+  "l, s 等を並べた UNPACK-LIST に従って POS から読み込みリストにして返す.
+対応関数テーブルは `mf-buffer-read-functions' で定義.
+MOVE が non-nil なら読んだ分ポイントを進める."
+  (let (mode result)
+    (setq pos (or pos (point)))
+    (dolist (f unpack-list (reverse result))
+      (setq mode (cdr (assq f mf-buffer-read-functions)))
+      (setq result (cons (funcall (car mode) pos) result))
+      (setq pos (+ pos (cadr mode)))
+      (and move (forward-char (cddr mode))))))
 
 (defun mf-chop (str)
   (save-match-data
@@ -321,22 +318,18 @@ once ならバックアップがあればバックアップしない."
   "整数秒 SEC を時間リスト \(h m s) に変換."
   (mapcar #'floor (list (/ sec 3600) (/ (mod sec 3600) 60) (mod sec 60))))
 
-(defvar mf-files '("mf-tag-write" "mf-lib-mp3" "mf-lib-mp4"
-                   "mf-lib-flac" "mf-lib-utility" "mf-lib-var"
-                   "wtag" "tiny-ted"))
-(defvar mf-local (locate-user-emacs-file "local"))
-;; user-emacs-directory
+(defcustom mf-read-size
+  '(("\\.oma\\'" . 30) ("\\.\\(m4a\\|mp3\\|wma\\)\\'" . 10)
+    ("\\.mp4\\'" . 20) ("\\.flac\\'" . 3) ("\\.wav\\'" . 3))
+  "ファイルサイズに対する読み込みの割合."
+  :type  '(repeat (cons regexp integer))
+  :group 'music-file-get-title)
 
-(defun mf-snap (tag)
-  "for wtag release tag set."
-  (interactive "sTag: ")
-  (let* ((files mf-files)
-         (local mf-local)
-         (rcs (list "rcs" (format "-n%s:" tag)))
-         (co  (list "co"  (format "-r%s"  tag))))
-    (cd local)
-    (dolist (com (list rcs co))
-      (shell-command (mapconcat #'identity (append com files) " ")))))
+(defun mf-read-size (file)
+  (let ((per  (assoc-default file mf-read-size 'string-match))
+        (len (file-attribute-size (file-attributes file))))
+    (if per (round (* (/ len 100.0) per)) len)))
+      
 
 (provide 'mf-lib-var)
-;;; mf-lib-var-20200418.el ends here
+;;; mf-lib-var.el ends here

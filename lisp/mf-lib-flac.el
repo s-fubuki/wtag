@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.57 $$Nmae$
+;; Version: @(#)$Revision: 1.60 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.57 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.60 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -59,8 +59,8 @@
     (artist     . "ARTIST")
     (a-artist   . "ALBUMARTIST")
     (album      . "ALBUM")
+    (year       . "DATE")
     (date       . "DATE")
-    (year       . "YEAR")               ; 捏造
     (genre      . "GENRE")
     (track      . "TRACKNUMBER")
     (disk       . "DISCNUMBER")
@@ -162,7 +162,7 @@ flac の tag は case insensitive らしいので注意.
   (let ((pic (assq 'PICTURE header-list)))
     (and pic (mf-split-picture-header (+ 4 (cadr pic))))))
 
-(defvar mf-flac-vendor " *mf-flac-vendor-comment")
+(defvar mf-flac-vendor " *vendor")
 
 (defun mf-to-property-list (str)
   "最初に現われる \"=\" で STR を分割し :tag と :data のプロパティリストにする."
@@ -578,12 +578,12 @@ INFO block のアドレスとサウンドデータの長さ SIZE を与えると
 但し CH とBPS は -1 で格納されているので、得た値に 1加算した値にする.
 POS を省略すると現在ポイントになる."
   ;; * 32bit Emacs では total が(フルに使われていると)正常値が得られない可能性がある.
-  ;; 24bit/96kHz で 29'46\"あるデータまで試したが 
+  ;; 24bit/96kHz で 30'57\"あるデータまで試したが
   ;; Total sampling 数が 29bit(32bit Emacs で扱える最大整数値)を越える大きさではなかった.
-  ;; "Lyceum Theatre 1972: The Complete Recordings (5/24/72) [Live] [2022 Remaster]"
-  ;; "The Other One (Live at the Lyceum Theatre, London, England 5/24/72) [2022 Remaster]"
-  ;; (*time " *TIME" 1786 2840 96000 2 24 171539200)
-  ;; このデータのトータルサンプル数 -> 171,539,200
+  ;; "Lyceum Theatre 1972: The Complete Recordings (5/23/72) [Live] [2022 Remaster]"
+  ;; "Dark Star (Live at the Lyceum Theatre, London, England 5/23/72) [2022 Remaster]"
+  ;; (*time " *TIME" 1857 2819 96000 2 24 178329600)
+  ;; このデータのトータルサンプル数 -> 178,329,600
   ;;               (1- (expt 2 29)) -> 536,870,911
   (let ((pos (or pos (point)))
         tmp srate ch bps total)
