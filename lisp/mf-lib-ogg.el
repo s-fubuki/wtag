@@ -3,7 +3,7 @@
 ;; Copyright (C) 2022
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.4 $$Name:  $
+;; Version: $Revision: 1.5 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -24,7 +24,7 @@
 ;; for `mf-tag-write' ogg music file tag READ(!write) library.
 
 ;;; Code:
-(defconst mf-lib-ogg-version "@(#)$Revision: 1.4 $$Nmae$")
+(defconst mf-lib-ogg-version "@(#)$Revision: 1.5 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-flac)
@@ -231,7 +231,9 @@ NO-BINARY が non-nil ならカバーアートタグの :data を nil にする.
           granule (ogg-last-granule result)
           ident   (ogg-identification-header (ogg-data-beg (nth 0 result)))
           comstr  (ogg-concat-comment-page result))
-    (setq times   (list (car (ogg-bitrate ident)) (cdr (assq 'sample-rate ident))))
+    ;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
+    (setq times   (list (car (ogg-bitrate ident)) (cdr (assq 'sample-rate ident))
+                        (cdr (assq 'channels ident)) 16)) ; Vorbis is 16bit Only?
     (setq times   (cons (/ granule (+ (cadr times) 0.0)) times))
     (append
      (list

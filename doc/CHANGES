@@ -1,4 +1,131 @@
 # -*- mode: org -*-
+#+options: H:1 num:nil
+* Sat Dec 17 13:30:11 2022
+** wtag.el 1.243
+*** change: 時間表示用カスタマイズ変数の整理
+    変数 wtag-time-form-balloon や %o(wtag-time-o) を廃止し `wtag-time-form' に統合.
+    `wtag-time-form-balloon' でセットしていたバルーン表示は
+    prefix 時と同じ `wtag-time-form' の CDR から得るように変更.
+    同様に `wtag-time-all-form-balloon' も `wtag-time-all-form' に統合.
+
+    またタイプをつけたリストにするとファイル種別により振り分けできるようになった.
+    以下に設定例を列挙します.
+
+- バリエーションなしの一番シンプルな例
+: (setq wtag-time-form "%2m'%02s\"%4bkbps %B/%r%v")
+
+: -->  1  3'25" 303kbps 16/44.1/vbr Billie Holiday  I'm A Fool To Want You
+
+- プレフィクス起動時やバルーンを詳しくする(従来の動作とコンパチ)
+: (setq wtag-time-form '("%2m'%02s\"" . "%2m'%02s\"%4bkbps %B/%r%v"))
+
+mp3 の場合プレフィクス起動で、すべて読み込んで VBR の計算をするので、
+プレフィクス時のみビットレートを表示するこの設定だと表示の整合性がとれます.
+
+:        -->  1  3'25" Billie Holiday  I'm A Fool To Want You
+: prefix -->  1  3'25" 303kbps 16/44.1/vbr Billie Holiday  I'm A Fool To Want You
+
+- タイプ別にする例(今回の新たなデフォルト)
+以下のような設定だと mp3, mp4(m4a) だけ個別で * がその他になります.
+#+BEGIN_SRC emacs-lisp
+(setq wtag-time-form '((mp3 "%2m'%02s\"" "%2m'%02s\"%4bkbps (%r%v)")
+                       (mp4 "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r%v")
+                       (*   "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r")))
+#+END_SRC
+
+**** フォーム中の特殊文字.
+     コーデックの種類によって得られない値は「%B は 16, %v は空文字」等の固定値になっています.
+     パディング幅指定の数値が指定できます.
+#+BEGIN_SRC 
+%h  Hour
+%m  Minutes
+%s  Second
+%b  Bit Rate
+%B  Bit Size
+%c  Channel
+%r  Sampling Rate
+%t  Codec Type
+%v  VBR なら wtag-time-option-mp3-vbr に設定された文字列.
+%% そのもの
+#+END_SRC
+
+*** change: `wtag-track-number-adjust' 
+    PREFIX があれば強制的に現状の並びで新たな番号を振り直す.
+
+*** `wtag-music-play'
+**** fix: 連続実行すると `C-c C-c'(`wtag-kill-process')が効かなくなるのを修正.
+     連続実行とは実行中の上書き実行.
+     但し wmp のみ. Chrome などに渡す場合はうまくいかない.
+
+**** add: カスタマイズ変数: `wtag-music-play-next'. 
+     プレイ実行後ポイントを1行進めるかどうか.
+     non-nil ならプレイ実行するとポイントが1行進む.
+     数値だと秒数として、移動にその分だけウエイトがかかる.
+     ポイントが再生中の曲の行に無くなるので、
+     少し判りにくいと思ったので少しでも移動しましたよを判るようにするため.
+
+**** change: ポイントがとっぱずれにあるときは1曲目に移動する.
+
+** mf-lib-mp3.el 2.3
+*** change: `mf-mp3-time-from-buffer' 
+    可変ビットレートのとき全フレームから計算した値でなくともリストで括るようにする.
+    つまりビットレートがリストなら可変ビットレート(Xingテーブル在りデータ)だということ.
+
+*** change: `mf-mp3-time-from-buffer' `mf-oma-time-from-buffer' 戻値の並びの変更.
+    lib-flac に合わせ以下の list に変更.
+
+#+BEGIN_EXAMPLE
+0: MusicSec
+1: BitRate
+2: SampleRate
+3: Channel
+4: Bits/Sample
+5: TotalSample (flac のみ)
+#+END_EXAMPLE
+
+oma は 2 以降は得られない(取得場所不明)ので無いなど、
+コーデックによっては値が無い場合があるが今回オフセットの統一をした.
+
+また mp3 や iTunes:m4a の VBR のときのビットレートや
+oma のとき計算で割り出した時間の場合は値がリストで括られています.
+この戻り値フォーマットの仕様変更に伴ないメジャーバージョンを上げました.
+
+** mf-lib-mp4.el 2.2
+*** add: 変数 `mp4-vbr'
+    t なら stsz(Sample Size Atom) の中のサンプルサイズが 0 なら VBR とする.
+    itunes なら iTunes で VBR エンコードしたものなら VBR とする.
+    この場合ビットレート値をデータから算出せずエンコード時に指定した値にする.
+    nil なら機能しない.
+    デフォルトは nil で iTunes でエンコードされたというタグがあっても、ヘッダパラメータからビットレートを計算する.
+
+*** change: *time 戻値の仕様を変更
+    これに合わせメジャー版をひとつ上げる.
+1. サンプリングレートやチャンネル数も得る(並びは今回の mp3 の変更項目を参照)
+1. iTunes で VBR エンコードされている場合 Bit rate がリストで括られる
+
+*** fix: 上記に伴ない mp4a(AAC) の他 alac にも明示的に対応
+    が、表示関係は aac のままになっている(todo).
+    alac も QuickTime コンテナに AAC と同じように収まっていてタグの書換ができるが、
+    時間情報等が今までちゃんと得られていなかったのを対応.
+
+** mf-lib-var.el 1.24
+*** fix & change: `mf-buffer-read-unpack'
+    move のバグ修正, 3バイト読み込みの T と、数値でバイト文字列を読み込む拡張.
+    結局使っていなくて削除された前身のものとほぼ同じになる.
+
+*** change: 変数 `mf-read-size' mp4 を 50%に変更.
+
+** mf-lib-ogg.el 1.5
+*** change: *time に chnael 情報を追加. 他も判れば随時追加予定.
+    flac 合わせですが、追加だけで位置の変更はないのでメジャーバージョンはそのままです.
+
+** mf-lib-aiff.el 1.3
+*** New: .aif (.aiff) 用読み込み専用ライブラリ.
+    利用するには別途 require が必要.
+    手元のサンプルだとタグ(ID32)がデータ末尾に付けられていて
+    ファイルをほぼ全部読まないと取得できないので,
+    サイズ指定引数はダミーで効果はありません.
+
 * Sat Nov 19 09:16:17 2022
 ** wtag.el revision 1.233
 *** add: 関数 `wtag-all-title-erase' 全曲タイトルの消去.
@@ -13,17 +140,17 @@
 *** fix: lib-flac で year タグが表示されていなかったのを修正.
 
 ** mf-tag-write.el revision 1.65
-*** chnage: `mf-tag-read-alias' Case Insensitive タイプに ogg を追加.
+*** change: `mf-tag-read-alias' Case Insensitive タイプに ogg を追加.
 
 ** mf-lib-var.el revision 1.21
 *** add: `mf-write-suffixs' SUFFIXS を書き込み関数のあるものだけにして戻す関数.
 *** add: `mf-buffer-read-unpack'.
-*** chnage: 変数 `mf-read-size' の mp4 を 60 -> 20.
-*** chnage: 関数 `mf-read-size' 100% 指定なら計算せず
+*** change: 変数 `mf-read-size' の mp4 を 60 -> 20.
+*** change: 関数 `mf-read-size' 100% 指定なら計算せず
     実際のファイルサイズをそのまま戻すようにする.
 
 ** mf-lib-mp3v1.el revision 1.16
-*** chnage: `mf-id31-add-suffix' 実体ファイルがなければ中身を精査せず
+*** change: `mf-id31-add-suffix' 実体ファイルがなければ中身を精査せず
     ファイル名をそのまま戻すようにする.
     よく考えないでやったので、まだ変更の余地在り.
 
@@ -35,7 +162,7 @@
 
 ** mf-lib-flac.el revision 1.60
 *** change: 変数 `mf-flac-vendor' の値を " *vendor" に変更. (lib-ogg に合わせる)
-*** chnage: 変数 `flac-tag-alias' year の値を "DATE" に変更.
+*** change: 変数 `flac-tag-alias' year の値を "DATE" に変更.
     他のコーデックでは日付タグは "year" だが flac では "DATE".
     wtag では year として処理していたため flac のとき年が Not Available(n/a) になっていた.
     なので alias year で引かれると tag "DATE", tag "DATE" で引かれると alias year になるようにし対処.
@@ -45,9 +172,9 @@
 *** fix: 終了時や再読み込み時のウィンドウレイアウトをできるだけ維持
     使っていなかった Copy, Delete 実行後が特に酷かったのでできるだけ対処.
 
-*** chnage: 書き込み関数が無い場合編集モードにできなくする
+*** change: 書き込み関数が無い場合編集モードにできなくする
 
-*** 重要 chnage: 書き出し時の prefix の動作の変更
+*** 重要 change: 書き出し時の prefix の動作の変更
     プレフィクス付で (C-u C-c C-c) 等とフィニッシュすると強制書換になる.
     以前は複数アルバムの混じったディレクトリという特殊な条件下での動作変更だった.
     あまり使用しない上、たまに使いたい場面があっても
@@ -57,7 +184,7 @@
 *** "29.0.50" Win10月版のバイトコンパイルでのワーニング抑止.
 
 ** mf-tag-write.el 1.64
-*** chnage: Write function 未実装だとエラーにする.
+*** change: Write function 未実装だとエラーにする.
     ライブラリに書き込み関数がついていない場合にもセーフティな対応.
 
 ** mf-lib-mp4.el(1.12), mf-lib-flac.el(1.57), mf-lib-mp3.el(1.38), mf-lib-var.el(1.16)
@@ -133,7 +260,7 @@
     このバグによる書き込みへの影響はなし.
 
 ** mf-lib-mp3 1.36
-*** chnage 変数 `mf-mp3-vbr' が non-nil なら可変長ビットレートの平均値を得られるようにする. 
+*** change 変数 `mf-mp3-vbr' が non-nil なら可変長ビットレートの平均値を得られるようにする. 
     周辺関数を新たに書き直した為、
     mpeg layer によってビットレートなどのテーブルを振り分けする部分は無くなり、 
     mpeg1/layer3 決め打ちになった. が、おそらく問題はないでしょう.
@@ -203,7 +330,7 @@ MSX-DOS から MSX-DOS2 になってディレクトリが掘れるようにな�
     この対応は変数 `wtag-mode-name-alias' でカスタマイズできます.
 
 ** mf-tag-write 1.62
-*** chnage: jpg, png 以外を受けつけないように戻す
+*** change: jpg, png 以外を受けつけないように戻す
    音楽ファイル側で対応していないため.
 
 * Sat Mar  5 07:34:41 2022

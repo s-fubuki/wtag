@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020, 2021, 2022
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.21 $$Name:  $
+;; Version: $Revision: 1.24 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.21 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.24 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -137,13 +137,17 @@ SUFFIXS を省略すると `mf-lib-suffix-all' の値を使う."
 
 (defvar mf-buffer-read-functions
   '((c char-after                  1)
+    (C char-after                  1)
     (S mf-buffer-read-word         2)
     (s mf-buffer-read-word-le      2)
+    (T mf-buffer-read-3-bytes      3)
+    (t mf-buffer-read-3-bytes      3)
     (L mf-buffer-read-long-word    4)
     (l mf-buffer-read-long-word-le 4)
     (Q mf-buffer-read-quad-word    8)
     (q mf-buffer-read-quad-word-le 8))
-  "小文字が LITTLE / 大文字が BIG エンディアン. 末尾数値は進めるポインタ.")
+  "小文字が LITTLE / 大文字が BIG エンディアン. 末尾数値は進めるポインタ.
+lisp なので t は別の特別な意味もあるので注意.")
 
 (defun mf-buffer-substring (start end)
   (ignore-errors (buffer-substring start end)))
@@ -153,7 +157,7 @@ SUFFIXS を省略すると `mf-lib-suffix-all' の値を使う."
     (char-after pos)))
 
 (defun mf-buffer-read-word (&optional pos opt)
-  "POS から word 長を返す.
+  "POS から 2バイト読んで 16bit整数として返す.
 POS を省略するとカレント point になる."
   (let ((pos (or pos (point)))
         high low)
@@ -162,7 +166,7 @@ POS を省略するとカレント point になる."
     (and high low (+ (* high 256) low))))
 
 (defun mf-buffer-read-long-word (&optional pos opt)
-  "POS から 4バイト読んで整数として返す. POS が範囲外なら NIL を返す."
+  "POS から 4バイト読んで 32bit整数として返す. POS が範囲外なら NIL を返す."
   (let* ((pos (or pos (point)))
          (high (mf-buffer-read-word pos opt))
          (low  (mf-buffer-read-word (+ 2 pos) opt)))
@@ -170,7 +174,7 @@ POS を省略するとカレント point になる."
 
 (defalias 'mf-buffer-read-longlong-word 'mf-buffer-read-quad-word)
 (defun mf-buffer-read-quad-word (&optional pos wlst)
-  "POS から 8バイト読んで整数として返す. POS が範囲外なら NIL を返す.
+  "POS から 8バイト読んで 64bit整数として返す. POS が範囲外なら NIL を返す.
 WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした形式で戻す."
   (let* ((pos (or pos (point)))
          (high (mf-buffer-read-long-word pos))
@@ -274,15 +278,20 @@ Example: \(mf-disbits val \\='(20 3 5 36))"
 (make-obsolete 'mf-list-pack 'mf-buffer-read-unpack "1.19") 
 (defun mf-buffer-read-unpack (unpack-list &optional pos move)
   "l, s 等を並べた UNPACK-LIST に従って POS から読み込みリストにして返す.
+数値ならその長さだけバイト文字列として得る.
 対応関数テーブルは `mf-buffer-read-functions' で定義.
 MOVE が non-nil なら読んだ分ポイントを進める."
-  (let (mode result)
+  (let (mode result shift)
     (setq pos (or pos (point)))
     (dolist (f unpack-list (reverse result))
-      (setq mode (cdr (assq f mf-buffer-read-functions)))
-      (setq result (cons (funcall (car mode) pos) result))
-      (setq pos (+ pos (cadr mode)))
-      (and move (forward-char (cddr mode))))))
+      (if (numberp f)
+          (setq result (cons (buffer-substring pos (+ pos f)) result)
+                shift  f)
+        (setq mode   (cdr (assq f mf-buffer-read-functions))
+              shift  (cadr mode)
+              result (cons (funcall (car mode) pos) result)))
+      (setq pos (+ pos shift))
+      (and move (forward-char shift)))))
 
 (defun mf-chop (str)
   (save-match-data
@@ -320,7 +329,7 @@ once ならバックアップがあればバックアップしない."
 
 (defcustom mf-read-size
   '(("\\.oma\\'" . 30) ("\\.\\(m4a\\|mp3\\|wma\\)\\'" . 10)
-    ("\\.mp4\\'" . 20) ("\\.flac\\'" . 3) ("\\.wav\\'" . 3))
+    ("\\.mp4\\'" . 50) ("\\.flac\\'" . 3) ("\\.wav\\'" . 3))
   "ファイルサイズに対する読み込みの割合."
   :type  '(repeat (cons regexp integer))
   :group 'music-file-get-title)

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.12 $$Name:  $
+;; Version: $Revision: 2.2 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,9 +32,10 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 1.12 $$Name:  $")
+(defconst mf-lib-mp4-version "$Revision: 2.2 $$Name:  $")
 
 (require 'mf-lib-var)
+(require 'cl-lib)
 
 (defvar mf-lib-mp4-suffix '(mp4 m4a))
 (defvar mf-lib-mp4-regexp (mf-re-suffix mf-lib-mp4-suffix))
@@ -50,6 +51,18 @@
 (unless (boundp 'mf-function-list)
   (setq mf-function-list nil))
 (add-to-list 'mf-function-list  mf-mp4-function-list)
+
+(defcustom mp4-vbr 'itunes
+  "t なら stsz(Sample Size Atom) の中のサンプルサイズが 0 なら VBR とする.
+itunes なら iTunes で VBR エンコードしたものなら VBR とする.
+この場合ビットレート値をデータから算出せずエンコード時に指定した値にする.
+nil なら機能しない."
+;; 現行 stsz のサンプルサイズが 0 のデータしか存在しないと思われるので
+;; t だとどのデータも VBR になる(VBRと判別する)と思われます.
+;; なので iTunes で VBR としてエンコードしたかどうかを判別する
+;; itunes にしておくのが無難かもしれません.
+  :type  '(choice (const itunes) (const t) (const nil))
+  :group 'music-file)
 
 (defvar mf-mp4-write-hook nil)
 
@@ -339,15 +352,16 @@ DEPEND は子に渡すワーク用ダミーでユーザが指定することは�
           (if ret (setq result (append ret result)) nil))))))
 
 ;; #3 昇順で返す
-(defun mp4-get-list (type list)
-  "TYPE にマッチしたアトムを LIST 内から再帰的に探して list ですべて返す."
-  (let (result)
+(defun mp4-get-list (type list &optional func)
+  "TYPE にマッチしたアトムを LIST 内から再帰的に探して list ですべて返す.
+FUNC で比較関数を指定し無ければ string-equal で比較する."
+  (let ((func (or func #'string-equal))
+        result)
     (dolist (lst list (reverse result))
       (if (and (consp lst) (consp (car lst)))
-          (setq result (append (mp4-get-list type lst) result))
-        (if (and (consp lst) (atom (car lst)))
-            (if (string-equal type (car lst))
-                (setq result (cons lst result))))))))
+          (setq result (append (mp4-get-list type lst func) result))
+        (if (and (consp lst) (atom (car lst)) (funcall func type (car lst)))
+            (setq result (cons lst result)))))))
 
 (defun mp4-flat-scan (target)
   "ファイルトップからコンテナ内には潜らず親だけを舐めて TARGET の atom を得る.
@@ -392,6 +406,45 @@ TARGET は主に \"moov\", \"free\" \"mdat\" で \"udat\" と \"meta\" はスキ
          (t
           (forward-char size)))))))
 
+(defun mp4-encoding-params (str)
+  (let (result)
+    (while (not (equal str ""))
+      (setq result
+            (cons (cons (substring str 0 4)
+                        (mp4-to-value (substring str 4 8)))
+                  result)
+            str (substring str 8)))
+    (reverse result)))
+
+(defun mp4-to-value (str)
+  (+ (ash (aref str 0) 24)
+     (ash (aref str 1) 16)
+     (ash (aref str 2) 8)
+     (aref str 3)))
+
+(defun mp4-itunes-vbr (sec tags)
+  (let ((result
+         (catch 'out
+           (dolist (a tags)
+             (and (equal (plist-get a :tag)  "----")
+                  (equal (plist-get a :mean) "com.apple.iTunes")
+                  (equal (plist-get a :dsc)  "Encoding Params")
+                  (throw
+                   'out
+                   (mp4-encoding-params (plist-get a :data))))))))
+    (if (and result (eq 2 (cdr (assoc "acbf" result))))
+        (cons (car sec)
+              (cons
+               (list (/ (cdr (assoc "brat" result)) 1000))
+               (cddr sec)))
+      sec)))
+
+(defun mp4-stsz-sample-size (atoms)
+  (goto-char (nth 1 (car (mp4-get-list "stsz" atoms))))
+  (cl-multiple-value-bind (len type ver flag size ent)
+      (mf-buffer-read-unpack '(L 4 C T L L))
+    size))
+
 (defun mp4-get-time (atoms)
   "ATOMS リストから得たポイントから演奏時間秒とビットレートをコンスセルで返す.
 対象ファイルの読み込まれたバッファで実行する."
@@ -399,8 +452,20 @@ TARGET は主に \"moov\", \"free\" \"mdat\" で \"udat\" と \"meta\" はスキ
          (time  (/ (mf-buffer-read-long-word (+ pnt 4)) ; Duration
                    (mf-buffer-read-long-word pnt)))     ; Time-Scale
          (len   (nth 2 (car (mp4-get-list "mdat" atoms))))
-         (brate (/ (/ len 125) time)))
-    (list time brate)))
+         (stsz  (zerop (mp4-stsz-sample-size atoms)))   ; Sample size 0 なら真
+         (brate (/ (/ len 125) time))
+         (pnt   (+ (cadr (car (mp4-get-list "mp4a\\|alac" atoms #'string-match)))
+                   16)))
+    (setq brate (if (and (eq mp4-vbr t) stsz) (list brate) brate))
+    ;; Sound Media Field: kMPEG4AudioFormat 'mp4a' MPEG-4, Advanced Audio Coding (AAC)
+    ;; https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/\
+    ;; QTFFChap3/qtff3.html#//apple_ref/doc/uid/TP40000939-CH205-75770
+    ;;  0:Version(S) 1:Revision-level(S) 2:Vendor(L)
+    ;;  3:Number-of-channels(S) 4:Sample-size(bits)(S)
+    ;;  5:Compression-ID(S) 6:Packet-size(S) 7:Sample-rate(L)
+    (cl-multiple-value-bind (ver rev ven ch ssize id psize srate)
+        (mf-buffer-read-unpack '(S S L S S S S L) pnt)
+      (list time brate (/ srate 65536.0) ch ssize))))
 
 ;;
 ;; レコチョクの m4a を Walkman で正常に扱えるようにするためのインチキパッチ.
@@ -661,7 +726,9 @@ NO-BINARY が非NIL ならイメージタグは含めない."
     (setq tags (cons
                 (list :tag mf-type-dummy :data mf-current-mode :org origin)
                 tags))
-    (cons (list :tag mf-time-dummy :data sec) tags)))
+    (cons (list :tag mf-time-dummy
+                :data (if (eq mp4-vbr 'itunes) (mp4-itunes-vbr sec tags) sec))
+          tags)))
 
 (defalias 'mf-m4a-tag-read 'mf-mp4-tag-read)
 

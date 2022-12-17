@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.233 $$Name:  $
+;; Version: @(#)$Revision: 1.243 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -76,7 +76,7 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.233 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.243 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -223,28 +223,44 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   :type  '(choice (const nil) (const t) function)
   :group 'wtag)
 
+(defvar wtag-mode-links
+  '(("\\`ID3" . mp3) ("\\`ea3\3" . oma) ("mp4" . mp4) ; ← m4a も "mp4" なのでコレ.
+    ("flac" . flac) ("wma" . wma) ("ogg" . ogg) ("wav" . wav)))
+
 (defvar-local wtag-times* nil)
 (defvar wtag-time-format-alist
-  '((?b . wtag-time-b)  ; ビットレート
-    (?o . wtag-time-o)) ; オプション(flac なら ビット/サンプル, mp3 でバリアブルなら VBR)
-  "`wtag-time-form' 用 対応関数リスト.")
+  '((?b . wtag-time-b)  ; Bit Rate
+    (?B . wtag-time-B)  ; Bit Size
+    (?c . wtag-time-c)  ; Channel
+    (?r . wtag-time-r)  ; Sampling Rate
+    (?t . wtag-time-t)  ; Codec Type
+    (?v . wtag-time-v)) ; VBR?
+  "`wtag-time-form' 用 対応関数リスト.
+%b がビットレート、%o は `wtag-time-option-format' でマッチしたタイプが展開される.")
 
-(defcustom wtag-time-form '("%2m'%02s\"" . "%2m'%02s\"%4bkbps%o")
-  "時間表示のフォーマット文字列. 変数 `wtag-time-format-alist' に対応.
-コンスセルで指定すると cdr が prefix 時に使われる."
-  :type '(choice string (cons (string :tag "Normal") (string :tag "Prefix")))
-  :group 'wtag)
+(defvar wtag-time-form '((mp3 "%2m'%02s\"" "%2m'%02s\"%4bkbps (%r%v)")
+                         (mp4 "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r%v")
+                         (*   "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r")))
 
-(defcustom wtag-time-form-balloon "%bkbps%o" ;
+;;; (defcustom wtag-time-form '("%2m'%02s\"" . "%2m'%02s\"%4bkbps %B/%r%v")
+;;;   "時間表示のフォーマット文字列. 変数 `wtag-time-format-alist' に対応.
+;;; コンスセルで指定すると cdr が prefix 時とバルーン用に使われる."
+;;;   :type '(choice string (cons (string :tag "Normal") (string :tag "Prefix")))
+;;;   :group 'wtag)
+
+(make-obsolete 'wtag-time-form-balloon 'wtag-time-form "1.238")
+(defcustom wtag-time-form-balloon "%2m'%02s\"%4bkbps %B/%r%v"
   "help-echo用  時間表示のフォーマット. 変数 `wtag-time-format-alist' に対応."
   :type 'string
   :group 'wtag)
 
-(defcustom wtag-time-all-form "%m'%02s\""
-  "総時間表示のフォーマット.  `format-seconds' にそのまま渡す."
-  :type 'string
+(defcustom wtag-time-all-form '("%m'%02s\"" . "%2h@%2m'%02s\"")
+  "総時間表示のフォーマット.  `format-seconds' にそのまま渡す.
+コンスセルで指定すると CDR がバルーン用になる."
+  :type '(choice string (cons string string))
   :group 'wtag)
 
+(make-obsolete 'wtag-time-all-form-balloon 'wtag-time-all-form "1.238")
 (defcustom wtag-time-all-form-balloon "%2h@%2m'%02s\""
   "help-echo用 総時間表示のフォーマット.  `format-seconds' にそのまま渡す."
   :type 'string
@@ -385,10 +401,15 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 (defun wtag-kill-string-trim (string &optional trim-left trim-right)
   string)
 
+(defsubst wtag-car-read (elt)
+  "ELT がアトムならそのまま返しコンセルなら car を返す."
+  (if (consp elt) (car elt) elt))
+
 (defun wtag-format (form val)
   (when (equal emacs-version "29.0.50")
     (advice-add 'string-trim :override #'wtag-kill-string-trim))
   (setq wtag-times* (if (consp val) val (list val)))
+  mf-current-mode ;; **** Debug
   (prog1
       (format-seconds
        (format-spec form
@@ -396,37 +417,49 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
                      #'(lambda (a) (cons (car a) (funcall (cdr a))))
                      wtag-time-format-alist)
                     'ignore)
-       (car wtag-times*))
+       (wtag-car-read (car wtag-times*)))
     (when (equal emacs-version "29.0.50")
       (advice-remove 'string-trim #'wtag-kill-string-trim))))
 
+;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
 (defun wtag-time-b ()
-  (or (nth 1 wtag-times*) 0))
+  "Bitrate"
+  (or (wtag-car-read (nth 1 wtag-times*)) 0))
 
-;; (defun wtag-time-o ()
-;;   (let ((opt1 (nth 2 wtag-times*))
-;;         (opt2 (nth 3 wtag-times*))
-;;         (opt3 (nth 4 wtag-times*)))
-;;     (cond ((eq opt1 'vbr) " VBR")
-;;           ((and opt1 opt3)
-;;            (format " %d/%.1f"
-;;                    opt3 (/ opt1 1000.0)))
-;;           (t ""))))
+(defun wtag-time-B ()
+  "Bitsize(Bits/Sample)"
+  (or (nth 4 wtag-times*) 16))
 
-(defvar wtag-time-o-mp3-vbr    " VBR")
-(defvar wtag-time-o-flac-format " %B/%r")
+(defun wtag-time-c ()
+  "Channel"
+  (or (nth 3 wtag-times*) 2))
 
-(defun wtag-time-o ()
-  (let ((opt1 (nth 2 wtag-times*))
-        (opt2 (nth 3 wtag-times*))
-        (opt3 (nth 4 wtag-times*)))
-    (cond ((eq opt1 'vbr) wtag-time-o-mp3-vbr)
-          ((and opt1 opt3)
-           (format-spec wtag-time-o-flac-format
-                        (list (cons ?B opt3)
-                              (cons ?c opt2)
-                              (cons ?r (format "%.1f" (/ opt1 1000.0))))))
-          (t ""))))
+(defun wtag-time-r ()
+  "Sampling rate(Sampling Frequency)"
+  (format "%.1f"
+          (/ (or (nth 2 wtag-times*) 44100)
+             1000.0)))
+
+(defun wtag-time-t ()
+  (symbol-name
+   (assoc-default mf-current-mode
+                  wtag-mode-links #'string-match)))
+
+(defvar wtag-time-option-mp3-vbr "/vbr"
+  "*%v で表示される文字列.
+コンスセルならイネーブル時に CAR, さもなくば CDR が使われる.")
+
+(defun wtag-time-v ()
+  "For VBR Value `wtag-time-option-mp3-vbr' else \"\"."
+  (let* ((var wtag-time-option-mp3-vbr)
+         (enable  (if (consp var) (car var) var))
+         (disable (if (consp var) (cdr var) "")))
+  (if (consp (nth 1 wtag-times*)) enable disable)))
+
+(make-obsolete 'wtag-time-o-mp3-vbr 'wtag-time-option-mp3-vbr "1.236")
+(defvar wtag-time-o-mp3-vbr " VBR(%rkHz)")
+(make-obsolete 'wtag-time-o-format 'wtag-time-option-format "1.236")
+(defvar wtag-time-o-format  " %B/%r" "%B BitSize / %c Channel / %r SamplingRate")
 
 (defun wtag-max-width (lst sym)
   "SYM 文字列の LST から最大`幅'を返す.
@@ -546,6 +579,7 @@ Convert index buffer name to artwork buffer name."
         n)
     (dolist (a lst total)
       (setq n (cadr (alist-get mf-time-dummy-symbol a))
+            n (wtag-car-read n)
             total (+ (or n 0) total)))))
 
 (defun wtag-include-sort-tag-p (lst)
@@ -617,6 +651,37 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
 (defsubst wtag-get-cache-time (alst file)
   (and alst (cdr (assoc file alst))))
 
+(defsubst wtag-form-select (form &optional prefix)
+  "FORM が string ならそのまま戻し、
+でなければ list と見なし PREFIX が non-nil なら CDR, さもなくば CAR を戻す."
+  (let ((func (if prefix #'cdr #'car)))
+    (if (stringp form)
+        form
+      (cond
+       ((consp (car form))
+        (setq form
+              (wtag-assq-match
+               (assoc-default mf-current-mode wtag-mode-links #'string-match)
+               form)))
+       ((not (wtag-pair form))
+        (setq form (cons (car form) (cadr form)))))
+      (or (funcall func form) wtag-not-available-string))))
+
+(defun wtag-assq-match (key lst)
+  "assq KEY LST の CDR を戻すが、得られなければ最終要素の CDR を戻す.
+つまり LST の最終要素には何にもマッチしなかったときに戻すデフォルトをセットしておく."
+  (let ((result (or (cdr (assq key lst)) (cdar (last lst)))))
+    (setq result (if (wtag-pair result)
+                     result
+                   (cons (nth 0 result) (nth 1 result))))
+    (if (cdr result)
+        result
+      (cons (car result) (car result)))))
+
+(defun wtag-pair (a)
+  "A が Dot pair なら t さもなくば nil."
+  (and (consp a) (cdr a) (atom (cdr a))))
+
 (defvar wtag-total-track 0)
 
 (defun wtag-insert-index (index dir)
@@ -626,8 +691,9 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
          (max-width-track  (wtag-max-width index 'track)) ; とりま disk は無考慮
          (form (concat "%" (number-to-string max-width-track) "s"))
          (total (wtag-total-time index))
-         (mode  (wtag-alias-value '*type (car index)))
-         (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
+         (mf-current-mode  (wtag-alias-value '*type (car index)))
+         ;; (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
+         (prefix wtag-init-prefix)
          title file ext modes cache)
     (insert ; Common part.
      (propertize " " 'directory dir
@@ -647,9 +713,9 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
                  'help-echo (wtag-alias-value 's-album (car index)))
      " "
      (propertize
-      (wtag-format wtag-time-all-form total)
+      (wtag-format (wtag-form-select wtag-time-all-form) total)
       'face 'wtag-time
-      'help-echo (wtag-format wtag-time-all-form-balloon total)
+      'help-echo (wtag-format (wtag-form-select wtag-time-all-form t) total)
       'mouse-face 'highlight
       'margin t)
      "\n"
@@ -673,8 +739,8 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
                     (if (string-equal tmp wtag-not-available-string)
                         (format "%s(%s)" tmp (file-name-nondirectory file))
                       tmp))
-            mode  (wtag-alias-value '*type a)
-            modes (or (member mode modes) (cons mode modes)))
+            mf-current-mode  (wtag-alias-value '*type a)
+            modes (or (member mf-current-mode modes) (cons mf-current-mode modes)))
       (and wtag-init-prefix
            (not (assq 'cache wtag-init-prefix))
            (setq cache
@@ -683,12 +749,12 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
                   cache)))
       (if (null (mf-wfunc (assoc-default ext mf-function-list #'string-match)))
           (setq wtag-write-notready
-                (or (member mode wtag-write-notready)
-                    (cons mode wtag-write-notready))))
+                (or (member mf-current-mode wtag-write-notready)
+                    (cons mf-current-mode wtag-write-notready))))
       (insert
        (propertize " "
                    'old-track (wtag-alias-value 'track a)
-                   'mode mode 'sort (wtag-include-sort-tag-p a) 'stat (wtag-stat a))
+                   'mode mf-current-mode 'sort (wtag-include-sort-tag-p a) 'stat (wtag-stat a))
        ;; Track number.
        (propertize (format form (wtag-alias-value 'track a))
                    'track t 'mouse-face 'highlight
@@ -699,10 +765,10 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
                         (cdr (alist-get mf-time-dummy-symbol a)))))
          (if (null times)
              " -----"
-           (propertize (wtag-format wtag-time-form times)
-                       'help-echo (wtag-format wtag-time-form-balloon times)
+           (propertize (wtag-format (wtag-form-select wtag-time-form prefix) times)
+                       'help-echo (wtag-format (wtag-form-select wtag-time-form t) times)
                        'mouse-face 'highlight
-                       'face (if (eq (nth 2 times) '*) 'wtag-time-other 'wtag-time))))
+                       'face (if (consp (car times)) 'wtag-time-other 'wtag-time))))
        (propertize " "
                    'old-performer (wtag-alias-value 'artist a) 'filename file)
        ;; Performer.
@@ -1426,11 +1492,12 @@ PREFIX をふたつ打つとリバースになる."
             (string-to-number (car tmp))
             (string-to-number (or def (cadr tmp) "1")))))
 
-(defun wtag-track-number-adjust ()
-  "すべてのトラックバンバーを \"トラック/トラック数\" というフォーマットにする."
-  (interactive)
+(defun wtag-track-number-adjust (prefix)
+  "すべてのトラックバンバーを \"トラック/トラック数\" というフォーマットにする.
+PREFIX があれば強制的に現状の並びで新たな番号を振り直す."
+  (interactive "P")
   (let ((total wtag-total-track)
-        trk beg end)
+        trk beg end (i 1))
     (when (or wtag-track-number-adjust-without-query
               (y-or-n-p "Track number adjust?"))
       (save-excursion
@@ -1443,12 +1510,13 @@ PREFIX をふたつ打つとリバースになる."
         (insert (wtag-track-regular trk))
         (forward-line 2)
         (while (not (eobp))
-          (setq trk (wtag-get-property-value 'old-track)
+          (setq trk (if prefix (number-to-string i) (wtag-get-property-value 'old-track))
                 beg (wtag-move-to-property 'old-track)
                 end (wtag-move-to-property 'end-track))
           (setq trk (if (zerop (string-to-number trk)) (buffer-substring beg end) trk))
           (delete-region beg end)
           (insert (wtag-track-regular trk total))
+          (setq i (1+ i))
           (forward-line))))
     (message nil)))
 
@@ -1708,6 +1776,9 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
     (message nil)
     (run-hooks 'wtag-quit-hook)))
 
+(defvar wtag-music-play-next nil
+  "*non-nil なら `wtag-music-palay' を実行すると1行ポイントを進める.")
+
 (defun wtag-music-play (prefix)
   "point のファイルを `wtag-music-players' で設定されたコマンドで実行.
 PREFIX は整数で指定があればその行に移動してから実行される.
@@ -1716,9 +1787,15 @@ PREFIX は整数で指定があればその行に移動してから実行され�
   (interactive "p")
   (let* ((ppty 'filename)
          pnt file cmds)
-    (when current-prefix-arg
+    (cond
+     (current-prefix-arg
       (goto-char (point-min))
       (forward-line (+ prefix (- wtag-beginning-line-of-track 2))))
+     ((or (< (line-number-at-pos) (1- wtag-beginning-line-of-track))
+          (> (line-number-at-pos)
+             (+ wtag-total-track (1- wtag-beginning-line-of-track))))
+      (goto-char (point-min))
+      (forward-line 2)))
     (setq pnt  (next-single-property-change
                 (line-beginning-position) ppty nil (line-end-position))
           file (get-text-property pnt ppty)
@@ -1730,13 +1807,18 @@ PREFIX は整数で指定があればその行に移動してから実行され�
                (proc wtag-process-name)
                (buff proc))
           (message (file-name-nondirectory file))
-          (setq wtag-process (apply #'start-process proc buff prog args)))
+          (and (assq wtag-process-name (process-list))
+               (delete-process wtag-process-name))
+          (setq wtag-process (apply #'start-process proc buff prog args))
+          (when wtag-music-play-next
+            (when (numberp wtag-music-play-next)
+                (sleep-for wtag-music-play-next))
+            (forward-line)))
       (error "Undefined or does not exist `%s'" (or file "NIL")))))
 
 (defun wtag-kill-process ()
   (interactive)
-  (and wtag-process (get-process wtag-process-name)
-       (kill-process wtag-process))
+  (and (get-process wtag-process-name) (kill-process wtag-process-name))
   (setq wtag-process nil))
 
 (defun wtag-goto-line (prefix)

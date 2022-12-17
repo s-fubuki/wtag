@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.38 $$Name:  $
+;; Version: $Revision: 2.3 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 1.38 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.3 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -236,48 +236,85 @@ MIME は APIC フレームの mime パラメータ文字列.
 (defun mf-version (tags)
   (plist-get (mf-plist-get-list mf-type-dummy tags) :data))
 
-(defun mf-id32-tags-collect (length &optional pos)
+;;; (defun mf-id32-tags-collect (length &optional pos)
+;;;   (let (result)
+;;;     (or pos (setq pos (point)))
+;;;     (catch 'break 
+;;;       (while (< 0 length)
+;;;         (let* ((tag  (mf-buffer-substring pos (+ pos 3)))
+;;;                (size (mf-buffer-read-3-bytes  (+ pos 3)))
+;;;                (beg  (+ pos 6)))
+;;;           (if (and size (string-match "^[A-Z0-9]\\{3\\}" tag))
+;;;               (setq result (cons (list tag beg size) result))
+;;;             (throw 'break nil))
+;;;           (setq pos    (+ beg size)
+;;;                 length (- length (+ size 6))))))
+;;;     (reverse result)))
+
+(defun mf-id32-tags-collect (len &optional pos)
   (let (result)
     (or pos (setq pos (point)))
     (catch 'break 
-      (while (< 0 length)
+      (while (< 0 len)
         (let* ((tag  (mf-buffer-substring pos (+ pos 3)))
-               (size (mf-buffer-read-3-bytes  (+ pos 3)))
-               (beg  (+ pos 6)))
+               (size (mf-buffer-read-3-bytes (+ pos 3))))
+          (setq pos (+ pos 6))
           (if (and size (string-match "^[A-Z0-9]\\{3\\}" tag))
-              (setq result (cons (list tag beg size) result))
+              (setq result (cons (list tag pos size) result))
             (throw 'break nil))
-          (setq pos    (+ beg size)
-                length (- length (+ size 6))))))
+          (setq pos (+ pos size)
+                len (- len (+ size 6))))))
     (reverse result)))
-  
-(defun mf-oma-tags-collect (length &optional pos)
-  "current buffer に読み込まれた oma/mp3 file の tag list を返す.
-そのとき point は最初のヘッダの先頭になくてはならない.
-LENGTH はスキャンする大きさ(ヘッダサイズ).
-\((TAG BEG SIZE) ...) の list を返す.
-TAG は 4バイトの TAG 文字列,
-BEG はデータのポインタ整数(TAG 先頭から 10バイトの位置で MP4 とは違うので注意),
-SIZE はデータのサイズの整数,
-SIZE は BEG からデータの終端までの大きさ(mp4 と違いTAG からではない事に注意).
-* たいていヘッダの最後にパディングされたゴミがありフレームサイズトータル != ヘッダサイズなので
-LENGTH から フレーム SIZE を減算していっても必ずしも 0 にはならない.
-なのでバッファが正常に読み込めるかどうかでも終端判断をしている.
-Bug.同期形式には対応していない."
+
+;;; (defun mf-oma-tags-collect (length &optional pos)
+;;;   "current buffer に読み込まれた oma/mp3 file の tag list を返す.
+;;; そのとき point は最初のヘッダの先頭になくてはならない.
+;;; LENGTH はスキャンする大きさ(ヘッダサイズ).
+;;; \((TAG BEG SIZE) ...) の list を返す.
+;;; TAG は 4バイトの TAG 文字列,
+;;; BEG はデータのポインタ整数(TAG 先頭から 10バイトの位置で MP4 とは違うので注意),
+;;; SIZE はデータのサイズの整数,
+;;; SIZE は BEG からデータの終端までの大きさ(mp4 と違いTAG からではない事に注意).
+;;; * たいていヘッダの最後にパディングされたゴミがありフレームサイズトータル != ヘッダサイズなので
+;;; LENGTH から フレーム SIZE を減算していっても必ずしも 0 にはならない.
+;;; なのでバッファが正常に読み込めるかどうかでも終端判断をしている.
+;;; Bug.同期形式には対応していない."
+;;;   (let (result)
+;;;     (or pos (setq pos (point)))
+;;;     ;; ヘッダサイズは 0 パディングを含めたサイズで(0パディングは何の為にあるのかは不明)
+;;;     ;; タグブロックのみの純粋なサイズではないので サイズの大きさ = ヘッダの末尾ではない.
+;;;     (catch 'break 
+;;;       (while (< 0 length)
+;;;         (let* ((tag  (mf-buffer-substring pos  (+ pos 4)))
+;;;                (size (mf-buffer-read-long-word (+ pos 4)))
+;;;                (beg  (+ pos 10)))
+;;;           (if (and size (string-match "^[A-Z0-9]\\{4\\}" tag))
+;;;               (setq result (cons (list tag beg size) result))
+;;;             (throw 'break nil))
+;;;           (setq pos    (+ beg size)
+;;;                 length (- length (+ size 10))))))
+;;;     (reverse result)))
+
+(defun mf-oma-tags-collect (len &optional pos)
+  "ポイント位置から oma/mp3 file のタグの位置情報リストを返す.
+LEN にヘッダサイズを指定しポイントがヘッダ先頭位置になければ POS でその位置を指定する.
+リストは \((tag beg size) ...) という形式で
+tag は 4バイトの TAG 文字列,
+beg はデータの位置(TAG 先頭から 10バイトのオフセットで MP4 とは違うことに注意),
+size は beg からデータの終端までの大きさ(mp4 と違いTAG先頭 からではない).
+BUG 同期形式には対応していない."
   (let (result)
     (or pos (setq pos (point)))
-    ;; ヘッダサイズは 0 パディングを含めたサイズで(0パディングは何の為にあるのかは不明)
-    ;; タグブロックのみの純粋なサイズではないので サイズの大きさ = ヘッダの末尾ではない.
     (catch 'break 
-      (while (< 0 length)
-        (let* ((tag  (mf-buffer-substring pos  (+ pos 4)))
-               (size (mf-buffer-read-long-word (+ pos 4)))
-               (beg  (+ pos 10)))
+      (while (< 0 len)
+        (let ((tag  (mf-buffer-substring pos (+ pos 4)))
+              (size (mf-buffer-read-long-word (+ pos 4))))
+          (setq pos (+ pos 10))
           (if (and size (string-match "^[A-Z0-9]\\{4\\}" tag))
-              (setq result (cons (list tag beg size) result))
+              (setq result (cons (list tag pos size) result))
             (throw 'break nil))
-          (setq pos    (+ beg size)
-                length (- length (+ size 10))))))
+          (setq pos (+ pos size)
+                len (- len (+ size 10))))))
     (reverse result)))
 
 (defun mf-string-true-encode (str)
@@ -860,14 +897,14 @@ BITRATE は 1/1000 で指定することを想定している."
      (list ":" (/ (apply #'+ all) tmp)))))
 
 (defun mf-mp3-vbr-average (pos)
-  "POS 以降の mpeg フレームのビットレートの平均値を返す."
+  "POS 以降の mpeg フレームのビットレートの平均値をリストで返す."
   (let (tmp result)
     (goto-char (or pos (point)))
     (while (and (not (eobp)) (setq tmp (mf-mp3-mpeg-frame-p)))
       (setq result (cons (car tmp) result))
       (goto-char (+ (point) (mf-mp3-get-frame-size (nth 0 tmp) (nth 1 tmp)))))
     (setq tmp (length result))
-    (/ (apply #'+ result) tmp)))
+    (list (/ (apply #'+ result) tmp))))
 
 (defun mf-mp3-mpeg-frame-p (&optional pos)
   "POS が mpeg1 layer3 の frame 先頭なら \(bitrate sampling-frequency channel) を返す.
@@ -903,11 +940,13 @@ BITRATE は 128k なら 128 と 1/1000 の値で指定する."
   (* 8 (/ size (* (or bitrate 0) 1000.0))))
 
 (defun mf-mp3-time-from-buffer (datasize hsize &optional prefix)
-  "mp3 FILE の演奏時間とビットレートをリストで得る.
-DATASIZE は音楽データ部分の大きさ、HSIZE はヘッダの大きさ.
-mp3 が VBR の場合ダミー値(たいていは 128)と \\='vbr というシンボルのリストで返す.
-PREFIX が non-nil なら VBR のときビットレートが正確な平均値になるが
-ファイルをすべて読み込むので遅くなる."
+  "mp3 FILE の演奏時間等をリストで戻す.
+DATASIZE は音楽データ部分の大きさ、HSIZE はヘッダの大きさをセットする.
+戻りのリストは  \(time bitrate sampling-frequency channel) という並び.
+VBR の場合ビットレートはリストで括られる.
+PREFIX が non-nil ならファイルをすべて読み込みビットレートの正確な平均値を得る.
+そうでなければフレーム1の値(たいてい128)になる."
+;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
   (let ((prefix (or prefix mf-mp3-vbr))
         (hsize (+ hsize 11))
         frame xing func)
@@ -915,28 +954,29 @@ PREFIX が non-nil なら VBR のときビットレートが正確な平均値�
           xing  (mf-mp3-xing-p hsize))
       (cond
        ((and frame xing)
-        (cons
-         (round (* xing (/ 1152.0 (nth 1 frame))))
+        (append
          (list
-          (if prefix
+          (round (* xing (/ 1152.0 (nth 1 frame)))) ; time second
+          (if prefix ; 可変 bitrate(vbr)ならリストで括られる(1.39).
               (progn
                 (setq func (if (functionp prefix) prefix #'mf-mp3-vbr-average))
                 (funcall func
-                         (+ hsize (mf-mp3-get-frame-size (nth 0 frame) (nth 1 frame)))))
-            (car frame))
-          'vbr)))
+                        (+ hsize (mf-mp3-get-frame-size (nth 0 frame) (nth 1 frame)))))
+            (if xing (list (car frame)) (car frame))))
+         (cdr frame))) ; sampling rate, channel
        (t
-        (list (round (mf-mp3-time-exp datasize (car frame)))
-              (car frame))))))
+        (cons (round (mf-mp3-time-exp datasize (car frame))) frame)))))
 
 (defun mf-oma-time-from-buffer (datasize hsize tags)
-  "oma file の時間とビットレートをリストで戻す."
+  "oma file の時間とビットレートをリストで戻す.
+TLEN タグから時間が得られなければ時間はカッコで括られている."
+  ;; atrac は{ SamplingRate : 44100Hz / Channels : 2ch? / BitSize : 16bit } 固定らしい?
   (let* ((pnt     (+ hsize 10 36))
          (bitrate (assoc-default (char-after pnt) mf-oma-bitrate))
          (tlen    (plist-get (mf-plist-get-list "TLEN" tags) :data)))
     (if (null tlen)
-        ;; 稀に TLEN の無いデータが在る. その場合 MP3 式で得るが誤差が出る.
-        (list (floor (mf-mp3-time-exp datasize bitrate)) bitrate '*)
+        ;; 稀に TLEN の無いデータが在る. その場合 MP3 式で得(誤差在り) リストで括る.
+        (list (list (floor (mf-mp3-time-exp datasize bitrate))) bitrate)
       ;; TLEN の 1/1000 が曲長[sec].
       (list (floor (/ (string-to-number tlen) 1000.0)) bitrate))))
   
