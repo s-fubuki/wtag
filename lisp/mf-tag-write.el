@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.65 $
+;; Version: $Revision: 1.68 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.65 $")
+(defconst mf-tag-write-version "$Revision: 1.68 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -120,7 +120,7 @@ ALIAS は 実 tag を得るため."
 
 (defconst mf-image-type
   ;; REGEXP               :tag    :desc          :mime                        :type
-  `(("ID3\2"              "PIC"   nil            (JPG . PNG)                   nil)
+  `(("ID3\2"              "PIC"   nil            ("JPG" . "PNG")               nil)
     ("ID3\3"              "APIC"  nil            ("image/jpeg" . "image/png")  3)
     ("ea3\3"              "GEOB"  ,mf-geob-image ("image/jpeg" . "image/png")  nil)
     ("mp4\\|M4A\\|mp42"   "covr"  nil            nil                           (13 . 14))
@@ -178,15 +178,16 @@ ALIAS は 実 tag を得るため."
     (if mf-current-case
         (member (upcase tag) (mf-upcase-list mf-file-tag-list))
       (member tag mf-file-tag-list))))
-
-(defun mf-list-convert (alist)
+
+(defun mf-list-convert (alist oldtags) ; OLDTAGS は alias を得るために使う
   "主に手書きで指定するために ALIST を plist に変換.
 要素に :tag があれば素通りする.
 画像や歌詞のタグの場合ファイル名だけでも OK.
-つまり \((\"TAG\" . \"STR\") (\"TAG\" . \"STR\") \"FILE.jpg\" ...) のように指定する.
+\((\"TAG\" . \"STR\") (\"TAG\" . \"STR\") \"FILE.jpg\" ...) のように指定する.
+CAR は alias でも良い.
 CDR を NIL とするとそのタグの削除になる."
   (let* ((mode        mf-current-mode)
-         (alias       (mf-alias mf-current-func))
+         (alias       (mf-alias mf-current-func oldtags mode))
          (omg-tags    mf-omg-tags)
          (itunes-tags mf-itunes-tags)
          result tag str)
@@ -220,7 +221,7 @@ CDR を NIL とするとそのタグの削除になる."
                  (mf-set-file-tag mode a alias))
                 (t
                  (list :tag tag :type (mp4-tag-type tag) :data str)))) ;; mf-lib-mp4.el
-              ((and (listp a) (= 1 (length a))) ; Delete tag part.
+              ((and (listp a) (null (cdr a))) ; Delete tag part.
                (list :tag tag :file nil :data nil))
               ((stringp a)
                (cond
@@ -251,7 +252,7 @@ CDR を NIL とするとそのタグの削除になる."
          (alias (cons
                  (cons mf-time-dummy-symbol mf-time-dummy)
                  (cons (cons mf-type-dummy-symbol mf-type-dummy)
-                       (mf-alias mlist mode)))))
+                       (mf-alias mlist alist)))))
     (mf-alist-add-tag alist alias case)))
 
 (defun mf-alist-add-tag (alist alias case)
@@ -261,7 +262,7 @@ CDR を NIL とするとそのタグの削除になる."
 (複数の alias のある artwork cover 等
 car だけ違う大きな list が複数作られるが、
 中身はアドレス参照で実体は増えないのでメモリは特に圧迫されない)
-CASE が NON-NIL(FLAC or OGG)のときだけ戻す ALIST の中の TAG が upper case 化される."
+CASE が non-nil(FLAC or OGG)のときだけ、戻されるとき TAG が upper case 化される."
   (let ((alist
          (if case
              (mapcar #'(lambda (a) (cons (upcase (car a)) (cdr a))) alist)
@@ -275,10 +276,9 @@ CASE が NON-NIL(FLAC or OGG)のときだけ戻す ALIST の中の TAG が upper
 
 ;;;###autoload
 (defun mf-alias-get (alias lst)
-  "`mf-alist-add-tag' の生成する \(ALIAS TAG . DATA) 形式の LST の中から
-CAR が  ALIAS に EQ の CDDR を返す.
-無ければ NIL を返す."
-  (cdr (assoc-default alias lst)))
+  "ALIAS と car が一致するリストの data を LST の中から返す.
+lst は\((alias tag . data) ...) という形式. 一致が無ければ  nil を返す."
+  (cddr (assq alias lst)))
 
 (defun mf-string-equal (a b)
   (if mf-current-case
@@ -330,16 +330,18 @@ FUNCLIST は \((REGEXP READ-FUNC WRITE-FUNC CV-FUNC ALIAS-LIST ) (...)) とい�
   "FUNCLIST から Convert function を返す. 引数は list のみ."
   (caddr funclist))
 
-(defun mf-alias (funclist &optional mode)
+(defun mf-alias (funclist tags &optional mode)
   "FUNCLIST から mf-current-mode または MODE の alias 設定を得る.
 FUNCLIST の中の 第4の値が list なら要素の car が mode に equal の要素を返し
 atom なら第4の値をそのまま返す. いずれも eval して返す."
-  (let ((alias (cadddr funclist))
-        (mode (or mode mf-current-mode)))
+  (let ((alias (nth 3 funclist))
+        (mode  (or mode (cdr (assoc mf-type-dummy tags)))))
     (if (listp alias)
-        (eval (assoc-default mode alias))
+        (if (equal mode "ID3\3")
+            (mf-get-mp3-alias tags)
+          (eval (assoc-default mode alias)))
       (eval alias))))
-
+
 ;;;###autoload
 (defun mf-tag-write (file &optional new-tags no-backup time-opt)
   "FILE の既存タグに plist形式の NEW-TAGS が含まれれば置き換え無ければ追加し書き換える.
@@ -363,7 +365,7 @@ TIME-OPT が非NIL ならタイムスタンプを継承する."
       (if (stringp no-backup)
           (setq mf-current-file no-backup)
         (setq mf-current-file file))
-      (funcall wfunc (mf-add-tags tags (funcall cvfunc new-tags)) no-backup))
+      (funcall wfunc (mf-add-tags tags (funcall cvfunc new-tags tags)) no-backup))
     (and time-opt (symbolp no-backup) (set-file-times file time-opt))))
 
 (defun mf--tag-read (file &optional length no-binary)
