@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 2.3 $$Name:  $
+;; Version: $Revision: 2.8 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.3 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.8 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -148,15 +148,19 @@
     ("PRIV" "nil" "NIL"        300))
   "ID3v2.3 ID3v2.2 の対応テーブル.  \\='(ID33 ID32 ラベル ソート用整数) の順序.")
 
-(defconst mf-oma-sort-table
-  `(("TIT2" . 1) ("TPE1" . 2) ("TALB" . 3) ("TCON" . 4)
-    ("OMG_TPE1S" . 5) ("OMG_TRACK" . 6) ("TYER" . 7)
-    ("OMG_AGENR" . 8) ("OMG_ALBMS" . 9) ("OMG_ASGTM" . 10)
-    ("OMG_ATP1S" . 11) ("OMG_ATPE1" . 12) ("OMG_TIT2S" . 13) ("OMG_TTIT1" . 14)
-    ("OMG_TRLDA" . 15) ("TCOM" . 16) ("TLEN" . 17) ("USR_L2TMDDA" . 18)
-    ("OMG_BKLSI" . 19) ("OMG_FENCA1" . 20)
-    ("OMG_OLINF" . 21) ("OMG_TDFCA" . 22) (,mf-type-dummy . 0))
+(defconst mf-oma-sort-table-list
+  `(,mf-type-dummy
+    "TIT2" "TPE1" "TALB" "TCON" "OMG_TPE1S" "OMG_TRACK" "TYER"
+    "OMG_AGENR" "OMG_ALBMS" "OMG_ASGTM" "OMG_ATP1S" "OMG_ATPE1"
+    "OMG_TIT2S" "OMG_TTIT1" "OMG_TRLDA" "TCOM" "TLEN" "USR_L2TMDDA"
+    "OMG_BKLSI" "OMG_FENCA1" "OMG_OLINF" "OMG_TDFCA")
   "oma file をパッキンするときソニステと同じ順列にするソートテーブル.")
+
+(defvar mf-oma-sort-table
+  (let ((i 0) result)
+    (dolist (tag mf-oma-sort-table-list (reverse result))
+      (push (cons tag i) result)
+      (setq i (1+ i)))))
 
 (defcustom mf-ignore-tags-list '("PRIV")
   "対象から除外するタグ." ; ***
@@ -175,11 +179,6 @@
 (defvar mf-id33-tag-lame-alias
   '((s-album . "ALBUMSORT") (s-a-artist . "ALBUMARTISTSORT")
     (s-title . "TITLESORT") (s-artist . "ARTISTSORT")))
-
-(defcustom mf-id33-tag-default-add-alias mf-id33-tag-musiccenter-alias
-  "Default sort tag style."
-  :type  '(repeat (cons symbol string))
-  :group 'music-file)
 
 (defcustom mf-id32-tag-alias
   '((title . "TT2") (artist . "TP1") (album . "TAL") (genre . "TCO") (composer . "TCM") (artist3 . "TP3") (track . "TRK") (disk . "TPA") (year . "TYE") (a-artist . "TP2") (comment . "COM") (copy . "TCR") (cover . "PIC") (artwork . "PIC") (lyric . "ULT") (enc . "TEN") (group . "GP1") (bpm . "TBP"))
@@ -202,29 +201,21 @@
      (ash (char-after (+ pos 2)) 7)
      (logand (char-after (+ pos 3)) 127)))
 
-(defvar mf-mime-image-header 
-  '(("image/jpeg" . "\xff\xd8\xff")
-    ("image/png"  . "\x89PNG")))
-
-(defun mf-apic-filename-term-point (mime)
-  "APIC フレームの file name の終端に移動しそのポイントを返す.
-MIME は APIC フレームの mime パラメータ文字列.
-0x00 が最後に 3つ続くことのある UTF-16-LE 対策で 一旦画像ヘッダまでスキャンして戻している. "
-  (re-search-forward (cdr (assoc mime mf-mime-image-header)) nil t)
-  (goto-char (match-beginning 0)))
-
-(defmacro mf-term-code (code)
-  `(if (or (eq ,code 'utf-16-le) (eq ,code 'utf-16be)) "\0\0" "\0"))
-
-(defun mf-decode-point-codez-string (code term)
-  (let ((term (if (eq code 'utf-16-le) (format "%s[^\0]" term) term)))
-    (decode-coding-string
-     (buffer-substring-no-properties
-      (point)
-      (progn (re-search-forward term nil t)
-             (if (eq code 'utf-16-le) (backward-char))
-             (match-beginning 0)))
-     code)))
+(defun mf-asciiz-string (coding)
+  "現在のポイントから asciiZ string を CODING でデコードし ascii string にして返す.
+ポイントは末尾の \"\0\" または \"\0\0\" の先まで進めるが、
+string にはそれらは含まれない."
+  (let ((beg (point)) end)
+    (setq end (if (or (eq coding 1) (eq coding 2))
+                  (progn  ; utf-16-le or utf-16be
+                    (while (prog1
+                               (not (and (zerop (char-after))
+                                         (zerop (char-after (1+ (point))))))
+                             (forward-char 2)))
+                    (- (point) 2))
+                (search-forward "\0")
+                (1- (match-end 0))))
+    (decode-coding-region beg end (cdr (assq coding mf-oma-encode)) t)))
 
 (defun mf-plist-get-list (tag lst)
   ":tag プロパティが TAG のリストを LST から返す. 無ければ nil."
@@ -235,21 +226,6 @@ MIME は APIC フレームの mime パラメータ文字列.
 
 (defun mf-version (tags)
   (plist-get (mf-plist-get-list mf-type-dummy tags) :data))
-
-;;; (defun mf-id32-tags-collect (length &optional pos)
-;;;   (let (result)
-;;;     (or pos (setq pos (point)))
-;;;     (catch 'break 
-;;;       (while (< 0 length)
-;;;         (let* ((tag  (mf-buffer-substring pos (+ pos 3)))
-;;;                (size (mf-buffer-read-3-bytes  (+ pos 3)))
-;;;                (beg  (+ pos 6)))
-;;;           (if (and size (string-match "^[A-Z0-9]\\{3\\}" tag))
-;;;               (setq result (cons (list tag beg size) result))
-;;;             (throw 'break nil))
-;;;           (setq pos    (+ beg size)
-;;;                 length (- length (+ size 6))))))
-;;;     (reverse result)))
 
 (defun mf-id32-tags-collect (len &optional pos)
   (let (result)
@@ -265,35 +241,6 @@ MIME は APIC フレームの mime パラメータ文字列.
           (setq pos (+ pos size)
                 len (- len (+ size 6))))))
     (reverse result)))
-
-;;; (defun mf-oma-tags-collect (length &optional pos)
-;;;   "current buffer に読み込まれた oma/mp3 file の tag list を返す.
-;;; そのとき point は最初のヘッダの先頭になくてはならない.
-;;; LENGTH はスキャンする大きさ(ヘッダサイズ).
-;;; \((TAG BEG SIZE) ...) の list を返す.
-;;; TAG は 4バイトの TAG 文字列,
-;;; BEG はデータのポインタ整数(TAG 先頭から 10バイトの位置で MP4 とは違うので注意),
-;;; SIZE はデータのサイズの整数,
-;;; SIZE は BEG からデータの終端までの大きさ(mp4 と違いTAG からではない事に注意).
-;;; * たいていヘッダの最後にパディングされたゴミがありフレームサイズトータル != ヘッダサイズなので
-;;; LENGTH から フレーム SIZE を減算していっても必ずしも 0 にはならない.
-;;; なのでバッファが正常に読み込めるかどうかでも終端判断をしている.
-;;; Bug.同期形式には対応していない."
-;;;   (let (result)
-;;;     (or pos (setq pos (point)))
-;;;     ;; ヘッダサイズは 0 パディングを含めたサイズで(0パディングは何の為にあるのかは不明)
-;;;     ;; タグブロックのみの純粋なサイズではないので サイズの大きさ = ヘッダの末尾ではない.
-;;;     (catch 'break 
-;;;       (while (< 0 length)
-;;;         (let* ((tag  (mf-buffer-substring pos  (+ pos 4)))
-;;;                (size (mf-buffer-read-long-word (+ pos 4)))
-;;;                (beg  (+ pos 10)))
-;;;           (if (and size (string-match "^[A-Z0-9]\\{4\\}" tag))
-;;;               (setq result (cons (list tag beg size) result))
-;;;             (throw 'break nil))
-;;;           (setq pos    (+ beg size)
-;;;                 length (- length (+ size 10))))))
-;;;     (reverse result)))
 
 (defun mf-oma-tags-collect (len &optional pos)
   "ポイント位置から oma/mp3 file のタグの位置情報リストを返す.
@@ -322,210 +269,165 @@ BUG 同期形式には対応していない."
   (let ((code (detect-coding-string str)))
     (if (memq 'cp932 code) 'cp932 (car code))))
 
-(defvar mf-mp3-sort-alias nil)
-(make-variable-buffer-local 'mf-mp3-sort-alias)
+(defun mf-get-mp3-alias (tags)
+  "TAGS を調べ適合する mp3 ID3/3 の alias aliast を戻す."
+  (let ((mc   mf-id33-tag-musiccenter-alias)
+        (lame mf-id33-tag-lame-alias))
+    (append mf-id33-tag-alias
+            (catch 'out
+              (dolist (tag tags)
+                (let ((tag (or (plist-get tag :dsc) (plist-get tag :tag) (car tag))))
+                  (cond
+                   ((rassoc tag mc)
+                    (throw 'out mc))
+                   ((rassoc tag lame)
+                    (throw 'out lame)))))))))
 
-(defun mf-set-sort-alias (alias-list)
-  "tag alias に ALIAS-LIST をアペンド."
-  (let (sym)
-    (unless mf-mp3-sort-alias
-      (setq mf-mp3-sort-alias alias-list)
-      (setq sym (cdr (assoc "ID3\3" (nth 4 mf-mp3-function-list))))
-      (or (member (car alias-list) (eval sym))
-          (set sym (append (eval sym) alias-list))))))
+(defun mf-tcon (data)
+  "DATA is number sttring.
+Returns paired data from `mf-tag-tco'. Otherwise \"unknown\"."
+  (let ((data (if (string-match "[0-9]+" data)
+                  (match-string 0 data)
+                data)))
+    (or (cdr (assq (string-to-number data) mf-tag-tco))
+        "unknown")))
 
 (defvar mf-mp3-vbr nil "*Check mp3 vbr bittrate.")
 
 (defun mf-oma-tags-analyze (tags &optional no-binary)
-  "`mf-oma-tags-collect' が生成した TAGS からそれが指している値を読み出し\
-プロパティリストとして返す.
+  "TAGS からタグのプロパティリストを生成して戻す.
+TAG は`mf-oma-tags-collect' が集めたアドレステーブル.
 プロパティの概要は以下の通り.
-:tag  tag のテキスト(シンボルではない).
-:data tag に対する文字列またはバイナリオブジェクト.
-      文字列の場合書き戻すときに適宜エンコードするのでコーディング指定は特に無い.
-      ラテンコード指定なのに sjis であった場合も書き出すときにはユニコードに符号化する.
-:mime ASCII 形式の文字列データ.
-:dsc  Description 文字列データ.  TXXX の場合 ASCII になっていても書き戻す際に符号化する.
-:file File Name 文字列データ. 無ければ空文字. これもコーディングに関しては :dsc と同じ.
+ :tag  tag 文字列.
+ :data tag に対するデータ. 文字列またはバイナリオブジェクト.
+       フレームのコーディング値がラテンコードなのに SJIS であった場合ユニコードに符号化する.
+ :mime ASCII 形式の文字列.
+ :dsc  Description 文字列.
+       TXXX の場合コーディング値が ASCII でも書き戻す際にユニコードに符号化する.
+ :file File Name 文字列. これもコーディングに関しては :dsc と同じ.
 NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに加えない."
   (let (result)
-    (dolist (a tags)
-      (cond
-       ;; "USLT"<4> len<4> flag<2>  CODE<1> "eng"<3> [dsc] term<1 or 2> str term<1 or 2>
-       ((member (car a) '("COMM" "USLT"))
-        (let* ((beg (1+ (cadr a)))
-               (code (cdr (assoc (char-after (1- beg)) mf-oma-encode)))
-               (end (+ beg (1- (mf-third a))))
-               (trm (mf-term-code code))
-               (lng (buffer-substring beg (+ 3 beg))) ; "eng"
-               (str (split-string (buffer-substring-no-properties (+ 3 beg) end) trm))
-               dsc)
-          (setq dsc (decode-coding-string (car  str) code)
-                str (decode-coding-string (cadr str) code)
-                result (cons (list :tag (car a)  :cdsc dsc :data str) result))))
+    (dolist (a tags (reverse result))
+      (let ((tag (car a))
+            (beg (mf-second a))
+            (len (mf-third  a))
+            code dsc mime type file data)
+        (goto-char beg)
+        (cond
+         ;; "USLT"<4> len<4> flag<2>  CODE<1> "eng"<3> dscZ strZ
+         ((member tag '("COMM" "USLT"))
+          (setq code (char-after)
+                mime (buffer-substring (1+ (point)) (+ 4 (point))) ; "eng"
+                dsc  (progn (forward-char 4) (mf-asciiz-string code))
+                data (mf-asciiz-string code))
+          (setq result (cons (list :tag tag  :cdsc dsc :data data) result)))
 
-       ;; atrac3pluse dsc = OMG tag
-       ;;  ("TXXX" "OMG_TIT2S" . "アマズッパイハルニサクラサク")
-       ((member (car a) '("TXXX"))
-        (goto-char (cadr a))
-        (let* ((code (cdr (assoc (char-after) mf-oma-encode)))
-               (term (mf-term-code code))
-               (tmp  (buffer-substring-no-properties
-                      (progn (forward-char) (point))
-                      (+ (point) (1- (mf-third a)))))
-               (tmp  (split-string (decode-coding-string tmp code) "\0"))
-               (dsc  (car tmp))
-               (str  (cadr tmp)))
-          (when (rassoc dsc mf-id33-tag-lame-alias)
-            (mf-set-sort-alias mf-id33-tag-lame-alias))
-          (setq result (cons (list :tag (car a) :dsc dsc :data str) result))))
+         ;; atrac3pluse dsc = OMG tag
+         ;;  ("TXXX" "OMG_TIT2S" . "アマズッパイハルニサクラサク")
+         ((member tag '("TXXX"))
+          (setq code (char-after)
+                dsc  (progn (forward-char) (mf-asciiz-string code))
+                data (decode-coding-region
+                      (point) (+ beg len) (cdr (assq code mf-oma-encode)) t))
+          (setq result (cons (list :tag tag :dsc dsc :data (mf-chop data)) result)))
        
-       ((member (car a) '("PRIV"))
-        ;; "PRIV"<4> len<4> ??<2> <extZ> data...
-        ;; Amazom で買う MP3 に含まれているタグ.
-        ;; ?? は不明 とりあえず ゼロで埋められていた.
-        ;; extZ も len に含まれて \0 までが extZ. "www.amazon.com\0" と入っている.
-        ;; extZ を含めたサイズおしまいまでが data. ここもゼロが埋まっているだけ.
-        (goto-char (cadr a))
-        (let* ((tmp (buffer-substring-no-properties (point) (+ (point) (mf-third a))))
-               (pnt (string-match "\0" tmp ))
-               (ext (substring tmp 0 pnt))
-               (str (substring tmp (1+ pnt))))
-          (setq result (cons (list :tag (car a) :ext ext :data str) result))))
+         ((member tag '("PRIV"))
+          ;; "PRIV"<4> len<4> data...
+          ;;  Amazom で買う MP3 に含まれているタグ.
+          ;;  タグ書換コードを簡易にするため
+          ;;  書換えしたサイズの差分を吸収させるパディングだと思われる.
+          (setq mime (mf-asciiz-string 0)
+                data (buffer-substring (point) (+ beg len)))
+          (setq result (cons (list :tag tag :ext mime :data data) result)))
 
-       ((and (null no-binary) (member (car a) '("APIC"))) ;; for MP3
-        ;; "APIC" SIZE<long> FLAG<word> CODE<byte> MIMEz TYPE<byte> [FILE] TERM OBJECT
-        ;; 
-        ;;  FLAG 2バイトは無視して構わない. CODE はエンコードタイプのバイト長整数.
-        ;;  MIME は asciiz(ISO-8859-1) の mime string.
-        ;;  TYPE はアートワークの種類. フロントカバーは 3 なので決め打ちで問題ない.
-        ;;  FILEは encode されたファイル名. 空文字で終端文字 TERM だけの場合がある.
-        ;;  終端文字 TERM は ascii なら 1バイトの 0 そうでないなら 2バイトの 0 である.
-        (goto-char (cadr a))
-        (let* ((code (cdr (assoc (char-after) mf-oma-encode)))
-               (term (mf-term-code code))
-               (mime (buffer-substring-no-properties (progn (forward-char) (point))
-                                                     (progn (re-search-forward "\0" nil t)
-                                                            (match-beginning 0))))
-               (type (prog1 (char-after) (forward-char)))
-               (file
-                (mf-chop
-                 (decode-coding-string
-                  (buffer-substring-no-properties (point) (mf-apic-filename-term-point mime))
-                  code)))
-               (obj  (buffer-substring-no-properties (point) (+ (cadr a) (mf-third a)))))
+         ((and (null no-binary) (member tag '("APIC"))) ;; for MP3
+          ;; "APIC" SIZE<long> FLAG<word> CODE<byte> MIMEz TYPE<byte> FILEz OBJECT
+          ;;   FLAG 2バイトは無視して構わない. CODE はエンコードタイプのバイト長整数.
+          ;;   MIME は asciiz(ISO-8859-1) の mime string.
+          ;;   TYPE はアートワークの種類. フロントカバーは 3 なので決め打ちで問題ない.
+          ;;   FILE は encode されたファイル名. 空文字で終端文字 TERM だけの場合がある.
+          ;;   終端文字 TERM は ascii なら 1バイトの 0 そうでないなら 2バイトの 0 である.
+          (setq code (char-after)
+                mime (progn (forward-char) (mf-asciiz-string code))
+                type (char-after)
+                file (progn (forward-char) (mf-asciiz-string code))
+                data (buffer-substring (point) (+ beg len)))
           (setq result
-                ;; Expand format.
-                (cons (list :tag (car a) :mime mime :type type :file file :data obj) result))))
+                (cons (list :tag tag :mime mime :type type :file file :data data)
+                      result)))
 
-       ((and (null no-binary) (member (car a) '("GEOB")))
-        ;; "GEOB" SIZE<long> FLAG<word> CODE<byte> MIMEz [FILE] TERM DESC TERM  OBJECT
-        ;;
-        ;;   MIME は ASCIIz(CODE ISO-8859-1(ascii))
-        ;;   FILE は CODE で encode されたファイル名.
-        ;;   省略されるとTERM(終端文字) だけになる.
-        ;;   TERM は ISO-8859-1なら NULL ひとつ UTF-16の類いなら NULL ふたつになる.
-        ;;   CODE でエンコードされた DESC(Description) が続きそれに沿った TERM が付く.
-        ;;   DESC は Atrac3pluse の拡張タグとして使われているので必ず在る.
-        ;;   そしてそれにバイナリのオブジェクトが続いて終わる.
-        (goto-char (cadr a))
-        (let* ((code (cdr (assoc (char-after) mf-oma-encode)))
-               (term (mf-term-code code))
-               (mime (buffer-substring (progn (forward-char) (point))
-                                       (progn (re-search-forward "\0" nil t)
-                                              (match-beginning 0))))
-               (file (if (mf-geob-file-name-p code)
-                         (mf-decode-point-codez-string code term)
-                       (forward-char (length term))
-                       ""))
-               (dsc  (mf-decode-point-codez-string code term))
-               (obj (buffer-substring (point) (+ (cadr a) (mf-third a)))))
+         ((and (null no-binary) (member tag '("GEOB")))
+          ;; "GEOB" SIZE<long> FLAG<word> CODE<byte> MIMEz FILEz DESCz OBJECT
+          ;;   MIME は ASCIIz(CODE ISO-8859-1(ascii))
+          ;;   FILE は CODE で encode されたファイル名.
+          ;;   省略されるとTERM(終端文字) だけになる.
+          ;;   TERM は ISO-8859-1なら NULL ひとつ UTF-16の類いなら NULL ふたつになる.
+          ;;   CODE でエンコードされた DESC(Description) が続きそれに沿った TERM が付く.
+          ;;   DESC は Atrac3pluse の拡張タグとして使われているので必ず在る.
+          ;;   そしてそれにバイナリのオブジェクトが続いて終わる.
+          (setq code (char-after)
+                mime (progn (forward-char) (mf-asciiz-string 0))
+                file (mf-asciiz-string code)
+                dsc  (mf-asciiz-string code)
+                data (buffer-substring (point) (+ beg len)))
           (setq result
-                (cons (list :tag (car a) :mime mime :file file :dsc dsc :data obj) result))))
-       ((and no-binary (member (car a) '("APIC" "GEOB") ))
-        nil)
-       (t
-        ;; ((member (car a) '("TIT2" "TIT3" "TPE1" "TPE2" "TALB" "TPOS" "TCOP"
-        ;;                          "TRCK" "TCON" "TYER" "TCOM" "TLEN" "TENC" "GRP1"))
-        (let* ((code (cdr (assoc (char-after (cadr a)) mf-oma-encode)))
-               (beg  (1+ (cadr a)))
-               (end  (+ beg (1- (mf-third a))))
-               (tmp  (buffer-substring-no-properties beg end))
-               (true (if (eq code 'iso-latin-1) (mf-string-true-encode tmp) code))
-               (str  (decode-coding-string tmp true)))
-          (set-text-properties 0 (length str) nil str) ; 何故かプロパティがつくので削除
-          ;; ID33 なのに ID32 式のカテゴリ番号だったときの処理.
-          (and (string-equal (car a) "TCON") (string-match "([0-9]+)" str)
-               (setq str (or (cdr (assq (string-to-number (substring str 1)) mf-tag-tco))
-                             "unknown")))
-          (when (rassoc (car a) mf-id33-tag-musiccenter-alias)
-            (mf-set-sort-alias mf-id33-tag-musiccenter-alias))
-          (setq result (cons (list :tag (car a) :data (mf-chop str)) result))))))
-    (unless mf-mp3-sort-alias (mf-set-sort-alias mf-id33-tag-default-add-alias))
-    (reverse result)))
-
-(defun mf-geob-file-name-p (code)
-  "(point) にファイル名が存在するなら NON-NIL."
-  (if (memq code '(utf-16-le utf-16be))
-      (not (and (eq ?\0 (char-after)) (eq ?\0 (char-after (1+ (point))))))
-    (not (eq ?\0 (char-after)))))
+                (cons (list :tag tag :mime mime :file file :dsc dsc :data data) result)))
+         ((and no-binary (member tag '("APIC" "GEOB") )) nil)
+         (t
+          ;; ((member tag '("TIT2" "TIT3" "TPE1" "TPE2" "TALB" "TPOS" "TCOP"
+          ;;                       "TRCK" "TCON" "TYER" "TCOM" "TLEN" "TENC" "GRP1"))
+          (setq code (char-after)
+                data (buffer-substring (1+ beg) (+ beg len))
+                code (if (zerop code)
+                         (mf-string-true-encode data) (cdr (assq code mf-oma-encode)))
+                data (decode-coding-string data code))
+          (and (string-equal tag "TCON") ; ID32 式のカテゴリ番号だったときの処理.
+               (string-match "([0-9]+)" data)
+               (setq data (mf-tcon data)))
+          (setq result (cons (list :tag tag :data (mf-chop data)) result))))))))
 
 (defun mf-id32-tags-analyze (tags &optional no-binary)
   (let (result)
     (dolist (a tags (reverse result))
-      (cond
-       ((member (car a) '("COM" "ULT"))
-       ;; "ULT"(3) SIZE(3) ENC(1) "eng\xff\xfe\0\0" Lyric... ;; [ENC = 1]
-       ;; "ULT"(3) SIZE(3) ENC(1) "eng\0" Lyric...           ;; [ENC = 0]
-       ;; "COM" も同様
-        (let* ((beg  (cadr a))
-               (end  (+ beg (mf-third a)))
-               (code (cdr (assoc (char-after beg) mf-oma-encode)))
-               (term (if (zerop (char-after beg)) "\0" "\0\0"))
-               dsc str)
-          ;; prf (buffer-substring (1+ beg) (+ 4 beg))
-          (setq str (split-string (buffer-substring (+ 4 beg) end) term)
-                dsc (decode-coding-string (car str) code)
-                str (decode-coding-string (cadr str) code))
-          (setq result (cons (list :tag (car a) :cdsc dsc :data str) result))))
-
-       ((and (null no-binary) (member (car a) '("PIC")))
-       ;; "PIC" SIZE<3bytes> CODE<byte> FMT<3bytes> TYPE<byte> [DESC] TERM OBJECT
-       ;;  - FMT は "JPG" or "PNG".
-       ;;  - TYPE は 0 しか見たことがないので FMT の Terminate か Desc の Code に見違える.
-       ;;  - DESC がなくても TERM はあり CODE により "\0" か "\0\0".
-        (goto-char (cadr a))
-        (let* ((tmp  (char-after))
-               (term (if (or (= tmp 1) (= tmp 2)) "\0\0" "\0"))
-               (code (cdr (assoc tmp mf-oma-encode)))
-               (beg  (progn (forward-char) (point)))
-               (mime (buffer-substring beg (+ beg 3)))
-               (type (string-to-char (buffer-substring (+ beg 3) (+ beg 4))))
-               ;; 本当は :file じゃなくて :dsc だが
-               ;; .oma がサブタグを :dsc にしている関係で Tag ゲットするときに困るので.
-               (file (buffer-substring (+ beg 4) (progn (goto-char (+ beg 4))
-                                                        (search-forward term nil t)
-                                                        (match-beginning 0))))
-               (str  (buffer-substring (match-end 0) (+ (cadr a) (mf-third a)))))
-          (setq result (cons (list :tag (car a) :mime mime :type type :file file :data str)
-                             result))))
-       ((and no-binary (member (car a) '("PIC")))
-        nil)
-       ((member (car a) '("TCO"))
-        (let* ((code (cdr (assoc (char-after (cadr a)) mf-oma-encode)))
-               (beg  (1+ (cadr a)))
-               (end  (+ beg (1- (mf-third a))))
-               (tmp (decode-coding-string (buffer-substring beg end) code))
-               (str (or (cdr (assq (string-to-number (substring tmp 1)) mf-tag-tco))
-                        "unknown")))
-          (setq result (cons (list :tag (car a) :data (mf-chop str)) result))))
-       (t
-        (let* ((code (cdr (assoc (char-after (cadr a)) mf-oma-encode)))
-               (beg  (1+ (cadr a)))
-               (end  (+ beg (1- (mf-third a))))
-               (str (decode-coding-string (buffer-substring beg end) code)))
-          (setq result (cons (list :tag (car a) :data (mf-chop str)) result))))))))
-
+      (let ((tag (car a))
+            (beg (mf-second a))
+            (len (mf-third  a))
+            code dsc fmt type data)
+        (goto-char beg)
+        (cond
+         ((member tag '("COM" "ULT"))
+          ;; "ULT"(3) SIZE(3) ENC(1) "eng" DSCz LYRICz
+          ;; "COM" も同様
+          (setq code (char-after)
+                dsc  (progn (forward-char 4) (mf-asciiz-string code))
+                data (mf-asciiz-string code))
+          (setq result (cons (list :tag tag :cdsc dsc :data data) result)))
+         ((and (null no-binary) (member tag '("PIC")))
+          ;; "PIC" SIZE<3bytes> CODE<byte> FMT<3bytes> TYPE<byte> DESCz OBJECT
+          ;;   CODE は DESCz にかかるコーディング番号.
+          ;;   FMT  は "JPG" もしくは "PNG".
+          ;;   TYPE は 0 しか見たことがない.
+          ;;   DESC は asciiZ string. 空文字でも末尾 0 (もしくは 00)がある.
+          (setq code (char-after)
+                fmt  (progn (forward-char) (buffer-substring (point) (+ (point) 3)))
+                type (progn (forward-char 3) (char-after))
+                dsc  (progn (forward-char) (mf-asciiz-string code))
+                data (buffer-substring (point) (+ beg len)))
+          (setq result (cons (list :tag tag :mime fmt :type type :file dsc :data data)
+                             result)))
+         ((and no-binary (member tag '("PIC"))) nil)
+         ((member tag '("TCO"))
+          (setq code (char-after)
+                data (decode-coding-region
+                      (1+ beg) (+ beg len) (cdr (assq code mf-oma-encode)) t)
+                data (mf-tcon data))
+          (setq result (cons (list :tag tag :data (mf-chop data)) result)))
+         (t
+          (setq code (char-after)
+                data (decode-coding-region
+                      (1+ (point)) (+ beg len)
+                      (cdr (assq code mf-oma-encode)) t))
+          (setq result (cons (list :tag tag :data (mf-chop data)) result))))))))
 
 (defun mf-oma-tag-read (file &optional length no-binary)
   "カレントバッファに oma/mp3 FILE を読み込み tag plist を返す.
@@ -556,10 +458,6 @@ NO-BINARY が非NIL ならバイナリ系タグは含めない."
           tags (cons (list :tag mf-type-dummy :data mf-current-mode) tags))
     (setq sec  (mf-mp3-times file (- fsize (+ hsize 10)) hsize tags))
     (cons (list :tag mf-time-dummy :data sec) tags)))
-
-(defun mf-oma-tag-complete-read (file &optional length no-binary)
-  (setq length (and (null length) nil))
-  (mf-oma-tag-read file nil no-binary))
 
 (defun mf-make-id32-to-id33-table (table)
   "TABLE から ID3.2 to ID3.3 への置換テーブルを生成して返す."
@@ -619,6 +517,9 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
     (logand value           127))
    'iso-8859-1))
 
+(defun mf-stringz (str)
+  (concat str "\0"))
+
 ;;
 ;; Frame make byte for ID3v2.2
 ;;
@@ -642,42 +543,46 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
 (defun mf-byte-pic (plist)
   "IMAGE バイナリのフレームデータ生成(ヘッダなし)."
   (let* ((tag  (plist-get plist :tag))
-         (mime (mf-get-mime (plist-get plist :mime) 'id32))
+         (mime (mf-stringz (mf-get-mime (plist-get plist :mime) 'id32)))
          (type (or (plist-get plist :type) 0))
-         (file (or (plist-get plist :file) (plist-get plist :dsc) ""))
-         (obj  (plist-get plist :data)))
+         (file (mf-stringz (or (plist-get plist :file) (plist-get plist :dsc) "")))
+         (obj  (plist-get plist :data))
+         (code 0))
     (setq file
           (if (eq 'undecided (car (find-coding-systems-string file)))
-              (concat file "\0")
-            (concat (encode-coding-string file 'utf-16le-with-signature) "\0\0")))
-    (mf-byte-frame-32 tag (concat (format "\0%s\0%s" mime file) obj))))
+              file
+            (setq code 1)
+            (encode-coding-string file 'utf-16le-with-signature)))
+    (mf-byte-frame-32 tag (concat (format "%c%s%s" code mime file) obj))))
 
 (defun mf-byte-com (plist)
   "COMM タグのコメント生成."
   (let ((tag (plist-get plist :tag))
-        (dsc (or (plist-get plist :dsc) ""))
-        (str (or (plist-get plist :data) "")))
+        (dsc (mf-stringz (or (plist-get plist :dsc) "")))
+        (str (mf-stringz (or (plist-get plist :data) "")))
+        (code 0))
     (mf-byte-frame-32
      tag
-     (if (not (eq 'undecided (car (find-coding-systems-string str))))
-         (progn
-           ;; 改行は LF のままで OK.
-           (setq str (encode-coding-string str 'utf-16le-with-signature)
-                 dsc (encode-coding-string dsc 'utf-16le-with-signature))
-           (format "%ceng%s%s%s\0\0" 1 dsc "\0\0" str))
-       (format "%ceng%s%s%s\0" 0 dsc "\0" str)))))
+     (progn
+       (when (not (eq 'undecided (car (find-coding-systems-string str))))
+         ;; 改行は LF のままで OK.
+         (setq str (encode-coding-string str 'utf-16le-with-signature)
+               dsc (encode-coding-string dsc 'utf-16le-with-signature)
+               code 1))
+       (format "%ceng%s%s" code dsc str)))))
 
 (defun mf-byte-str (plist)
   "文字列 STR に沿って頭にエンコード番号を付ける."
   (let ((tag (plist-get plist :tag))
-        (str (or (plist-get plist :data) "")))
+        (str (mf-stringz (or (plist-get plist :data) "")))
+        (code 0))
     (mf-byte-frame-32
      tag
-     (if (not (eq 'undecided (car (find-coding-systems-string str))))
-         (progn
-           (setq str (encode-coding-string str 'utf-16le-with-signature))
-           (format "%c%s\0\0" 1 str))
-       (format "%c%s\0" 0 str)))))
+     (progn
+       (if (not (eq 'undecided (car (find-coding-systems-string str))))
+           (setq code 1
+                 str (encode-coding-string str 'utf-16le-with-signature)))
+       (format "%c%s" code str)))))
 
 (defun mf-byte-tco (plist)
   "`mf-tag-tco' テーブルから STR に対応する v2.2 のカテゴリ番号文字列を括弧で括って返す.
@@ -715,15 +620,15 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
 ;;
 (defun mf-byte-frame-33 (tag str)
   (let ((len (length str)))
-    (concat  tag (mf-long-word len) "\0\0" str)))
+    (concat tag (mf-long-word len) "\0\0" str)))
 
 ;; (encode-coding-string str 'undecided)
 
 (defun mf-byte-txxx (plist)
   "TXXX タグのコメント生成. for SonicStage."
   (let ((tag (plist-get plist :tag))
-        (dsc (concat (encode-coding-string (plist-get plist :dsc) 'utf-16be) "\0\0")) ; OMG tag
-        (str (concat (encode-coding-string (plist-get plist :data) 'utf-16be) "\0\0")))
+        (dsc (encode-coding-string (mf-stringz (plist-get plist :dsc)) 'utf-16be)) ; OMG tag
+        (str (encode-coding-string (mf-stringz (plist-get plist :data)) 'utf-16be)))
     (mf-byte-frame-33
      tag
      (format "%c%s%s" (car (rassq 'utf-16be mf-oma-encode)) dsc str))))
@@ -732,16 +637,16 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
   "PRIV タグ生成."
   (let ((tag (plist-get plist :tag))
         (ext (or (plist-get plist :ext) ""))
-        (str (plist-get plist :data))) ;; Binary data.
+        (str (plist-get plist :data))) ; Binary data.
     (mf-byte-frame-33 tag (concat ext "\0" str))))
 
 (defun mf-byte-geob (plist)
   "GEOB タグのコメント生成. for SonicStage."
   (let ((tag  (plist-get plist :tag))
         (mime (concat (plist-get plist :mime) "\0"))
-        (file (concat (encode-coding-string (plist-get plist :file) 'utf-16be) "\0\0"))
+        (file (encode-coding-string (mf-stringz (plist-get plist :file)) 'utf-16be))
         ;; OMG tag
-        (dsc  (concat (encode-coding-string (plist-get plist :dsc)  'utf-16be) "\0\0"))
+        (dsc  (encode-coding-string (mf-stringz (plist-get plist :dsc)) 'utf-16be))
         (obj  (plist-get plist :data)))
     (mf-byte-frame-33
      tag
@@ -753,44 +658,54 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
   (let* ((tag  (plist-get plist :tag))
          (mime (mf-get-mime (plist-get plist :mime) 'id33))
          (type (or (plist-get plist :type) 3))
-         (file (or (plist-get plist :file) ""))
-         (obj  (plist-get plist :data)))
+         (file (mf-stringz (or (plist-get plist :file) "")))
+         (obj  (plist-get plist :data))
+         (code (if (not (eq 'undecided (car (find-coding-systems-string file))))
+                   (progn
+                     (setq file (encode-coding-string file (cdr (assq 1 mf-oma-encode))))
+                     1)
+                 0)))
     (mf-byte-frame-33
-     tag (concat (format "%c%s\0%c%s" 0 mime type (concat file "\0")) obj))))
+     tag (concat (format "%c%s\0%c%s" code mime type file) obj))))
 
 (defun mf-byte-com-33 (plist)
   "COMM タグのコメント生成. for iTunes."
   (let ((tag (plist-get plist :tag))
-        (dsc (or (plist-get plist :dsc) ""))
-        (str (or (plist-get plist :data) "")))
+        (dsc (mf-stringz (or (plist-get plist :dsc) "")))
+        (str (mf-stringz (or (plist-get plist :data) "")))
+        (code 0))
     (mf-byte-frame-33
      tag
-     (if (not (eq 'undecided (car (find-coding-systems-string str))))
-         (progn
+     (progn
+       (if (not (eq 'undecided (car (find-coding-systems-string str))))
            ;; 改行は LF のままで OK.
-           (setq str (encode-coding-string str 'utf-16le-with-signature)
-                 dsc (encode-coding-string dsc 'utf-16le-with-signature))
-           (format "%ceng%s\0\0%s\0\0" 1 dsc str))
-       (format "%ceng%s\0%s\0" 0 dsc str)))))
+           (setq code 1
+                 str  (encode-coding-string str 'utf-16le-with-signature)
+                 dsc  (encode-coding-string dsc 'utf-16le-with-signature)))
+       (format "%ceng%s%s" code dsc str)))))
 
 (defun mf-byte-str-33 (plist)
   "文字列 STR に沿って頭に ID3 に依るエンコード番号を付ける.
 マルチバイト文字を含む文字列は MP3 は utf-16le-with-signature で, OMA は UTF-16BEになる.
-\".oma file\" の場合 ASCII 文字列でも UTF-16BE にしないと
-Walkman で表示されないのでそうしてある. "
-  (let* ((tag (plist-get plist :tag))
-         (str (or (plist-get plist :data) ""))
+\".oma file\" の場合 ASCII 文字列でも UTF-16BE にする."
+  (let* ((tag  (plist-get plist :tag))
+         (data (mf-stringz (or (plist-get plist :data) "")))
          (mode mf-current-mode)
-         (code (if (string-equal mode "ID3\3") 'utf-16-le 'utf-16be)))
+         code)
     (mf-byte-frame-33
      tag
-     (if (or (string-equal mode "ea3\3")
-             (or (string-equal mode "ID3\3")
-                 (not (eq 'undecided (car (find-coding-systems-string str))))))
-         (progn
-           (setq str (encode-coding-string str code))
-           (format "%c%s\0\0" (car (rassq code mf-oma-encode)) str))
-       (format "%c%s\0" 0 str)))))
+     (apply #'format
+            "%c%s"
+            (cond
+             ((equal mode "ea3\3")
+              (list 2
+                    (encode-coding-string data (cdr (assq 2 mf-oma-encode)))))
+             ((and (equal mode "ID3\3")
+                   (not (eq 'undecided (car (find-coding-systems-string data)))))
+              (list 1
+                    (encode-coding-string data (cdr (assq 1 mf-oma-encode)))))
+             (t
+              (list 0 data)))))))
 
 (defun mf-oma-sort (tags)
   (let ((tbl mf-oma-sort-table))
@@ -869,6 +784,9 @@ ID3v2.2 ならそのままバイナリパックする."
     (insert header)
     (mf-write-file file no-backup)))
 
+;;
+;; Time and Bitrate
+;;
 (defconst mf-oma-bitrate
   '((#x22 . 48) (#x2e . 64) (#x30 . 132) (#x45 . 96) (#x5c . 128)
     (#xb9 . 256) (#xff . 352)))

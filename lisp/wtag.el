@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.243 $$Name:  $
+;; Version: @(#)$Revision: 1.245 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -76,20 +76,20 @@
 (defvar wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 (make-variable-buffer-local 'wtag-music-copy-dst-buff)
 
-(defconst wtag-version "@(#)$Revision: 1.243 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.245 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
 
 (defcustom wtag-load-without-query nil
-  "NON-NIL なら新たなジャケをロードするとき問合せない.
+  "non-nil なら新たなジャケをロードするとき問合せない.
 keep ならそれに加えて元のアートワークをファイルに保存する.
 D&D 主軸の人なら t か keep にしておくと鬱陶しくない."
   :type  '(choice (const nil) (const t) (const keep))
   :group 'wtag)
 
 (defcustom wtag-force-load nil ;; 300
-  "NON-NIL なら `wtag-view-mode' でも D&D でジャケの差替ができる.
+  "non-nil なら `wtag-view-mode' でも D&D でジャケの差替ができる.
 query だと問い合わせが入る.
 整数なら最初に 1度だけ取い合わせが入りその秒数後まで問い合わせがなくなる.
 D&D 主軸ならここを数値指定し `wtag-load-without-query' を t or keep にしておくことを推奨."
@@ -99,7 +99,7 @@ D&D 主軸ならここを数値指定し `wtag-load-without-query' を t or keep
 (defvar wtag-force-timer nil "Work for `wtag-force-load' INTEGER.")
 
 (defcustom wtag-no-backup t
-  "*非NILならバックアップファイルを作らない.
+  "non-nil ならバックアップファイルを作らない.
 backup file を作らなくても元のファイルは(今の Emacs であれば)
 システムの Trash に破棄されるので万が一のとき復活は可能.
 *scratch* buffer 等で以下のように試しゴミ箱に移動していれば対応しています.
@@ -122,7 +122,7 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   (if (memq system-type '(ms-dos windows-nt))
       'wtag-kakashi-filter
     'wtag-kakashi-filter2)
-  "文字列 LIST 引数 1つを持ち、そのエレメンツをフィルタリングして戻す関数."
+  "文字列 list 引数 1つを持ち、そのエレメンツをフィルタリングして戻す関数."
   :type  'function
   :group 'wtag)
 
@@ -131,7 +131,7 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
     (if (and exe (string-match "cmd" shell-file-name))
         (replace-regexp-in-string "/" "\\\\" exe)
       exe))
-  "*カカシの絶対パス. NIL ならソートタグは元の文字列の単純コピー."
+  "カカシの絶対パス. nil ならソートタグは元の文字列の単純コピー."
   :type  '(choice
            (file :must-match t)
            (const nil))
@@ -148,7 +148,7 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
     (if (and dic (string-match "cmd" shell-file-name))
         (replace-regexp-in-string "/" "\\\\" dic)
       dic))
-  "kakasi を賢くするための辞書. NIL なら辞書なしのデフォルト."
+  "kakasi を賢くするための辞書. nil なら辞書なしのデフォルト."
   :type  '(choice
            (file :must-match t)
            (const nil))
@@ -177,7 +177,13 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   "Writable mode に入るときプロセスがあれば問い合わせなくブレイクする."
   :type  'boolean
   :group 'wtag)
-  
+
+(defcustom wtag-music-play-next nil
+  "non-nil なら `wtag-music-play' を実行すると1行ポイントを進める.
+数値なら進む前その秒数ウエイトがかかる."
+  :type  '(choice (const nil) (const t) number)
+  :group 'wtag)
+
 (defconst wtag-beginning-line-of-track 3)
 (make-variable-buffer-local 'wtag-beginning-line-of-track)
 
@@ -186,14 +192,14 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 (make-obsolete-variable 'wtag-music-coding  nil "1.18")
 
 (defcustom wtag-truncate-lines t
-  "非NILなら画面端で表示を折り返さない."
+  "non-nilなら画面端で表示を折り返さない."
   :type  'boolean
   :group 'wtag)
 
 (or (boundp 'cursor-intangible-mode) (defvar cursor-intangible-mode nil))
 
 (defcustom wtag-cursor-intangible t
-  "NON-NIL だと非編集領域を避けてカーソルが動く.
+  "non-nil なら非編集領域を避けてカーソルが動く.
 マイナーモード `cursor-intangible-mode' を使うので
 念のためオプションになっています."
   :type  'boolean
@@ -1118,7 +1124,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
     ;; Salvage old cover.
     (when (and wtag-old-cover modify-cover (eq wtag-load-without-query 'keep))
       (let* ((coding-system-for-write 'no-conversion)
-             (ext  (or (mf-image-type wtag-old-cover) ""))
+             (ext  (mf-image-type wtag-old-cover))
              (ext  (if (eq ext 'jpeg) "jpg" (symbol-name ext)))
              (file (expand-file-name (concat keep-name "." ext) directory)))
         (when (file-exists-p file)
@@ -1775,9 +1781,6 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
          (set-window-configuration wtag-window-configuration))
     (message nil)
     (run-hooks 'wtag-quit-hook)))
-
-(defvar wtag-music-play-next nil
-  "*non-nil なら `wtag-music-palay' を実行すると1行ポイントを進める.")
 
 (defun wtag-music-play (prefix)
   "point のファイルを `wtag-music-players' で設定されたコマンドで実行.

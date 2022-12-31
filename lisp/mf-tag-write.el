@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.68 $
+;; Version: $Revision: 1.70 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.68 $")
+(defconst mf-tag-write-version "$Revision: 1.70 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -126,112 +126,103 @@ ALIAS は 実 tag を得るため."
     ("mp4\\|M4A\\|mp42"   "covr"  nil            nil                           (13 . 14))
     ( "fLaC"              "APIC"  nil            ("image/jpeg" . "image/png")  3)))
 
-(defun mf-itypeset (ext list)
-  "`mf-image-type' のリスト中のコンス要素を EXT が \"JPG\" か否かで振り分け ATOM にする."
-  (let (result)
-    (dolist (a list (nreverse result))
-      (setq result
-            (cons
-             (if (consp a)
-                 (if (string-equal ext "JPG")
-                     (car a)
-                   (cdr a))
-               a)
-             result)))))
-        
-(defun mf-set-image-tag (mode file-or-obj)
-  "FILE-OR-OBJ 情報を元にデフォルトで構築した tag MODE の image tag の plist を返す."
-  (let* ((file (file-exists-p file-or-obj))
-         (ext (if file
-                  (upcase (file-name-extension file-or-obj))
-                (cdr (assq (mf-image-type file-or-obj) '((jpeg . "JPG") (png . "PNG"))))))
-         (itype (mf-itypeset ext (assoc-default mode mf-image-type 'string-match)))
-         (tmp   (list :tag  (nth 0 itype)
-                      :dsc  (nth 1 itype)
-                      :mime (nth 2 itype)
-                      :type (nth 3 itype)
-                      :pdsc "" ; for flac Picture Discription.
-                      :width  0
-                      :height 0
-                      :depth  0
-                      :index  0))
+(defun mf-cons-choice (elt ext)
+  "ELT がアトムならそのままを、コンスセルなら EXT によりどちらかをチョイスし戻す.
+\"JPG\" なら CAR, さもなくば CDR がチョイスされる."
+  (if (atom elt)
+      elt
+    (if (equal ext "JPG") (car elt) (cdr elt))))
+
+(defun mf-type-select (file mode)
+  "`mf-set-image-tag' の下位.
+イメージ FILE の種別から生成するコーデック MODE 用の基本プロパティリストを生成する."
+  (let* ((ext (if file
+                  (upcase (file-name-extension file))
+                (cdr (assq (mf-image-type file) '((jpeg . "JPG") (png . "PNG"))))))
+         (type (assoc-default mode mf-image-type 'string-match)))
+    (list :tag  (nth 0 type)
+          :dsc  (nth 1 type)
+          :mime (mf-cons-choice (nth 2 type) ext)
+          :type (mf-cons-choice (nth 3 type) ext)
+          :pdsc "" ; for flac Picture Discription.
+          :width  0
+          :height 0
+          :depth  0
+          :index  0)))
+
+(defun mf-set-image-tag (mode file)
+  "FILE 情報を元にデフォルトで構築した tag MODE の image tag の plist を返す."
+  (let* ((file (if (file-exists-p file) file))
+         (types (mf-type-select file mode))
          (data  (if file (with-temp-buffer
-                           (insert-file-contents-literally file-or-obj)
+                           (insert-file-contents-literally file)
                            (set-buffer-multibyte nil)
                            (buffer-string))
-                  file-or-obj)))
-    (append tmp
+                  file)))
+    (append types
             (list :length (length data)
-                  :file   (if file (file-name-nondirectory file-or-obj) "")
+                  :file   (if file (file-name-nondirectory file) "")
                   :data   data))))
 
-(defun mf-upcase-list (lst)
-  (let (result)
-    (while lst
-      (setq result (cons (upcase (car lst)) result)
-            lst (cdr lst)))
-    (reverse result)))
-  
-(defun mf-file-cell (cell alias)
-  "CELL のドットペアリストがイメージかリリックのタグのセットなら非NILを返す."
-  (let ((tag (if (symbolp (car cell)) (cdr (assoc (car cell) alias)) (car cell))))
-    (if mf-current-case
-        (member (upcase tag) (mf-upcase-list mf-file-tag-list))
-      (member tag mf-file-tag-list))))
+(defun mf-tag-image-or-lyric-p (tag)
+  "TAG がイメージかリリックのものなら non-nil を返す."
+  (if mf-current-case
+      (member-ignore-case tag mf-file-tag-list)
+    (member tag mf-file-tag-list)))
+
+(defun mf-pair-set (lst alias)
+  "LST の中のふたつのアトムをフィルタリングして再びリストにして戻す.
+LST はドットペアでも 2要素のリストでも良い.
+最初のアトムはシンボルなら ALIAS を参照してタグ文字列に展開し
+文字列ならそのまま戻す. 不正なエイリアスやタグであれば nil になる.
+ふたつめのアトムは文字列ならそのまま戻し
+シンボルもしくは数値なら文字列にする."
+  (let (tag data)
+    (setq tag (if (symbolp (car lst))
+                  (cdr (assq (car lst) alias))
+                (cdr (rassoc (car lst) alias))) ; 未定義検出
+          data (if (consp (cdr lst)) (cadr lst) (cdr lst)))
+    (setq data (cond ((symbolp data) (symbol-name data))
+                     ((numberp data) (number-to-string data))
+                     (t data)))
+    (list tag data)))
 
-(defun mf-list-convert (alist oldtags) ; OLDTAGS は alias を得るために使う
-  "主に手書きで指定するために ALIST を plist に変換.
-要素に :tag があれば素通りする.
-画像や歌詞のタグの場合ファイル名だけでも OK.
-\((\"TAG\" . \"STR\") (\"TAG\" . \"STR\") \"FILE.jpg\" ...) のように指定する.
-CAR は alias でも良い.
-CDR を NIL とするとそのタグの削除になる."
-  (let* ((mode        mf-current-mode)
-         (alias       (mf-alias mf-current-func oldtags mode))
-         (omg-tags    mf-omg-tags)
-         (itunes-tags mf-itunes-tags)
-         result tag str)
-    (dolist (a alist (reverse result))
-      (and (not (plist-get a :tag)) (not (mf-pair-p a)) (listp a) (= 2 (length a))
-           (setq a (cons (car a) (cadr a))))
-      (unless (stringp a)
-        (setq tag (if (symbolp (car a))
-                      (cdr (assoc (car a) alias))
-                    (cdr (rassoc (car a) alias))) ;; 未定義検出するためそのまま返さない.
-              str (cond
-                   ((and (cdr a) (symbolp (cdr a)))
-                    (symbol-name (cdr a)))
-                   ((and (cdr a) (numberp (cdr a)))
-                    (number-to-string (cdr a)))
-                   (t
-                    (cdr a))))
-        (when (null tag) (error "Bad arg... %s" a)))
-      (setq result
-            (cons
-             (cond
-              ((plist-get a :tag)
-               a)
-              ((mf-pair-p a)
-               (cond     
-                ((member tag omg-tags)
-                 (list :tag "TXXX" :dsc tag :data str))
-                ((member tag itunes-tags)
-                 (list :tag "----"  :mean "com.apple.iTunes" :type 1 :dsc tag :data str))
-                ((mf-file-cell a alias)
-                 (mf-set-file-tag mode a alias))
-                (t
-                 (list :tag tag :type (mp4-tag-type tag) :data str)))) ;; mf-lib-mp4.el
-              ((and (listp a) (null (cdr a))) ; Delete tag part.
-               (list :tag tag :file nil :data nil))
-              ((stringp a)
-               (cond
-                ((string-match mf-image-regexp a)
-                 (mf-set-image-tag mode a))
-                ((string-match mf-text-regexp a)
-                 (mf-set-text-tag a alias))))
-              (t
-               (error "Unknown format: %s" a)))
-             result)))))
+(defun mf-list-convert (alst oldtags)
+  "ALST 形式のタグデータを `mf-tag-write' が読める形式の plist に変換する.
+OLDTAGS は適合する alias list の選択のための手がかりとして使う.
+要素に :tag というシンボルがあれば素通してそのまま返す.
+画像や歌詞のタグの場合ファイル名文字列だけでもいい.
+ALST は \((\"TAG\" . \"DATA\") \"filename.jpg\" ...) のように指定する.
+CAR が文字列ならタグ、シンボルなら alias として処理する.
+CDR を nil とするとそのタグを削除する."
+  (let* ((mode  mf-current-mode)
+         (alias (mf-alias mf-current-func oldtags mode))
+         result)
+    (dolist (a alst (reverse result))
+      (push
+       (cond
+        ((and (stringp a) (string-match mf-image-regexp a))
+         (mf-set-image-tag mode a))
+        ((and (stringp a) (string-match mf-text-regexp a))
+         (mf-set-text-tag a alias))
+        ((and (consp a) (not (mf-pair-p a)) (memq :tag a))
+         a)
+        (t
+         (cl-multiple-value-bind (tag data) (mf-pair-set a alias)
+           (cond
+            ((null tag)
+             (error "Illegale TAG"))
+            ((null data) ; tag remove
+             (list :tag tag :file nil :data nil))
+            ((member tag mf-omg-tags)
+             (list :tag "TXXX" :dsc tag :data data))
+            ((member tag mf-itunes-tags)
+             (list :tag "----"  :mean "com.apple.iTunes" :type 1 :dsc tag :data data))
+            ((mf-tag-image-or-lyric-p tag)
+             (mf-set-file-tag mode (cons tag data) alias))
+            (t ;; mf-lib-mp4.el
+             (list :tag tag :type (mp4-tag-type tag) :data data))))))
+       result))))
 
 (defun mf-tag-read-alist (file &optional len no-bin)
   "FILE のタグを \(TAG . DATA) または \(DSC . DATA) の alist にして返す."

@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020, 2021, 2022
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.24 $$Name:  $
+;; Version: $Revision: 1.26 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.24 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.26 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -140,12 +140,16 @@ SUFFIXS を省略すると `mf-lib-suffix-all' の値を使う."
     (C char-after                  1)
     (S mf-buffer-read-word         2)
     (s mf-buffer-read-word-le      2)
-    (T mf-buffer-read-3-bytes      3)
-    (t mf-buffer-read-3-bytes      3)
+    (M mf-buffer-read-3-bytes      3)
+    (m mf-buffer-read-3-bytes      3)
+    (T mf-buffer-read-3-bytes      3) ;; obsolete M にしてください1.25
+    (t mf-buffer-read-3-bytes      3) ;; obsolete m にしてください1.25
     (L mf-buffer-read-long-word    4)
     (l mf-buffer-read-long-word-le 4)
     (Q mf-buffer-read-quad-word    8)
-    (q mf-buffer-read-quad-word-le 8))
+    (q mf-buffer-read-quad-word-le 8)
+    (z mf-buffer-read-asciiz)
+    (Z mf-buffer-read-asciiz-coding))
   "小文字が LITTLE / 大文字が BIG エンディアン. 末尾数値は進めるポインタ.
 lisp なので t は別の特別な意味もあるので注意.")
 
@@ -258,6 +262,42 @@ WLST が non-nil ならバイトに分解し Big Endian の並びにしたリス
     (logand value           255))
    'iso-8859-1))
 
+(defun mf-asciiz-move-end (code)
+  "現在のポイントより後にある \0 または \0\0 の次のポイントを返す.
+CODE が 0 か 3 なら \"\0\", それ以外なら \"\0\0\" を探す."
+  (cond
+   ((or (eq 0 code) (eq 3 code))
+    (search-forward "\0")
+    (match-end 0))
+   (t
+    (while (prog1 (not (and (zerop (char-after))
+                            (zerop (char-after (1+ (point))))))
+             (forward-char 2)))
+    (point))))
+
+;; "z"
+(defun mf-buffer-read-asciiz (&optional pos)
+  "POS から末尾 \"\0\" を含めた ascii string を返す."
+  (or pos (setq pos (point)))
+  (save-restriction
+    (goto-char pos)
+    (buffer-substring pos (mf-asciiz-move-end 0))))
+
+(defvar-local mf-buffer-read-asciiz-coding 0
+  "0: iso-latin-1\n1: utf-16-le\n2: utf-16be\n3: utf-8\n")
+
+;; "Z"
+(defun mf-buffer-read-asciiz-coding (&optional pos)
+  "POS から末尾 \"\0\" (または \"\0\0\") を含めた ascii string を返す.
+Buffer local variable `mf-buffer-read-asciiz-coding' にセットされた
+MP3 のコーディング番号の文字コーディングとしてスキャンするので
+呼び出す前にこの変数をセットしておく. しなければ iso-latin-1 となる."
+  (or pos (setq pos (point)))
+  (save-restriction
+    (goto-char pos)
+    (buffer-substring
+     pos (mf-asciiz-move-end (or mf-buffer-read-asciiz-coding 0)))))
+
 (defun mf-disbits (val partition &optional width)
   "VAL をビット長 WIDTH として PARTITION に従いビット分解しリストにして戻す.
 PARTITION はビット数をリストで羅列する.
@@ -288,8 +328,8 @@ MOVE が non-nil なら読んだ分ポイントを進める."
           (setq result (cons (buffer-substring pos (+ pos f)) result)
                 shift  f)
         (setq mode   (cdr (assq f mf-buffer-read-functions))
-              shift  (cadr mode)
-              result (cons (funcall (car mode) pos) result)))
+              result (cons (funcall (car mode) pos) result)
+              shift  (or (cadr mode) (length (car result)))))
       (setq pos (+ pos shift))
       (and move (forward-char shift)))))
 

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 2.2 $$Name:  $
+;; Version: $Revision: 2.3 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 2.2 $$Name:  $")
+(defconst mf-lib-mp4-version "$Revision: 2.3 $$Name:  $")
 
 (require 'mf-lib-var)
 (require 'cl-lib)
@@ -442,7 +442,7 @@ TARGET は主に \"moov\", \"free\" \"mdat\" で \"udat\" と \"meta\" はスキ
 (defun mp4-stsz-sample-size (atoms)
   (goto-char (nth 1 (car (mp4-get-list "stsz" atoms))))
   (cl-multiple-value-bind (len type ver flag size ent)
-      (mf-buffer-read-unpack '(L 4 C T L L))
+      (mf-buffer-read-unpack '(L 4 C M L L))
     size))
 
 (defun mp4-get-time (atoms)
