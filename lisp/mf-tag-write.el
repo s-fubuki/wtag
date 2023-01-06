@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.70 $
+;; Version: $Revision: 1.71 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.70 $")
+(defconst mf-tag-write-version "$Revision: 1.71 $")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -189,7 +189,7 @@ LST はドットペアでも 2要素のリストでも良い.
 
 (defun mf-list-convert (alst oldtags)
   "ALST 形式のタグデータを `mf-tag-write' が読める形式の plist に変換する.
-OLDTAGS は適合する alias list の選択のための手がかりとして使う.
+OLDTAGS は適合する alias list の選択のための手がかりとして使う plist.
 要素に :tag というシンボルがあれば素通してそのまま返す.
 画像や歌詞のタグの場合ファイル名文字列だけでもいい.
 ALST は \((\"TAG\" . \"DATA\") \"filename.jpg\" ...) のように指定する.
@@ -323,10 +323,14 @@ FUNCLIST は \((REGEXP READ-FUNC WRITE-FUNC CV-FUNC ALIAS-LIST ) (...)) とい�
 
 (defun mf-alias (funclist tags &optional mode)
   "FUNCLIST から mf-current-mode または MODE の alias 設定を得る.
+TAGS は alias table 選択の手がかりに使う現在得ているタグリスト.
 FUNCLIST の中の 第4の値が list なら要素の car が mode に equal の要素を返し
 atom なら第4の値をそのまま返す. いずれも eval して返す."
   (let ((alias (nth 3 funclist))
-        (mode  (or mode (cdr (assoc mf-type-dummy tags)))))
+        (mode  (or
+                mode
+                (cdr (assoc mf-type-dummy tags))
+                (mf-get-mode tags))))
     (if (listp alias)
         (if (equal mode "ID3\3")
             (mf-get-mp3-alias tags)

@@ -1,4 +1,13 @@
 # -*- mode: org -*-
+* Sat Jan  7 08:39:11 2023
+** mf-lib-mp3v1.el 1.18
+*** fix: `mf-list-convert' の必須引数が増えたので合わる.
+*** change: `id31-add-dummy-footer' space で fill ってたのを zero fill にする.
+*** fix: `id31-get' 対応するジャンル番号が存在しないとエラーになるのを修正.
+
+** mf-tag-write.el 1.71
+*** `mf-list-convert' 周りの整理.
+
 * Sat Dec 31 08:13:00 2022
 ** mf-tag-write.el 1.68
 *** fix: mp3 "ID3\2" の書き出しで PIC tag のフォーマット種が JPG でも  PNG になっていたのを修正

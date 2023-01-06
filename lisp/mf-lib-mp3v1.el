@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.16 $$Nmae$
+;; Version: $Revision: 1.18 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -34,7 +34,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3v1-version "$Revision: 1.16 $$Nmae$")
+(defconst mf-lib-mp3v1-version "$Revision: 1.18 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -172,7 +172,7 @@ zero-byte が `\0' なら `id31-tbl-ex', さもなくば `id31-tbl' を返す."
                ((eq tag 'track)
                 (string (+ (string-to-char str) ?0)))
                ((eq tag 'genre)
-                (cdr (assq (string-to-char str) mf-tag-tco)))
+                (or (cdr (assq (string-to-char str) mf-tag-tco)) "Pop"))
                (t
                 ;; ので ascii でもかまわず実行してる.
                 (decode-coding-string str 'sjis)))))
@@ -232,14 +232,14 @@ zero-byte が `\0' なら `id31-tbl-ex', さもなくば `id31-tbl' を返す."
 (defun id31-add-dummy-footer (file)
   "FILE 末尾にダミーの ID31 タグ・フッタを付ける.
 既に ID31 Tag が存在すればエラーで終了する.
-中身は space でフィルされるが最後のジャンル部分だけ 1バイト数値が入る.
+中身はゼロでフィルされるが最後のジャンル部分だけ 1バイト数値が入る.
 初期値は変数 `id31-add-genre' で設定する. デフォルトは 13 の Pop."
   (with-temp-buffer
     (insert-file-contents-literally file)
     (goto-char (point-max))
     (when (equal "TAG" (buffer-substring (- (point) 128) (+ (- (point) 128) 3)))
       (error "The Footer is already ID1 Tag"))
-    (insert "TAG" (make-string 124 32) (string id31-add-genre))
+    (insert "TAG" (make-string 124 0) (string id31-add-genre))
     (rename-file file (make-backup-file-name file))
     (write-region (point-min) (point-max) file)))
 
@@ -302,7 +302,8 @@ FILE に該当個所が無いとエラーになる."
   (set-buffer-multibyte nil)
   (goto-char (point-min))
   (cons (list :tag mf-type-dummy :data mf-current-mode)
-        (mf-list-convert (id31-get-tag file))))
+        (mf-list-convert (id31-get-tag file)
+                         (list (cons mf-type-dummy mf-current-mode)))))
 
 (defun  mf-id31-write-buffer (tags &optional no-backup)
   "`mf-id31-tag-read' と対になる ID3v1 用書き戻し関数だが ID3v2.3 で書き出される.
