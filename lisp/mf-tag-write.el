@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.71 $
+;; Version: $Revision: 1.73 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,8 +53,9 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.71 $")
+(defconst mf-tag-write-version "$Revision: 1.73 $")
 
+(require 'cl-lib)
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
 (require 'mf-lib-mp4)
@@ -86,10 +87,11 @@
 
 (defun mf-image-type (obj)
   "バイナリ OBJ のタイプを jpeg or png で返す."
-  (assoc-default obj '(("\\`\xff\xd8"                . jpeg)
-                       ("\\`\x89PNG\x0d\x0a\x1a\x0a" . png))
-                       ;; ("\\`GIF8[79]a"               . gif)
-                       ;; ("\\`RIFF....WEBP"            . webp)
+  (assoc-default (substring obj 0 (if (> 16 (length obj)) (length obj) 16))
+                 '(("\\`\xff\xd8"                . jpeg)
+                   ("\\`\x89PNG\x0d\x0a\x1a\x0a" . png))
+                 ;; ("\\`GIF8[79]a"               . gif)
+                 ;; ("\\`RIFF....WEBP"            . webp)
                  #'string-match))
 
 (defun mf-set-file-tag (mode pair alias)
@@ -97,7 +99,7 @@
 MODE はタグのモード ALIAS は alias テーブル."
   (let* ((tag  (car pair))
          (data (cdr pair))
-         (file (file-exists-p data)))
+         (file (file-attributes data)))
     (cond
      ((or (and file (string-match mf-image-regexp data)) (mf-image-type data))
       (mf-set-image-tag mode data))
@@ -106,17 +108,17 @@ MODE はタグのモード ALIAS は alias テーブル."
      (t
       (error "Unknown file `%s'" data)))))
 
-(defun mf-set-text-tag (data alias)
-  "DATA がファイルなら読み込みその中身をさもなくばそのものを使い plist にして返す.
+(defun mf-set-text-tag (file alias)
+  "FILE がファイルなら読み込みその中身をさもなくばそのものを使い plist にして返す.
 ALIAS は 実 tag を得るため."
   (list :tag (cdr (assq 'lyric alias))
         :dsc nil
         :cdsc ""
         :type 1
         :data
-        (if (file-exists-p data)
-            (with-temp-buffer (insert-file-contents data) (buffer-string))
-          data)))
+        (if (file-attributes file)
+            (with-temp-buffer (insert-file-contents file) (buffer-string))
+          file)))
 
 (defconst mf-image-type
   ;; REGEXP               :tag    :desc          :mime                        :type
@@ -126,43 +128,27 @@ ALIAS は 実 tag を得るため."
     ("mp4\\|M4A\\|mp42"   "covr"  nil            nil                           (13 . 14))
     ( "fLaC"              "APIC"  nil            ("image/jpeg" . "image/png")  3)))
 
-(defun mf-cons-choice (elt ext)
-  "ELT がアトムならそのままを、コンスセルなら EXT によりどちらかをチョイスし戻す.
-\"JPG\" なら CAR, さもなくば CDR がチョイスされる."
-  (if (atom elt)
-      elt
-    (if (equal ext "JPG") (car elt) (cdr elt))))
-
-(defun mf-type-select (file mode)
-  "`mf-set-image-tag' の下位.
-イメージ FILE の種別から生成するコーデック MODE 用の基本プロパティリストを生成する."
-  (let* ((ext (if file
-                  (upcase (file-name-extension file))
-                (cdr (assq (mf-image-type file) '((jpeg . "JPG") (png . "PNG"))))))
-         (type (assoc-default mode mf-image-type 'string-match)))
-    (list :tag  (nth 0 type)
-          :dsc  (nth 1 type)
-          :mime (mf-cons-choice (nth 2 type) ext)
-          :type (mf-cons-choice (nth 3 type) ext)
-          :pdsc "" ; for flac Picture Discription.
-          :width  0
-          :height 0
-          :depth  0
-          :index  0)))
-
 (defun mf-set-image-tag (mode file)
-  "FILE 情報を元にデフォルトで構築した tag MODE の image tag の plist を返す."
-  (let* ((file (if (file-exists-p file) file))
-         (types (mf-type-select file mode))
-         (data  (if file (with-temp-buffer
-                           (insert-file-contents-literally file)
-                           (set-buffer-multibyte nil)
-                           (buffer-string))
-                  file)))
-    (append types
-            (list :length (length data)
-                  :file   (if file (file-name-nondirectory file) "")
-                  :data   data))))
+  "イメージ FILE(ファイルまたはオブジェクト)の plist を MODE により構成して返す."
+  (let* ((name (if (file-attributes file) (file-name-nondirectory file) ""))
+         (data (if (file-attributes file)
+                   (with-temp-buffer
+                     (insert-file-contents-literally file)
+                     (set-buffer-multibyte nil)
+                     (buffer-string))
+                 file))
+         (len (length data))
+         (ext (mf-image-type data)))
+    (cl-multiple-value-bind (tag dsc mime type)
+        (mapcar #'(lambda (elt)
+                    (if (consp elt)
+                        (if (eq ext 'jpeg) (car elt) (cdr elt))
+                      elt))
+                (assoc-default mode mf-image-type 'string-match))
+      (list :tag tag :dsc dsc :mime mime :type type
+            :pdsc "" ; for flac Picture Discription.
+            :width 0 :height 0 :depth  0 :index  0
+            :length len :file name :data data))))
 
 (defun mf-tag-image-or-lyric-p (tag)
   "TAG がイメージかリリックのものなら non-nil を返す."
@@ -245,6 +231,11 @@ CDR を nil とするとそのタグを削除する."
                  (cons (cons mf-type-dummy-symbol mf-type-dummy)
                        (mf-alias mlist alist)))))
     (mf-alist-add-tag alist alias case)))
+
+(defun mf-tag-read-alias-alist (file &optional len no-bin)
+  "FILE のタグを \(ALIAS . DATA) の list にして返す."
+  (mapcar #'(lambda (lst) (cons (car lst) (cddr lst)))
+          (mf-tag-read-alias file len no-bin)))
 
 (defun mf-alist-add-tag (alist alias case)
   "ALIST の各要素 \(TAG . DATA) に TAG に対応する alias を ALIAS から捜して cons し

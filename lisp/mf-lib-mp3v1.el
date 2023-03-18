@@ -2,7 +2,7 @@
 ;; Copyright (C) 2020, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.18 $$Nmae$
+;; Version: $Revision: 1.20 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -34,7 +34,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3v1-version "$Revision: 1.18 $$Nmae$")
+(defconst mf-lib-mp3v1-version "$Revision: 1.20 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -51,7 +51,7 @@
 (add-to-list 'mf-image-type '("ID3\1" "APIC" nil ("image/jpeg" . "image/png") 3) )
 
 (defcustom mf-id31-alias 
-  '((header    . nil)    (title . "TIT2") (artist  . "TPE1")
+  '((magic     . nil)    (title . "TIT2") (artist  . "TPE1")
     (album     . "TALB") (year  . "TYER") (comment . "COMM")
     (zero-byte . nil)    (track . "TRCK") (genre   . "TCON")
     ;; Extended optional alias.
@@ -62,7 +62,7 @@ Entity is alias for `ID3v2.3'."
   :group 'music-file)
 
 (defconst id31-tbl
-  '((header    . 3)  ;; "TAG"
+  '((magic     . 3)  ;; "TAG"
     (title     . 30)
     (artist    . 30)
     (album     . 30)
@@ -72,7 +72,7 @@ Entity is alias for `ID3v2.3'."
   "for ID3v1. CDR は大きさ(!offset).")
 
 (defconst id31-tbl-ex
-  '((header    . 3)  ;; "TAG"
+  '((magic     . 3)  ;; "TAG"
     (title     . 30)
     (artist    . 30)
     (album     . 30)
@@ -82,6 +82,21 @@ Entity is alias for `ID3v2.3'."
     (track     . 1)  ;; さもなければ `zero-byte' と `track' も `comment' 領域になる.
     (genre     . 1))
   "for ID3v1.1. コメント域拡張版.")
+
+(defvar id31-add-genre (car (rassoc "Pop" mf-tag-tco))
+  "2 Country, 8 Jazz, 13 Pop, 17 Rock, 24 SoundTrack, 32 Classical, 42 Soul.")
+
+(defconst id31-dummy-default
+  `((magic     . "TAG")
+    (title     . ,(make-string 30 0))
+    (artist    . ,(make-string 30 0))
+    (album     . ,(make-string 30 0))
+    (year      . ,(make-string 4 0))
+    (comment   . ,(make-string 28 0))
+    (zero-byte . ,0)
+    (track     . ,1)
+    (genre     . ,id31-add-genre))
+  "`id31-make-dummy-default' で LST 指定のないのもののデフォルト.")
 
 (unless (boundp 'mf-function-list)
   (setq mf-function-list nil))
@@ -95,7 +110,7 @@ Entity is alias for `ID3v2.3'."
     (setq file (mf-id31-add-suffix file))))
 
 (defun mf-id31-add-suffix (file)
-  "FILE が mp3 id3 v1 (or v1.1) なら suffix \".1\" を FILE 末尾に付け
+  "FILE が mp3 ID3 v1 (or v1.1) なら suffix \".1\" を FILE 末尾に付け
 さもなくばそのまま返す."
   (if (and (file-exists-p file) 
            (string-match "\\.mp3\\'" file))
@@ -140,64 +155,49 @@ BUFFER が省略されればカレントバッファになる."
       (and (string-match "\ID3[\2\3\4]" str)
            (match-string 0 str)))))
 
-(defun id31-add-offset (tbl)
-  "`id31-tbl' の CDR をオフセット値にして返す. "
-  (let ((os 0))
-    (mapcar #'(lambda (a)
-                (prog1
-                    (cons (car a) os)
-                  (setq os (+ (cdr a) os))))
-            tbl)))
+(defun id31-get-tags (beg end &optional ver)
+  "ID31 Footer block をリスト分解して戻す."
+  (let* ((ver (if (zerop (char-after (- end 2)))
+                  id31-tbl-ex id31-tbl))
+         result)
+    (dolist (v ver (reverse result))
+      (push (cons (car v)
+                  (buffer-substring beg (+ beg (cdr v))))
+            result)
+      (setq beg (+ beg (cdr v))))))
+
+(defun id31-make-dummy-default (lst)
+  "tag list LST で ID31.1 フッタを生成. ASCII only."
+  (let (result tmp)
+    (dolist (i id31-tbl-ex (mapconcat #'identity (reverse result)))
+      (push (if (setq tmp (cdr (assq (car i) lst)))
+                (if (memq (car i) '(track genre))
+                    (string (string-to-number (cdr tmp)))
+                  (substring
+                   (concat (cdr tmp)
+                           (make-string (cdr i) 0))
+                   0 (cdr i)))
+              (setq tmp (cdr (assq (car i) id31-dummy-default)))
+              (if (numberp tmp)
+                  (string tmp)
+                tmp))
+            result))))
 
-(defun id31-table (header)
-  "Footer のバージョンに適合するタグテーブルを返す.
-zero-byte が `\0' なら `id31-tbl-ex', さもなくば `id31-tbl' を返す."
-  (if (zerop (aref header (cdr (assq 'zero-byte (id31-add-offset id31-tbl-ex)))))
-      id31-tbl-ex
-    id31-tbl))
-
-(defun id31-char-tagp (tag)
-  "非文字列タグなら NON-NIL."
-  (or (eq tag 'track) (eq tag 'genre)))
-
-(defun id31-get (tag header tbl)
-  "TBL に即した TAG の値を Footer block から 返す."
-  (let* ((beg (cdr (assq tag (id31-add-offset tbl))))
-         (len (cdr (assq tag tbl)))
-         (end (+ beg len))
-         (str (substring header beg end))
-         (str (substring str 0 (or (string-match "\0" str) len)))
-         ;; (code (detect-coding-string str t))  ; 良好な結果が得られない...
-         (str (cond
-               ((eq tag 'track)
-                (string (+ (string-to-char str) ?0)))
-               ((eq tag 'genre)
-                (or (cdr (assq (string-to-char str) mf-tag-tco)) "Pop"))
-               (t
-                ;; ので ascii でもかまわず実行してる.
-                (decode-coding-string str 'sjis)))))
-    (set-text-properties 0 (length str) nil str)
-    (if (or (string-equal "" str) (string-match "\\` +\\'" str))
-        nil
-      str)))
-
-(defun id31-get-list (header)
-  "ID3v1 Footer Block を分解してタグとデータの連想リストにして返す."
-  (let* ((tbl (id31-table header))
-         (result
-          (mapcar
-           #'(lambda (a)
-               (let ((tmp (id31-get (car a) header tbl)))
-                 (and tmp
-                      (not (member (car a) '(header zero-byte)))
-                      (cons (car a) tmp))))
-           tbl)))
-    (delq nil result)))
-
-(defun id31-get-tag (file)
-  "ID3v1 の mp3 のファイルのタグ情報のリストを返す."
-  (let ((header (mf-id31p file)))
-    (and header (id31-get-list header))))
+(defun id32-to-id31 (file)
+  "FILE の MP3 ID32 を削除して ID31 に変換して追加する."
+  (interactive "fMP3: ")
+  (let (tags)
+    (setq tags (mf-tag-read-alias file (* 1024 30) 'no-image))
+    (with-temp-buffer
+      (insert-file-contents-literally file)
+      (set-buffer-multibyte nil)
+      (unless (id32-buffer-p) (error "ID3v2 header not found"))
+      (delete-region
+       (point-min) (+ (point-min) (mf-buffer-read-long-word-unpack7 7) 10))
+      (goto-char (point-max))
+      (insert (id31-make-dummy-default tags))
+      (rename-file file (make-backup-file-name file))
+      (write-region (point-min) (point-max) file))))
 
 (defvar id32-add-tag nil "'*((:tag \"TIT2\" :data \"[Dummy]\"))等と alist で設定する.")
 ;;;###autoload
@@ -220,26 +220,27 @@ zero-byte が `\0' なら `id31-tbl-ex', さもなくば `id31-tbl' を返す."
       (rename-file file (make-backup-file-name file))
       (write-region (point-min) (point-max) file))))
 
-(defvar id31-add-genre (car (rassoc "Pop" mf-tag-tco))
-  "2 Country, 8 Jazz, 13 Pop, 17 Rock, 24 SoundTrack, 32 Classical, 42 Soul.")
-
 (defun dired-id31-add-dummy-footer ()
   (interactive)
   (let ((file (dired-get-filename)))
     (id31-add-dummy-footer file)
     (revert-buffer)))
 
-(defun id31-add-dummy-footer (file)
+(defun id31-add-dummy-footer (file &optional lst)
   "FILE 末尾にダミーの ID31 タグ・フッタを付ける.
 既に ID31 Tag が存在すればエラーで終了する.
-中身はゼロでフィルされるが最後のジャンル部分だけ 1バイト数値が入る.
-初期値は変数 `id31-add-genre' で設定する. デフォルトは 13 の Pop."
+中身はゼロフィルされるが最後のジャンル部分だけ 1バイト数値が入る.
+初期値は変数 `id31-add-genre' で設定する. デフォルトは 13 の Pop.
+オプションで LST を指定するとデフォルトの値を指定できる.
+書式は mf-tag-write の alias alist フォーマット."
   (with-temp-buffer
     (insert-file-contents-literally file)
     (goto-char (point-max))
     (when (equal "TAG" (buffer-substring (- (point) 128) (+ (- (point) 128) 3)))
       (error "The Footer is already ID1 Tag"))
-    (insert "TAG" (make-string 124 0) (string id31-add-genre))
+    (if lst
+        (insert (id31-make-dummy-default lst))
+      (insert "TAG" (make-string 124 0) (string id31-add-genre)))
     (rename-file file (make-backup-file-name file))
     (write-region (point-min) (point-max) file)))
 
@@ -297,13 +298,15 @@ FILE に該当個所が無いとエラーになる."
     result))
 
 (defun mf-id31-tag-read (file &optional dummy1 dummy2)
+  "for `mf-tag-write'."
   (setq mf-current-mode "ID3\1")
   (insert-file-contents-literally file)
   (set-buffer-multibyte nil)
   (goto-char (point-min))
   (cons (list :tag mf-type-dummy :data mf-current-mode)
-        (mf-list-convert (id31-get-tag file)
-                         (list (cons mf-type-dummy mf-current-mode)))))
+        (mf-list-convert
+         (id31-get-tags (- (point-max) 128) (point-max))
+         (list (cons mf-type-dummy mf-current-mode)))))
 
 (defun  mf-id31-write-buffer (tags &optional no-backup)
   "`mf-id31-tag-read' と対になる ID3v1 用書き戻し関数だが ID3v2.3 で書き出される.

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 2.8 $$Name:  $
+;; Version: $Revision: 2.10 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.8 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.10 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -201,20 +201,24 @@
      (ash (char-after (+ pos 2)) 7)
      (logand (char-after (+ pos 3)) 127)))
 
-(defun mf-asciiz-string (coding)
+(defun mf-asciiz-string (coding &optional limit)
   "現在のポイントから asciiZ string を CODING でデコードし ascii string にして返す.
 ポイントは末尾の \"\0\" または \"\0\0\" の先まで進めるが、
-string にはそれらは含まれない."
+string にはそれらは含まれない.
+LIMIT が non-nil ならその長さまでとする."
   (let ((beg (point)) end)
-    (setq end (if (or (eq coding 1) (eq coding 2))
-                  (progn  ; utf-16-le or utf-16be
-                    (while (prog1
-                               (not (and (zerop (char-after))
-                                         (zerop (char-after (1+ (point))))))
-                             (forward-char 2)))
-                    (- (point) 2))
-                (search-forward "\0")
-                (1- (match-end 0))))
+    (setq end
+          (if limit
+              (+ (point) limit)
+            (if (or (eq coding 1) (eq coding 2))
+                (progn  ; utf-16-le or utf-16be
+                  (while (prog1
+                             (not (and (zerop (char-after))
+                                       (zerop (char-after (1+ (point))))))
+                           (forward-char 2)))
+                  (- (point) 2))
+              (search-forward "\0")
+              (1- (match-end 0)))))
     (decode-coding-region beg end (cdr (assq coding mf-oma-encode)) t)))
 
 (defun mf-plist-get-list (tag lst)
@@ -319,7 +323,7 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
           (setq code (char-after)
                 mime (buffer-substring (1+ (point)) (+ 4 (point))) ; "eng"
                 dsc  (progn (forward-char 4) (mf-asciiz-string code))
-                data (mf-asciiz-string code))
+                data (mf-asciiz-string code (- (+ beg len) (point)))) ; limit for fre:ac.
           (setq result (cons (list :tag tag  :cdsc dsc :data data) result)))
 
          ;; atrac3pluse dsc = OMG tag
@@ -559,7 +563,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
   "COMM タグのコメント生成."
   (let ((tag (plist-get plist :tag))
         (dsc (mf-stringz (or (plist-get plist :dsc) "")))
-        (str (mf-stringz (or (plist-get plist :data) "")))
+        (str (or (plist-get plist :data) ""))
         (code 0))
     (mf-byte-frame-32
      tag

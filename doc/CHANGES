@@ -1,7 +1,35 @@
-# -*- mode: org -*-
+# -*- mode: outline -*-
+* Sat Mar 18 14:16:11 2023
+** mf-lib-mp3.el: 2.10
+*** fix: コメントタグのデータを asciiZ ではなくする.
+
+** mf-lib-mp3v1.el: 1.20
+*** fix: 対応するジャンル番号が存在しないとエラーになるのを修正.
+
+** mf-tag-write.el: 1.73
+*** fix: バイナリオブジェクトを直接指定したとき動かなくなっていたバグの修正.
+    引数でアートワーク指定するとき、
+    ファイル名ではなくバイナリオブジェクトでデータ指定をすると動かなくなっていたのを修正.
+
+*** add: 関数 `mf-tag-read-alias-alist' の追加. 
+    mf-tag-read-alias の完全な alist で戻す版.
+    mf-tag-read-alias はタグも混ぜて (alias tag . data) で戻すが、これは (alias . data) で戻す.
+    加工なしでそのまま入力引数に使えるのでタグのコピーが多少簡易に書ける.
+
+    : ;; "src.mp3" のジャケを "dst.mp3" にセット.
+    : (mf-tag-write "dst.mp3" (list (assq 'cover (mf-tag-read-alias-alist "src.mp3"))))
+
+** wtag.el: 1.257
+*** fix: 書き出し時に画像が jpg じゃないとエラーで止まってしまうのを修正.
+
+*** chnage: buffer list にアートワークバッファが現れないように変更.
+    表示させるには変数 `wtag-artwork-buffer-prefix' を nil にする.
+
+*** change: 変数 `wtag-music-players' のデフォルトプレイヤを mpg123 に変更.
+
 * Sat Jan  7 08:39:11 2023
 ** mf-lib-mp3v1.el 1.18
-*** fix: `mf-list-convert' の必須引数が増えたので合わる.
+*** fix: `mf-list-convert' の必須引数が増えたので合わせる.
 *** change: `id31-add-dummy-footer' space で fill ってたのを zero fill にする.
 *** fix: `id31-get' 対応するジャンル番号が存在しないとエラーになるのを修正.
 
