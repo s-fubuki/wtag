@@ -1,8 +1,8 @@
 ;;; mf-lib-mp3.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
+;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: $Revision: 2.10 $$Name:  $
+;; Author: fubuki at frill.org
+;; Version: $Revision: 2.11 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.10 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.11 $$Name:  $")
 
 (require 'mf-lib-var)
 

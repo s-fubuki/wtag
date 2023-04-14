@@ -1,8 +1,8 @@
 ;;; wtag.el -- Music file writable tags. -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2019, 2020, 2021, 2022 fubuki
+;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.257 $$Name:  $
+;; Author: fubuki at frill.org
+;; Version: @(#)$Revision: 1.261 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 
 (defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 
-(defconst wtag-version "@(#)$Revision: 1.257 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.261 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -414,11 +414,12 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 
 (defun wtag-mode-line-set (elt)
   (setq-local wtag-mode-line elt)
-  (setq-local mode-line-format
-              (wtag-insert-elt
-               mode-line-format
-               'mode-line-buffer-identification
-               'wtag-mode-line)))
+  (setq mode-line-format (remq 'mode-line-position mode-line-format))
+  (setq mode-line-format
+        (wtag-insert-elt
+         mode-line-format
+         'mode-line-buffer-identification
+         'wtag-mode-line)))
 
 (defun wtag-kill-string-trim (string &optional trim-left trim-right)
   string)
@@ -428,10 +429,9 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   (if (consp elt) (car elt) elt))
 
 (defun wtag-format (form val)
-  (when (equal emacs-version "29.0.50")
+  (when (> emacs-major-version 28)
     (advice-add 'string-trim :override #'wtag-kill-string-trim))
   (setq wtag-times* (if (consp val) val (list val)))
-  ;; mf-current-mode ;; **** Debug
   (prog1
       (format-seconds
        (format-spec form
@@ -440,7 +440,7 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
                      wtag-time-format-alist)
                     'ignore)
        (wtag-car-read (car wtag-times*)))
-    (when (equal emacs-version "29.0.50")
+    (when (> emacs-major-version 28)
       (advice-remove 'string-trim #'wtag-kill-string-trim))))
 
 ;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
@@ -541,12 +541,12 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
 (defun wtag-artwork-buffer-name (&optional base)
   "STR is index buffer name.
 Convert index buffer name to artwork buffer name."
-  (let ((base (concat wtag-artwork-buffer-prefix (or base wtag-base-name))))
-    (concat base wtag-artwork-buffer-suffix)))
+  (concat wtag-artwork-buffer-prefix
+          (or base wtag-base-name)
+          wtag-artwork-buffer-suffix))
 
 (defun wtag-index-buffer-name (&optional base)
-  (let ((base (or base wtag-base-name)))
-    (concat base wtag-index-buffer-suffix)))
+  (concat (or base wtag-base-name) wtag-index-buffer-suffix))
 
 (defun get-wtag-buffer (buff)
   (and (get-buffer buff)
@@ -679,7 +679,8 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
             wtag-init-prefix (if (and prefix (atom prefix))
                                  (list prefix)
                                prefix))
-      (when (string-match "\\` " wtag-artwork-buffer-prefix)
+      (when (and wtag-artwork-buffer-prefix
+                 (string-match "\\` " wtag-artwork-buffer-prefix))
         (make-local-variable 'kill-buffer-hook)
         (add-hook 'kill-buffer-hook #'wtag-kill-artwork-buffer))
       (buffer-disable-undo)
@@ -1759,8 +1760,11 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
 
 (defun wtag-open-frame ()
   (interactive)
-  (set-buffer (wtag-artwork-buffer-name wtag-base-name))
-  (set (make-local-variable 'wtag-frame) (make-frame)))
+  (let ((buff (wtag-artwork-buffer-name wtag-base-name)))
+    (set-buffer buff)
+    (set (make-local-variable 'wtag-frame) (make-frame '((minibuffer))))
+    (select-frame wtag-frame)
+    (switch-to-buffer buff)))
 
 (defun wtag-reload-buffer ()
   (interactive)

@@ -1,4 +1,18 @@
 # -*- mode: outline -*-
+* Sat Apr 15 08:09:27 2023
+** mf-lib-mp3.el: 2.11
+*** fix: `mf-byte-com' コメント部分を asciiz ではなく通常の ascii にする.
+
+** mf-tag-write.el: 1.74
+*** fix: artwork 指定にバイナリオブジェクトを使うと動かないバグの修正を更に修正.
+
+** wtag.el: 1.261
+*** fix: `wtag-format' trim 処理非追加を Emacs 29 限定から 29 以上ならとする.
+
+*** fix: `wtag-open-frame': エンバグし新たなフレームが画像バッファにならなかったバグを修正.
+
+*** chnage: 省スペースの為、モードラインから mode-line-position を削除.
+
 * Sat Mar 18 14:16:11 2023
 ** mf-lib-mp3.el: 2.10
 *** fix: コメントタグのデータを asciiZ ではなくする.

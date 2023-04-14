@@ -1,8 +1,8 @@
 ;;; mf-tag-write.el -- Music file tag write.  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021, 2022 fubuki
+;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: $Revision: 1.73 $
+;; Author: fubuki at frill.org
+;; Version: $Revision: 1.74 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.73 $")
+(defconst mf-tag-write-version "$Revision: 1.74 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
