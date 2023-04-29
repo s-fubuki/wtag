@@ -1,4 +1,44 @@
 # -*- mode: outline -*-
+* Sat Apr 29 09:12:32 2023
+** wtag: revision 1.270
+*** add:  `wtag-artist-name-truncate-mode' 
+    wtag-view-mode 時 アーティスト名を短かく丸めて表示.
+    クラシック等で顕著になりますが、
+    アー名が長すぎてタイトルが画面から見切れて何だか判らなくなることがあるので、
+    そのような状況をなるたけ回避するためのものです.
+
+    デフォルトではイネーブルで `.' でトグルします.
+    変数 wtag-artist-name-truncate-mode を nil にしておくことにより
+    デフォルト ディゼブルにできます.
+
+    - 通常ソートタグを表示する :help-echo いわゆるバルーンヘルプは丸める前の名前を表示します.
+    - overlay で見た目を丸めているだけなので mark-whole-buffer などでコピーすると
+    丸められていない元のデータがコピーされます.
+
+**** `wtag-artist-name-truncate-length' で丸める長さ, デフォルトは 24.
+**** `wtag-artist-name-ellipsis' に 丸めた文字列の末尾に付く文字列. デフォルトは "...".
+     文字列ならそのまま、nil ならなし、 t なら`truncate-string-ellipsis' の値になります.
+
+*** add: 関数 `wtag-writable-tag' のエディットに入る直前に `wtag-writable-tag-hook' を追加.
+
+*** chnage: `w' でタイトル等をヤンクコピーできますが、コードを刷新し設定変数も変更されました.
+    `w' でタイトル、 `C-u w' でアー名, `C-u 0 w' でアー名とタイトルがヤンクにプッシュされます.
+    アルバムタイトルライン等も同様な動作になります.
+    それぞれのアクションに対してプッシュされるパートは変数 `wtag-name-push' で設定されています.
+    以前は `wtag-point-file-name-to-kill-buffer-tag' と
+    `wtag-point-file-name-to-kill-buffer-list' に分れていたものがひとつになりました.
+
+    `wtag-name-push' は 3要素のリストで、ひとつめがアルバム名行に、ふたつめが年とジャンル行に、
+    そしてみっつめが曲目行にそれぞれ対応しています.
+    各要素が (`w' `C-u w' `C-u 0 w') の設定に対応していて、タグエイリアスで指定しますが、
+    リストになっていると繋げてひとつの文字列にします.
+    エイリアスシンボルでなく文字列ならそのまま concat されます.
+
+  : wtag-name-push
+  : ((album a-artist (album " - " a-artist)) (year genre) (title artist (artist " - " title)))
+
+*** fix: `wtag-format' trim 非追加を Emacs 29 決め打ちから 29 以上ならとする.
+
 * Sat Apr 15 08:09:27 2023
 ** mf-lib-mp3.el: 2.11
 *** fix: `mf-byte-com' コメント部分を asciiz ではなく通常の ascii にする.

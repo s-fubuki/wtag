@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.261 $$Name:  $
+;; Version: @(#)$Revision: 1.270 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 
 (defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 
-(defconst wtag-version "@(#)$Revision: 1.261 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.270 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -200,23 +200,22 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   :type  'boolean
   :group 'wtag)
 
-(defcustom wtag-point-file-name-to-kill-buffer-tag  '(title . artist)
-  "`wtag-point-file-name-to-kill-buffer' で 得る tag.
-CDR はユニバーサル起動用."
-  :type  '(cons (symbol :tag "tag      ") (symbol :tag "for Univ."))
+(defcustom wtag-name-push
+  '((album a-artist (album " - " a-artist))
+    (year genre)
+    (title artist (artist " - " title)))
+  "関数 `wtag-name-push' が参照する 3つのリストを含んだリスト.
+リスト全体の構成:
+  \((ALBUM TITLE LINE)
+    (GENRE/RELEASE YEAR LINE)
+    (TRACK LINE))
+中の各リストの構成.
+  \(NORMAL PREFIX ZERO-PREFIX)"
+  :type  '(repeat (repeat (choice symbol string (repeat (choice symbol string)))))
   :group 'wtag)
-
-(defcustom wtag-point-file-name-to-kill-buffer-list
-  '((1 album a-artist) (2 year genre))
-  "`wtag-point-file-name-to-kill-buffer' で
-Line 1 と 2 のときそれぞれ参照されるタグ.
-\(LINE TAG TAG-FOR-UNIVARSAL)."
-  :type  '(list (list (const 1)
-                      (symbol :tag "tag      ") (symbol :tag "for Univ."))
-                (list (const 2)
-                      (symbol :tag "tag      ") (symbol :tag "for Univ.")))
-  :group 'wtag)
-
+  
+(make-obsolete-variable 'wtag-point-file-name-to-kill-buffer-tag 'wtag-name-push "1.262")
+(make-obsolete-variable 'wtag-point-file-name-to-kill-buffer-list 'wtag-name-push "1.262")
 (make-obsolete-variable 'wtag-qrt "この変数は廃止されました." "Revision 1.9")
 
 (defcustom wtag-vbr nil
@@ -289,8 +288,34 @@ Line 1 と 2 のときそれぞれ参照されるタグ.
   :type  'sexp
   :group 'wtag)
 
+(defcustom wtag-artist-name-truncate-mode t
+  "Wtag artist name truncate minor mode."
+  :type  'boolean
+  :initialize 'custom-initialize-default
+  :group 'wtag)
+
+(defcustom wtag-artist-name-truncate-length 24
+  "Column length to truncate artist names."
+  :type  'integer
+  :group 'wtag)
+
+(defcustom wtag-artist-name-ellipsis "..."
+  "Artist name ellipsis."
+  :type  '(choice string
+                  (const :tag "No ellipsis" nil)
+                  (const :tag "Referenced from `truncate-string-ellipsis'" t))
+  :group 'wtag)
+
+(defvar wtag-artist-name-truncate-mode-save nil "Work.")
+(defvar-local wtag-artist-name-truncate nil "Work.")
+
 (make-obsolete-variable 'wtag-flush-tag-hook 'wtag-flush-hook "1.191" 'set)
 (defvar wtag-flush-tag-hook nil "ノーマル・フック")
+
+(defcustom wtag-writable-tag-hook nil
+  "wtag writable mode に移行するときに実行されるノーマルフック."
+  :type  'hook
+  :group 'wtag)
 
 (defcustom wtag-flush-hook nil
   "`mf-tag-write' に渡す直前の tag list を引数とするアブノーマル・フック."
@@ -726,10 +751,12 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
   (and (consp a) (cdr a) (atom (cdr a))))
 
 (defvar wtag-total-track 0)
+(defvar-local wtag-artist-name-max nil)
+(put 'wtag-artist-name-max 'permanent-local t)
 
 (defun wtag-insert-index (index dir)
   "Tag plist INDEX を取得した DIR."
-  (let* ((max-width-artist (wtag-max-width index 'artist))
+  (let* ((max-width-artist (setq wtag-artist-name-max (wtag-max-width index 'artist)))
          (max-width-title  (wtag-max-width index 'title))
          (max-width-track  (wtag-max-width index 'track)) ; とりま disk は無考慮
          (form (concat "%" (number-to-string max-width-track) "s"))
@@ -854,6 +881,9 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
       (when (and wtag-process (or wtag-process-break (y-or-n-p "Stop process?")))
         (wtag-kill-process))
       (unless wtag-process
+        (run-hooks 'wtag-writable-tag-hook)
+        (setq wtag-artist-name-truncate-mode-save wtag-artist-name-truncate-mode)
+        (wtag-artist-name-truncate-mode -1)
         (setq buffer-read-only nil)
         (wtag-protect)
         (wtag-writable-mode)
@@ -972,12 +1002,10 @@ BEG と END のデフォルトはポイントの行頭と行末.
 無ければ多分 NIL."
   (let ((beg (or beg (line-beginning-position)))
         (end (or end (line-end-position))))
-    (save-excursion
-      (goto-char beg)
-      (or (get-text-property (point) prop)
-          (get-text-property
-           (next-single-property-change (point) prop nil end)
-           prop)))))
+    (or (get-text-property beg prop)
+        (get-text-property
+         (next-single-property-change beg prop nil end)
+         prop))))
 
 (defun wtag-get-common-property-value (prop)
   "共有部\(最初の2行)から PROP を探しその値を返す.
@@ -1572,23 +1600,57 @@ PREFIX があれば強制的に現状の並びで新たな番号を振り直す.
     (message "%s" str)
     (and prefix (kill-new str))))
 
-(defun wtag-point-file-name-to-kill-buffer (prefix)
-  "ポイントの `wtag-point-file-name-to-kill-buffer-tag' の CAR を\
-キルバッファに入れる.
-PREFIX があれば CDR が使われる.
-Line 1..2 の場合 `wtag-point-file-name-to-kill-buffer-list' の設定が使われる."
-  (interactive "P")
-  (let* ((func (if prefix 'cdr 'car))
-         (ln   (line-number-at-pos))
-         (mode (assoc-default ln wtag-point-file-name-to-kill-buffer-list))
-         (mode (and mode (cons (car mode) (cadr mode))))
-         (tag  (funcall func (or mode wtag-point-file-name-to-kill-buffer-tag)))
-         str)
+(defun wtag-name-push-make (tag lst)
+  "LST を参照して TAG を展開する.
+TAG が list ならひとつの文字列に連結される.
+list 要素内の文字列はそのまま連結される."
+  (cond
+   ((consp tag)
+    (concat (wtag-name-push-make (car tag) lst)
+            (wtag-name-push-make (cdr tag) lst)))
+   ((stringp tag)
+    tag)
+   ((symbolp tag)
+    (cddr (assq tag lst)))))
+
+(defun wtag-quote (str)
+  (concat "\""
+          (replace-regexp-in-string "\"" "\\\\\"" str)
+          "\""))
+
+(make-obsolete 'wtag-point-file-name-to-kill-buffer 'wtag-name-push "1.262")
+(defun wtag-name-push (prefix)
+  "ポイントに表示されているタグの内容を kill ring にプッシュする.
+リスト変数 `wtag-name-push' で指定されたタグが対象になる.
+PREFIX / 0 PREFIX で `wtag-name-push' の中の対象が変わる."
+  (interactive "p")
+  (let* ((prefix (and current-prefix-arg
+                      (prefix-numeric-value current-prefix-arg)))
+         (ln (line-number-at-pos))
+         tag result str mark)
     (save-excursion
-      (beginning-of-line)
-      (when (< ln 3) (forward-line (- 3 ln)))
-      (setq str (cdr (assoc-default tag (get-text-property (point) 'stat))))
-      (when str (kill-new str) (message "%s" str)))))
+      (cond
+       ((wtag-buffer-mark-p "*")
+        (setq mark t)
+        (goto-char (point-min))
+        (while (not (eobp))
+          (if (wtag-mark-p "*")
+              (push (get-text-property (point) 'stat) result))
+          (forward-line))
+        (setq ln 3))
+       (t
+        (when (< ln 3)
+          (goto-char (point-min))
+          (forward-line 2))
+        (beginning-of-line)
+        (setq result (list (get-text-property (point) 'stat))))))
+    (setq tag (nth (cond ((= ln 1) 0) ((= ln 2) 1) (t 2)) wtag-name-push)
+          tag (nth (cond ((and prefix (zerop prefix)) 2) (prefix 1) (t 0)) tag))
+    (setq str (if (and (null mark) (= 1 (length result)))
+                  (wtag-name-push-make tag (car result))
+                (mapconcat #'(lambda (a) (wtag-quote (wtag-name-push-make tag a)))
+                           (reverse result) " ")))
+    (and str (kill-new (message "%s" str)))))
 
 (defvar wtag-mouse-funcs
   `((,mf-image-regexp . wtag-artwork-load)
@@ -1876,32 +1938,43 @@ PREFIX は整数で指定があればその行に移動してから実行され�
   (goto-char (point-min))
   (forward-line (1- prefix)))
 
+(defun wtag-mark-p (mark)
+  "ポイントにテキストプロパティ display が在り値が MARK なら non-nil."
+  (equal mark (get-text-property (point) 'display)))
+
+(defun wtag-buffer-mark-p (mark)
+  "カレントバッファに MARK があれば non-nil."
+  (save-excursion
+    (goto-char (point-min))
+    (catch 'out
+      (while (not (eobp))
+        (if (wtag-mark-p mark) (throw 'out (point)))
+        (forward-line)))))
+
 (defun wtag-get-mark-titles (&optional char)
   "mark があればマーク行の曲名とファイル名のコンスセルにした alist で返し、
 さもなくばポイント行の曲名とファイル名のコンスセルを list で括って返す."
   (interactive)
   (let ((char (or char "*"))
-        display result)
-    (save-excursion
-      (setq display  (next-single-property-change (point-min) 'display))
-      (if display
-          (progn
-            (goto-char display)
-            (while (not (eobp))
-              (if (equal char (wtag-get-property-value 'display))
-                  (setq result
-                        (cons (cons
-                               (wtag-get-property-value 'old-title)
-                               (propertize
-                                (wtag-get-property-value 'filename) 
-                                'sort (wtag-get-property-value 'sort)))
-                              result)))
-              (forward-line)))
-        (setq result
-              (list (cons
-                     (wtag-get-property-value 'old-title)
-                     (wtag-get-property-value 'filename))))))
-    (if (null (caar result)) nil (reverse result))))
+        result)
+    (if (wtag-buffer-mark-p char)
+        (save-excursion
+          (goto-char (point-min))
+          (while (not (eobp))
+            (if (wtag-mark-p char)
+                (push
+                 (cons
+                  (wtag-get-property-value 'old-title)
+                  (propertize
+                   (wtag-get-property-value 'filename) 
+                   'sort (wtag-get-property-value 'sort)))
+                 result))
+            (forward-line)))
+      (setq result
+            (list (cons
+                   (wtag-get-property-value 'old-title)
+                   (wtag-get-property-value 'filename)))))
+    (and result (reverse result))))
 
 (defun wtag-point-mark-file (&optional char)
   "point のファイルをマークする."
@@ -2002,6 +2075,7 @@ point が 1行目ならすべてマークする."
     (rename-buffer (wtag-index-buffer-name wtag-base-name) 'unique)
     (set-buffer-modified-p nil)
     (goto-char (point-min))
+    (setq wtag-artist-name-truncate-mode wtag-artist-name-truncate-mode-save)
     (wtag-view-mode)
     (and (setq obj (wtag-alias-value 'cover (car result)))
          (if (equal obj wtag-not-available-string) (setq obj nil) t)
@@ -2131,6 +2205,7 @@ SRT が non-nil なら sort tag をアペンドする."
       (set-buffer-modified-p nil)
       (setq buffer-read-only  t
             inhibit-read-only nil)
+      (setq wtag-artist-name-truncate-mode wtag-artist-name-truncate-mode-save)
       (wtag-view-mode)))
   ;; (run-hooks 'wtag-quit-hook)
   (message nil))
@@ -2228,7 +2303,42 @@ winカカシが漢字ASCII混合の場合、
              (setq ret (cons (cons (wtag-to-sort-symbol (car tmp)) (cdr tmp))
                              ret)))))
     (wtag-new-append alist (wtag-sort-filter ret))))
+
+(defun wtag-artist-name-truncate-clear ()
+  (interactive)
+  (dolist (ov wtag-artist-name-truncate)
+    (delete-overlay ov))
+  (setq wtag-artist-name-truncate nil))
 
+(defun wtag-artist-name-truncate (&optional prefix)
+  (interactive "P")
+  (let* ((len (if prefix
+                  (prefix-numeric-value current-prefix-arg)
+                wtag-artist-name-truncate-length))
+         (ellipsis wtag-artist-name-ellipsis)
+         prop)
+    (wtag-artist-name-truncate-clear)
+    (when (< len wtag-artist-name-max)
+      (save-excursion
+        (goto-char (point-min))
+        (while (setq prop (text-property-search-forward 'old-performer))
+          (let* ((beg (point))
+                 (end (progn (text-property-search-forward 'old-title) (1- (point))))
+                 (org (prop-match-value prop))
+                 (org-len (string-width org))
+                 (short (truncate-string-to-width org len nil 32 ellipsis)))
+            (setq wtag-artist-name-truncate
+                  (cons (make-overlay beg end) wtag-artist-name-truncate))
+            (overlay-put (car wtag-artist-name-truncate) 'display short)
+            (overlay-put (car wtag-artist-name-truncate) 'help-echo org)))))))
+
+(define-minor-mode wtag-artist-name-truncate-mode
+  "Wtag artist name truncate mode."
+  :global  t
+  (if wtag-artist-name-truncate-mode
+      (wtag-artist-name-truncate)
+    (wtag-artist-name-truncate-clear)))
+
 (defvar wtag-writable-mode-map
   (let ((map (make-sparse-keymap))
         (menu-map (make-sparse-keymap "wtag")))
@@ -2330,7 +2440,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "n"               'next-line)
     (define-key map "p"               'previous-line)
     (define-key map "\C-c\C-l"        'wtag-truncate-lines)
-    (define-key map "w"               'wtag-point-file-name-to-kill-buffer)
+    (define-key map "w"               'wtag-name-push)
     (define-key map "="               'wtag-point-file-name)
     (define-key map "f"               'wtag-fit-artwork-toggle)
     (define-key map "\C-c\C-f"        'wtag-fit-artwork-toggle)
@@ -2347,11 +2457,17 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "P"               'wtag-music-play)
     (define-key map "\C-c\C-c"        'wtag-kill-process)
     (define-key map "\C-c="           'wtag-stat-view)
+    (define-key map "."               'wtag-artist-name-truncate-mode)
     (define-key map "q"               'quit-window)
     (define-key map "Q"               'wtag-exit)
     (define-key map [drag-n-drop]     'wtag-mouse-load)
     (define-key map "\C-x\C-q"        'wtag-writable-tag)
     (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
+    (define-key menu-map
+      [wtag-artist-name-truncate]
+      '(menu-item "Artist Name Truncate" wtag-artist-name-truncate-mode
+                  :button (:toggle . wtag-artist-name-truncate-mode)))
+    (define-key menu-map [dashes1] '("--"))
     (define-key menu-map
       [wtag-stat-view] '("Point File Status" . wtag-stat-view))
     (define-key menu-map
@@ -2362,20 +2478,20 @@ winカカシが漢字ASCII混合の場合、
       [wtag-mark-delete] '("Delete Point File" . wtag-mark-delete))
     (define-key menu-map
       [wtag-mark-file]     '("Mark Point File" . wtag-mark-file))
-    (define-key menu-map [dashes1] '("--"))
+    (define-key menu-map [dashes2] '("--"))
     (define-key menu-map
       [wtag-kill-process]
       '(menu-item "Kill Play Process" wtag-kill-process :key-sequence "\C-c\C-c"))
     (define-key menu-map
       [wtag-music-play]   '("Play Point File" . wtag-music-play))
-    (define-key menu-map [dashes2] '("--"))
+    (define-key menu-map [dashes3] '("--"))
     (define-key menu-map
       [wtag-reload-buffer] '("Reload Buffer" . wtag-reload-buffer))
     (define-key menu-map
       [wtag-open-frame] '("Artwork On Other Frame" . wtag-open-frame))
     (define-key menu-map
       [wtag-fit-artwork-toggle] '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
-    (define-key menu-map [dashes3] '("--"))
+    (define-key menu-map [dashes4] '("--"))
     (define-key menu-map [wtag-writable-tag]
                 '(menu-item "Writable Tag Mode" wtag-writable-tag
                             :enable (null wtag-write-notready)))
@@ -2404,7 +2520,8 @@ winカカシが漢字ASCII混合の場合、
   (setq-local truncate-lines wtag-truncate-lines)
   (setq-local default-directory (wtag-get-common-property-value 'directory))
   (setq-local wtag-beginning-line-of-track 3)
-  (wtag-mode-line-set wtag-view-mode-line))
+  (wtag-mode-line-set wtag-view-mode-line)
+  (and wtag-artist-name-truncate-mode (wtag-artist-name-truncate-mode)))
 
 (defvar wtag-image-mode-map
   (let ((map (make-sparse-keymap))
