@@ -1,8 +1,8 @@
 ;;; mf-lib-wma.el -- Tag read lib for wma. -*- coding: utf-8-unix -*-
-;; Copyright (C) 2022 fubuki
+;; Copyright (C) 2022, 2023 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.5 $
+;; Version: @(#)$Revision: 1.7 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -401,13 +401,12 @@ NO-BINARY が non-nil なら画像バイナリが在る場合そこを nil に�
      (list (list :tag mf-time-dummy :data
                  (list
                   (/ (- pduration (* preroll 10000)) 10000000) (/ bitrate 1000)))
-           (list :tag mf-type-dummy :data mf-current-mode))
+           (list :tag mf-type-dummy :data "wma"))
      (mapcar #'(lambda (n) (cons :tag n)) result))))
 
 ;;;###autoload
 (defun mf-wma-tag-read (file &optional len no-binary)
   "`mf-tag-read' がラッパーする wma 版の中身."
-  (setq mf-current-mode "wma")
   (insert-file-contents-literally file nil 0 len)
   (set-buffer-multibyte nil)
   (mf-wma-tag-analayze no-binary))

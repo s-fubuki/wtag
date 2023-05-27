@@ -1,4 +1,97 @@
 # -*- mode: outline -*-
+* Sat May 27 08:51:35 2023
+** mf-lib-* すべて
+*** fix: mf-tag-read-(alias|alist) 等からも mf-current-* 系変数を参照できるようにした.
+
+** mf-lib-aiff.el: 1.4
+*** chnage: `mf-aiff-tag-read': 戻値の mf-type-dummy を mf-aiff-mode-tag にする.
+
+** mf-lib-flac.el: 1.63
+*** change: lib-ogg に合わせ変数 `mf-flac-vendor' を " *vendor" に変更.
+*** add: `mf-flac-tag-alias' に comment を追加.
+
+** mf-lib-mp3.el: 2.15
+*** CHNAGE: 関数 `mf-mp3-times' 引数変更.
+    lib-mp3v1 からも `mf-mp3-times' を使うようにした際、判りにくかったので整理した.
+*** fix: `mf-byte-com-33' コメント本体は asxiiZ 化しない.
+    `mf-byte-com' を同様に直したとき、こちらを忘れていた.
+
+** mf-lib-mp3v1.el: 1.23
+*** add: `dired-id32-to-id31'.
+*** change: `mf-id31-tag-read' 時間情報も得る.
+*** fix: `id31-get-tags': id31-tbl-ex, id31-tbl 判定位置ミス.
+*** fix: `id31-get-tags': magic, zero-byte は除外しリターン値に積まない.
+    これにより `mf-tag-write:mf-list-convert' が誤動作してしまうのを回避.
+*** chnage: `id31-get-tags': `id31-get-tags-filter' で戻すリストの末尾空白を除去.
+*** chnage: `id31-add-genre' バイトコンパイルで警告が出るので位置変更.
+
+** mf-lib-mp4.el: 2.5
+*** chnaged: function `mp4-stsz-sample-size'
+    `mf-buffer-read-unpack' の仕様変更に合わせ引数 T を M に変更.
+
+** mf-lib-ogg.el: 1.7
+*** change: *time に chnael 情報を追加. 他も判れば随時追加予定.
+
+** mf-lib-var.el: 1.28
+*** add: 変数 `mf-current-alias', `mf-current-values'.
+*** change: `mf-type-dummy' の値を " *ver" -> " *type".
+*** add: `mf-buffer-read-unpack' に asciiZ string 読み込み z, Z を追加.
+
+** mf-lib-wav.el: 1.16
+*** add: `mf-pack-list' のコーディングシステムを設定する変数 `mf-lst-pack-coding-system'.
+    Windows10/11 のワールドワイド言語サポートでユニコードを使用にした場合
+    この変数を utf-8 にしないと WMP でのタイトル表示が化ける. デフォは utf-8 今までは sjis.
+*** chnage `mf-get-wave-time' 戻値にサンプリングレート, チャンネル数, ビット長 を追加.
+
+** mf-lib-wma.el: 1.7
+*** rename `mf-buffer-read-quad-long-word-le' -> `mf-buffer-read-quad-word-le'.
+
+** mf-tag-write.el: 1.77
+*** add: `mf-tag-read-plist'  plist でタグ情報を得る Test 的追加関数.
+    デフォルトで内部的に扱っているタグ毎の plist ではなく 1file:1plist のシンプルな形式.
+*** rename: `set-make-local-variables' ー> `mf-set-make-local-variables'.
+*** add: `mf-current-values' mf-current 関数のシンボルリスト.
+*** change: `mf-string-equal': `mf-current-case' が定義されているかも試す.
+*** fix: `mf-assoc-property': `equal' を `mf-string-equal' にする.
+*** fix: `mf-pair-set' data が nil のときそれを正しくセットできていなかったのを修正.
+    このバグでタグの削除がうまく動いていなかった.
+*** change: 'mf-add-tags を書き直し 'mf-tag-merge とする.
+
+** wtag.el: 1.277
+*** change: `wtag-view-mode-line':  mp3, wav の場合 `wtag-mode-string' で
+    サフィックスとモードを結合した文字列を表示する.
+*** fix: `wtag-directory-set' result の null チェック判断の誤り.
+*** chnage: `wtag-beginning-string' コメタグの無い(と思われる)コーデックははじく.
+    `wtag-comment-disable-file-regexp' で除外するファイルパターンを指定.
+*** add: コメントタグの内容を 2行目3つめの項目に追加("ジャンル/年/コメント" となる).
+    但し長いコメントは触りだけ表示し修正はできない.長いかどうかの判別は単純に改行を含むか否か.
+    改行が在る場合は改行までを表示し、最後に `wtag-artist-name-ellipsis' を追加する.
+*** add: フェイス `wtag-comment'.
+*** add: カスタム変数 `wtag-name-push' 2行目 `C-u 0 w' に当たる箇所に comment を追加.
+*** chnage: フェイス `wtag-album-artis' を `font-lock-regexp-face' に変更.
+
+** shuffle-all 
+   非同梱のテストプログラムです.
+   `playall.el' を Sub directory の中も見るようにゼロから書き直し.
+   同梱していないので以下にに在ります.
+   ふたつ目のアドレスにマニュアルを置いてあります.
+
+   : https://gist.github.com/s-fubuki/1de0bb7cddab734631743c15054ccd3b
+   : https://gist.github.com/s-fubuki/1de0bb7cddab734631743c15054ccd3b#file-shuffle-all-org
+
+
+   playall.el に対応するコマンド名が
+
+   : directory-playall  ->  shuffle-all
+   : wtag-playall       ->  shuffle-wtag-play
+
+   になっています.
+   が、果たしてこの名前でいいのかまだ整理しきれていません.
+
+   重複再生しないよう最初にデータベースを生成する仕様なのですが
+   4,000 mp3 files 程度の環境でしか試していないので
+   ファイル数が多いと使いものにならないかもしれません.
+
 * Sat Apr 29 09:12:32 2023
 ** wtag: revision 1.270
 *** add:  `wtag-artist-name-truncate-mode' 

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.74 $
+;; Version: $Revision: 1.77 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.74 $")
+(defconst mf-tag-write-version "$Revision: 1.77 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -168,7 +168,7 @@ LST はドットペアでも 2要素のリストでも良い.
                   (cdr (assq (car lst) alias))
                 (cdr (rassoc (car lst) alias))) ; 未定義検出
           data (if (consp (cdr lst)) (cadr lst) (cdr lst)))
-    (setq data (cond ((symbolp data) (symbol-name data))
+    (setq data (cond ((and data (symbolp data)) (symbol-name data))
                      ((numberp data) (number-to-string data))
                      (t data)))
     (list tag data)))
@@ -182,7 +182,7 @@ ALST は \((\"TAG\" . \"DATA\") \"filename.jpg\" ...) のように指定する.
 CAR が文字列ならタグ、シンボルなら alias として処理する.
 CDR を nil とするとそのタグを削除する."
   (let* ((mode  mf-current-mode)
-         (alias (mf-alias mf-current-func oldtags mode))
+         (alias mf-current-alias)
          result)
     (dolist (a alst (reverse result))
       (push
@@ -213,9 +213,12 @@ CDR を nil とするとそのタグを削除する."
 (defun mf-tag-read-alist (file &optional len no-bin)
   "FILE のタグを \(TAG . DATA) または \(DSC . DATA) の alist にして返す."
   (let* ((plst (mf-tag-read file len no-bin))
+         (func (mf-func-get file mf-function-list))
+         (mode (mf-get-mode plst))
          result)
-    (dolist (a plst result)
-      (let ((tag (or (plist-get a :dsc) (plist-get a :tag)))
+    (setq mf-current-alias (mf-alias func plst mode))
+    (dolist (a plst (reverse result))
+      (let ((tag  (mf-get-tag-propety a))
             (data (plist-get a :data)))
         (setq result (cons (cons tag data) result))))))
 
@@ -224,12 +227,11 @@ CDR を nil とするとそのタグを削除する."
   "FILE のタグを \(ALIAS TAG . DATA) または \(ALIAS DSC . DATA) の list にして返す."
   (let* ((alist (mf-tag-read-alist file len no-bin))
          (case  (string-match "\\.\\(flac\\|ogg\\)\\'" file))
-         (mlist (mf-func-get file mf-function-list))
          (mode  (cdr (assoc mf-type-dummy alist)))
          (alias (cons
                  (cons mf-time-dummy-symbol mf-time-dummy)
                  (cons (cons mf-type-dummy-symbol mf-type-dummy)
-                       (mf-alias mlist alist)))))
+                       mf-current-alias))))
     (mf-alist-add-tag alist alias case)))
 
 (defun mf-tag-read-alias-alist (file &optional len no-bin)
@@ -250,11 +252,39 @@ CASE が non-nil(FLAC or OGG)のときだけ、戻されるとき TAG が upper 
              (mapcar #'(lambda (a) (cons (upcase (car a)) (cdr a))) alist)
            alist))
         result)
-    (dolist (a alias result)
+    (dolist (a alias (reverse result))
       (let* ((tag (if case (upcase (cdr a)) (cdr a)))
              (tmp (assoc tag alist)))
-        (when tmp
-          (setq result (cons (cons (car a) tmp) result)))))))
+        (and tmp (push (cons (car a) tmp) result))))))
+
+;;;###autoload
+(defun mf-tag-read-plist (file &optional len no-bin)
+  "FILE のタグを ALIAS と DATA を交互に並べた plist にして返す."
+  (let* ((alist (mf-tag-read-alist file len no-bin))
+         (case  (string-match "\\.\\(flac\\|ogg\\)\\'" file))
+         (mlist (mf-func-get file mf-function-list))
+         (mode  (cdr (assoc mf-type-dummy alist)))
+         (alias (cons
+                 (cons mf-time-dummy-symbol mf-time-dummy)
+                 (cons (cons mf-type-dummy-symbol mf-type-dummy)
+                       mf-current-alias))))
+    (mf-alist-to-plist alist alias case)))
+
+(defun mf-alist-to-plist (alist alias case)
+  "`mf-alist-add-tag' の plist 版.
+違いは結果が Property listt であることと
+TAG は捨てられるので書き戻すときに各 aliss から復元しなければいけないことと
+同じタグから複数の異なるエイリアスのデータを生成しないこと."
+  (let ((alist
+         (if case
+             (mapcar #'(lambda (a) (cons (upcase (car a)) (cdr a))) alist)
+           alist))
+        result)
+    (dolist (a alias result)
+      (let* ((tag (if case (upcase (cdr a)) (cdr a)))
+             (tmp (assoc tag alist))
+             (alist (delete tmp alist))) ;; 重複生成しないように更新. つまり先着優先.
+        (and tmp (setq result (append result (list (car a) (cdr tmp)))))))))
 
 ;;;###autoload
 (defun mf-alias-get (alias lst)
@@ -263,28 +293,38 @@ lst は\((alias tag . data) ...) という形式. 一致が無ければ  nil を
   (cddr (assq alias lst)))
 
 (defun mf-string-equal (a b)
-  (if mf-current-case
+  (if (and (boundp 'mf-current-case) mf-current-case)
       (string-equal (upcase a) (upcase b))
     (string-equal a b)))
-  
-(defun mf-add-tags (org-tags new-tags)
-  "ORG-TAGS から NEW-TAGS の要素を削除したリストに NEW-TAGS をアペンドして返す.
-整列順は壊れるが最終的に書き出すときに適宜整列するのでここでは無駄に維持していない."
-  (let (tag org new)
-    (dolist (a org-tags)
-      (setq tag (or (plist-get a :dsc) (plist-get a :tag)))
-      (unless
-          (catch 'break
-            (dolist (b new-tags)
-              (and
-               (mf-string-equal tag (or (plist-get b :dsc) (plist-get b :tag)))
-               (throw 'break t)))
-            (setq org (cons a org)))))
-    (dolist (a new-tags)
-      (and (plist-get a :data) (setq new (cons a new))))
-    (append org new)))
 
-(defun set-make-local-variables (vals)
+(defun mf-get-tag-propety (lst)
+  "LST に :dsc が在れば :dsc の、さもなくば :tag のプロパティを得る."
+  (or (plist-get lst :dsc) (plist-get lst :tag)))
+
+(defun mf-assoc-property (tag lst)
+  "LST から TAG と `mf-string-equal' のプロパティリストを無ければ nil を戻す.
+LST はプロパティリスト束."
+  (catch 'out
+    (dolist (a lst)
+      (if (mf-string-equal tag (mf-get-tag-propety a)) (throw 'out a)))))
+
+(defun mf-delq-nodata-property (lst)
+  "プロパティリスト束 LST から :data プロパティが nil のリストを削除したリストを戻す."
+  (let (result)
+    (dolist (a lst (reverse result))
+      (and (plist-get a :data) (push a result)))))
+
+(make-obsolete 'mf-add-tags 'mf-tag-merge "Revision: 1.75")
+(defun mf-tag-merge (org new)
+  "ORG へ NEW をマージしたリストを戻す.
+重複は NEW のタグに置き換えられ :data が nil のタグは削除される."
+  (let (tmp result)
+    (dolist (a org (mf-delq-nodata-property (append (reverse result) new)))
+      (and (setq tmp (mf-assoc-property (mf-get-tag-propety a) new))
+           (setq new (delete tmp new)))
+      (push (or tmp a) result))))
+
+(defun mf-set-make-local-variables (vals)
   (dolist (v vals)
     (make-variable-buffer-local v)))
 
@@ -343,15 +383,16 @@ TIME-OPT が非NIL ならタイムスタンプを継承する."
     (unless func (error "Unknow file type `%s'" file))
     (unless wfunc (error "Write function not ready `.%s'" (file-name-extension file)))
     (with-temp-buffer
-      (set-make-local-variables
-       '(mf-current-file mf-current-mode mf-current-func mf-current-case))
+      (mf-set-make-local-variables mf-current-values)
       (set-buffer-multibyte nil)
-      (setq mf-current-func func)
-      (setq tags (mf--tag-read file))
+      (setq mf-current-func func
+            tags (mf--tag-read file)
+            mf-current-mode (mf-get-mode tags)
+            mf-current-alias (mf-alias func tags mf-current-mode))
       (if (stringp no-backup)
           (setq mf-current-file no-backup)
         (setq mf-current-file file))
-      (funcall wfunc (mf-add-tags tags (funcall cvfunc new-tags tags)) no-backup))
+      (funcall wfunc (mf-tag-merge tags (funcall cvfunc new-tags tags)) no-backup))
     (and time-opt (symbolp no-backup) (set-file-times file time-opt))))
 
 (defun mf--tag-read (file &optional length no-binary)
@@ -359,20 +400,21 @@ TIME-OPT が非NIL ならタイムスタンプを継承する."
 関数はファイルのタグ情報をプロパティリストにして返す関数.
 カレントバッファで実行したい場合もあるので分離してある.
 LENGTH は読み込む大きさ. NO-BINARY が非NIL だと返り値に画像タグを含まない."
-  (let ((func (mf-func-get file mf-function-list)))
-    (if func
-        (progn
-          (setq mf-current-func func)
-          (funcall (mf-rfunc func) file length no-binary))
-      (error "Unknown music file: %s" file))))
+  (if mf-current-func
+      (funcall (mf-rfunc mf-current-func) file length no-binary)
+    (error "Unknown music file: %s" file)))
 
 ;;;###autoload
 (defun mf-tag-read (file &optional length no-binary)
   "temp-buffer を開いて `mf--tag-read' を実行するラッパ."
-  (with-temp-buffer
-    (set-make-local-variables
-     '(mf-current-file mf-current-mode mf-current-func mf-current-case))
-    (mf--tag-read file length no-binary)))
+  (let (result)
+    (with-temp-buffer
+      (mf-set-make-local-variables mf-current-values)
+      (setq mf-current-file file
+            mf-current-func (mf-func-get file mf-function-list))
+      (prog1
+          (setq result (mf--tag-read file length no-binary))
+        (setq mf-current-mode (mf-get-mode result))))))
 
 (provide 'mf-tag-write)
 ;; fin.

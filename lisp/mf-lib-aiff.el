@@ -1,8 +1,8 @@
 ;;; mf-lib-aiff.el
-;; Copyright (C) 2022
+;; Copyright (C) 2022, 2023 fubuki
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.3 $$Name:  $
+;; Version: $Revision: 1.4 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -23,7 +23,7 @@
 ;; for `mf-tag-write' aiff music file tag READ(!write) library.
 
 ;;; Code:
-(defconst mf-lib-aiff-version "@(#)$Revision: 1.3 $$Nmae$")
+(defconst mf-lib-aiff-version "@(#)$Revision: 1.4 $$Nmae$")
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
 (require 'wtag)
@@ -80,7 +80,6 @@ RATE-F は Sample Rate 仮数部, FRAMES は Total Frames."
   (let (result tmp pos len sec srate)
     (insert-file-contents-literally file)
     (set-buffer-multibyte nil)
-    (setq mf-current-mode mf-aiff-mode-tag)
     (cl-multiple-value-bind
         (form len-all aiff comm size ch frames bitd rate-e rate-f)
         (mf-buffer-read-unpack '(4 L 4 4 L S L S S Q) (point) 'move)
@@ -101,7 +100,7 @@ RATE-F は Sample Rate 仮数部, FRAMES は Total Frames."
         (append
          (list
           (list :tag mf-time-dummy :data sec)
-          (list :tag mf-type-dummy :data mf-current-mode))
+          (list :tag mf-type-dummy :data mf-aiff-mode-tag))
          (mf-id32-tags-analyze (mf-id32-tags-collect len (+ pos 4)) no-binary))))))
 
 (provide 'mf-lib-aiff)

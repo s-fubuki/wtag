@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.270 $$Name:  $
+;; Version: @(#)$Revision: 1.277 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 
 (defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 
-(defconst wtag-version "@(#)$Revision: 1.270 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.277 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -202,7 +202,7 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 
 (defcustom wtag-name-push
   '((album a-artist (album " - " a-artist))
-    (year genre)
+    (year genre comment)
     (title artist (artist " - " title)))
   "関数 `wtag-name-push' が参照する 3つのリストを含んだリスト.
 リスト全体の構成:
@@ -342,7 +342,7 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   :group 'wtag-faces)
 
 (defface wtag-album-artis
-  '((t :inherit font-lock-comment-face))
+  '((t :inherit font-lock-regexp-face))
   "wtag-album-artis-face."
   :group 'wtag-faces)
 
@@ -359,6 +359,11 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 (defface wtag-release-year
   '((t :inherit font-lock-type-face))
   "wtag-release-year-face."
+  :group 'wtag-faces)
+
+(defface wtag-comment
+  '((t :inherit shadow :height 100))
+  "wtag comment face."
   :group 'wtag-faces)
 
 (defface wtag-track-number
@@ -417,8 +422,8 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   :group 'wtag)
 
 (defcustom wtag-mode-name-alias
-  '(("ID3\1" . "mp3v1") ;; Dummy
-    ("ID3\2" . "mp3v2.2") ("ID3\3" . "mp3v2.3") ("ID3\4" . "mp3v2.4")
+  '(("ID3\1" . "ID3v1") ;; Dummy
+    ("ID3\2" . "ID3v2.2") ("ID3\3" . "ID3v2.3") ("ID3\4" . "ID3v2.4")
     ("ea3\3" . "atrac") ("mp4\\|m4a" . "aac"))
   "コーデックの表示文字列."
   :type  '(repeat (cons (regexp :tag "Regexp") (string :tag "Letter")))
@@ -582,20 +587,18 @@ Convert index buffer name to artwork buffer name."
 (defun wtag-directory-set (files)
   "FILES からタグを読み読み込みリストにして返す.
 参照するときここでの順序が影響する."
-  (let ((null wtag-not-available-string)
-        result message-log-max)
+  (let (result message-log-max)
     (dolist (f files (progn (message nil) (reverse result)))
       (set (make-local-variable 'mf-current-case)
            (string-match "\\.\\(flac\\|ogg\\)\\'" f))
       (let* ((len  (mf-read-size f))
-             (tags (condition-case nil
+             (tags (condition-case err
                        (progn
                          (message "Read file %s..." (file-name-nondirectory f))
                          (mf-tag-read-alias f len))
-                     (error (error "File read error `%s'" f))))
-             (tags (cons (cons 'filename (cons nil f)) tags)))
-        (when tags
-          (setq result (cons tags result)))))))
+                     (file-error
+                      (message "%s `%s'" (error-message-string err) f)))))
+        (and tags (push (cons (cons 'filename (cons nil f)) tags) result))))))
 
 (defvar wtag-sort-track #'wtag-sort-track
   "通常 #\\='wtag-sort-track で良いが、
@@ -750,6 +753,27 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
   "A が Dot pair なら t さもなくば nil."
   (and (consp a) (cdr a) (atom (cdr a))))
 
+(defvar wtag-comment-tag nil)
+(defvar wtag-comment-disable-file-regexp "\\.[ow]ma\\'")
+(defun wtag-beginning-string (str file)
+  "STR の改行か最後までの文字列を戻す.
+改行を含んでいる、またはコメントタグのない FILE なら
+ `wtag-comment-tag' に nil を,さもなくば t をセットする."
+  (let (len)
+    (cond
+     ((setq len (string-match "[\n\r]" str))
+      (setq wtag-comment-tag nil)
+      (concat (substring str 0 len) wtag-artist-name-ellipsis))
+     ((string-match wtag-comment-disable-file-regexp file)
+      (setq wtag-comment-tag nil)
+      "")
+     ((equal str wtag-not-available-string)
+      (setq wtag-comment-tag t)
+      str)
+     (t
+      (setq wtag-comment-tag t)
+      str))))
+
 (defvar wtag-total-track 0)
 (defvar-local wtag-artist-name-max nil)
 (put 'wtag-artist-name-max 'permanent-local t)
@@ -764,7 +788,10 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
          (mf-current-mode  (wtag-alias-value '*type (car index)))
          ;; (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
          (prefix wtag-init-prefix)
-         title file ext modes cache)
+         (old-comment (substring-no-properties (wtag-alias-value 'comment (car index))))
+         title file ext mode modes cache comm)
+    (setq comm (wtag-beginning-string
+                old-comment (wtag-alias-value 'filename (car index))))
     (insert ; Common part.
      (propertize " " 'directory dir
                  'old-disk (wtag-alias-value 'disk (car index)))
@@ -799,25 +826,29 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
      (propertize (wtag-alias-value 'year (car index))
                  'year t 'mouse-face 'highlight
                  'face 'wtag-release-year)
+     (propertize " " 'old-comment old-comment)
+     (propertize comm 'comment t 'mouse-face 'highlight 'face 'wtag-comment
+                 'help-echo old-comment)
      "\n")
 
     (setq wtag-total-track 0)
     (dolist (a index)
       (setq file  (wtag-alias-value 'filename a)
-            ext   (concat "." (file-name-extension file))
+            ext   (file-name-extension file)
             title (let ((tmp (wtag-alias-value 'title a)))
                     (if (string-equal tmp wtag-not-available-string)
                         (format "%s(%s)" tmp (file-name-nondirectory file))
                       tmp))
             mf-current-mode  (wtag-alias-value '*type a)
-            modes (or (member mf-current-mode modes) (cons mf-current-mode modes)))
+            mode  (wtag-mode-string mf-current-mode ext)
+            modes (or (member mode modes) (cons mode modes)))
       (and wtag-init-prefix
            (not (assq 'cache wtag-init-prefix))
            (setq cache
                  (cons
                   (cons file (wtag-alias-value mf-time-dummy-symbol a))
                   cache)))
-      (if (null (mf-wfunc (assoc-default ext mf-function-list #'string-match)))
+      (if (null (mf-wfunc (assoc-default (concat "." ext) mf-function-list #'string-match)))
           (setq wtag-write-notready
                 (or (member mf-current-mode wtag-write-notready)
                     (cons mf-current-mode wtag-write-notready))))
@@ -863,6 +894,11 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
 (defun wtag-mode-name-alias (mode)
   (or (assoc-default mode wtag-mode-name-alias #'string-match-p) mode))
 
+(defun wtag-mode-string (mode ext)
+  (if (string-match "mp3\\|wav\\'" ext)
+      (concat ext ":" (wtag-mode-name-alias mode))
+    ext))
+
 (defun wtag-stat (lst)
   "LST からバイナリ系を取り除いた list を返す."
   (cl-remove-if #'(lambda (n)
@@ -901,8 +937,8 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
       (forward-char)))
   (set-buffer-modified-p nil))
 
-;; <old-disk> DISK <old-album> ALBUM <old-genre> GENRE <old-year> YEAR <"\n">
-;;            disk             album-name        genre-name       year
+;; <old-disk> DISK <old-album> ALBUM <old-genre> GENRE <old-year> YEAR <old-comment> COMMENT <"\n">
+;;            disk             album-name        genre-name       year               comment
 ;; 1. 移動: old-disk 末尾(または DISK 先頭)に移動.
 ;; 2. 挿入: DISK 先頭ひとつ前(1-)に漏れてはいけないシンボルを
 ;;           non-sticky-property で挿す.
@@ -910,6 +946,19 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
 ;; 4. 移動: DISK 末尾に移動 protect に位置をセット.
 ;; 5. 挿入: 現在位置 1+ に end-disk(等) を挿す.
 ;;    ～ 以下タグ分を繰り返す.
+;; - コメタグが在る場合
+;;  改行を含んでいると `wtag-insert-index' でカットされているのでプロテクトしたままにする.
+(defvar wtag-common-area-tag-point
+  '(append '((disk  . end-disk) (a-artist . end-aartist)
+             (album . end-album) skip
+             (genre . end-genre) (year . end-year))
+           (if wtag-comment-tag
+               '((comment . end-comment) skip)
+             '(skip))))
+
+(defun wtag-common-area-tag-point ()
+  (eval wtag-common-area-tag-point))
+
 (defun wtag-protect ()
   "曲タイトル箇所以外を read-only にする."
   (let (protect)
@@ -917,9 +966,7 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
       (goto-char (point-min))
       (add-text-properties (point) (1+ (point)) '(front-sticky t common t))
       (setq protect (point))
-      (dolist (p '((disk  . end-disk) (a-artist . end-aartist)
-                   (album . end-album) skip
-                   (genre . end-genre) (year . end-year) skip))
+      (dolist (p (wtag-common-area-tag-point))
         (if (eq p 'skip)
             (forward-line)
           (wtag-move-to-property (car p))
@@ -1057,7 +1104,7 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
 (defun wtag-get-common-properties (&optional buff)
   "BUFF が wtag テキストのバッファならアルバム共通プロパティをまとめて返す.
 違えば NIL."
-  (let ((syms '(old-disk old-aartist old-album old-genre old-year directory))
+  (let ((syms '(old-disk old-aartist old-album old-genre old-year old-comment directory))
         lst)
     (if buff (set-buffer buff))
     (save-excursion
@@ -1081,6 +1128,12 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
         (setq new-name (concat  track (match-string 2 node)))
         (rename-file file (expand-file-name new-name dir))
         (wtag-message "Renmae file: \"%s\" -> \"%s\"" file new-name)))))
+
+(defun wtag-if-asciiz (str)
+  "STR が asciiZ なら Z を除去して戻す."
+  (if (equal "\0" (substring str -1))
+      (substring str 0 -1)
+    str))
 
 (defun wtag-flush-tag-ask (prefix)
   "フィニッシュ時バッファが read-only なら問合せる."
@@ -1100,8 +1153,8 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
         (modify-cover
          (buffer-modified-p
           (get-buffer (wtag-artwork-buffer-name wtag-base-name))))
-        keep-name new-disk new-aartist new-album new-genre new-year new-title
-        old-disk old-aartist old-album old-genre old-year track directory tmp)
+        keep-name new-disk new-aartist new-album new-genre new-year new-title new-comment
+        old-disk old-aartist old-album old-genre old-year old-comment track directory tmp)
     (when wtag-cursor-intangible (cursor-intangible-mode -1))
     (goto-char (point-min))
     (setq new-disk    (wtag-get-name 'old-disk    'end-disk)
@@ -1110,7 +1163,8 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
           keep-name   (wtag-regular-file-name new-album))
     (forward-line)
     (setq new-genre (wtag-get-name 'old-genre 'end-genre)
-          new-year  (wtag-get-name 'old-year  'end-year))
+          new-year  (wtag-get-name 'old-year  'end-year)
+          new-comment (wtag-get-name 'old-comment 'end-comment))
 
     (setq tmp (wtag-get-common-properties))
     (setq old-disk    (wtag-alias-value 'old-disk    tmp)
@@ -1118,6 +1172,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
           old-album   (wtag-alias-value 'old-album   tmp)
           old-genre   (wtag-alias-value 'old-genre   tmp)
           old-year    (wtag-alias-value 'old-year    tmp)
+          old-comment (wtag-alias-value 'old-comment tmp)
           directory   (wtag-alias-value 'directory   tmp))
     (forward-line)
     
@@ -1161,6 +1216,9 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
         ;; Genre name.
         (when (or force (and (not (string-equal new-genre old-genre))))
           (push (wtag-cons 'genre new-genre) tags))
+        ;; Comment.
+        (when (or force (and (not (string-equal new-comment old-comment))))
+          (push (wtag-cons 'comment new-comment) tags))
         ;; Album cover artwork.
         (when (wtag-image-filename-exist)
           (push (wtag-cons 'cover (wtag-image-filename-exist)) tags))
@@ -2502,7 +2560,7 @@ winカカシが漢字ASCII混合の場合、
 
 (defvar wtag-view-mode-line
   '(:propertize
-    ("<" (:eval (mapconcat #'wtag-mode-name-alias wtag-mode-name " ")) "> ")
+    ("<" (:eval (mapconcat #'identity wtag-mode-name " ")) "> ")
      face wtag-mode-name))
 
 (defvar wtag-image-mode-line

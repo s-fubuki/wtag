@@ -5,7 +5,7 @@
   利用配布規定は GPL3 に準じます.
 
 * このセットのバージョン
-  番号で管理する能力がないので Apr 29 2023 版とします.
+  番号で管理する能力がないので May 27 2023 版とします.
 
 * 基本関数(必須)
 1. mf-tag-write.el   - タグの書き換えバックエンド関数
@@ -37,4 +37,4 @@
   基本関数以外は個別に require が必要です.
 
 * 追加情報
-  wtag用再生ツール [[https://gist.github.com/s-fubuki/f573f252ac9bbfbfe5fb7932c9ef7b17][playall.el]] を 2軍登録したので、興味があれば見てみてください.
+  wtag用再生ツール [[https://gist.github.com/s-fubuki/1de0bb7cddab734631743c15054ccd3b][shuffle-all.el]] を 2軍登録したので、興味があれば見てみてください.

@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.11 $$Name:  $
+;; Version: $Revision: 2.15 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.11 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.15 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -443,13 +443,12 @@ LENGTH があれば整数と見なしその長さだけ読み込む.
 NO-BINARY が非NIL ならバイナリ系タグは含めない."
   (let ((func mf-mp3-analyze-function-list)
         (fsize (file-attribute-size (file-attributes file)))
-        hsize tags sec)
+        mode hsize tags sec)
     (if (and mf-mp3-vbr (string-match "\\.mp3\\'" file)) (setq length nil)) ; for VBR
     (setq length (cadr (insert-file-contents-literally file nil 0 length)))
     (set-buffer-multibyte nil)
-    ;; Set `mf-current-mode' is buffer local variable.
-    (setq mf-current-mode (buffer-substring (point) (+ 4 (point))))
-    (unless (assoc mf-current-mode func) (error "Bad music file: %s: %s" file mf-current-mode))
+    (setq mode (buffer-substring (point) (+ 4 (point))))
+    (unless (assoc mode func) (error "Illegale file type: %s: %s" file mode))
     (setq hsize (mf-buffer-read-long-word-unpack7 7))
     (when (and length (> hsize length))
       (message "Reload file %s size %d header %d(%d%%)."
@@ -457,10 +456,10 @@ NO-BINARY が非NIL ならバイナリ系タグは含めない."
       (erase-buffer)
       (insert-file-contents-literally file nil 0 (+ hsize 11 4 32 120)))
     (forward-char 10)
-    (setq tags (funcall (mf-second (assoc mf-current-mode func)) hsize) ; Collection.
-          tags (funcall (mf-third  (assoc mf-current-mode func)) tags no-binary) ; Analyze.
-          tags (cons (list :tag mf-type-dummy :data mf-current-mode) tags))
-    (setq sec  (mf-mp3-times file (- fsize (+ hsize 10)) hsize tags))
+    (setq tags (funcall (mf-second (assoc mode func)) hsize) ; Collection.
+          tags (funcall (mf-third  (assoc mode func)) tags no-binary) ; Analyze.
+          tags (cons (list :tag mf-type-dummy :data mode) tags))
+    (setq sec  (mf-mp3-times file (+ hsize 11) (- fsize (+ hsize 10)) tags))
     (cons (list :tag mf-time-dummy :data sec) tags)))
 
 (defun mf-make-id32-to-id33-table (table)
@@ -676,7 +675,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
   "COMM タグのコメント生成. for iTunes."
   (let ((tag (plist-get plist :tag))
         (dsc (mf-stringz (or (plist-get plist :dsc) "")))
-        (str (mf-stringz (or (plist-get plist :data) "")))
+        (str (or (plist-get plist :data) ""))
         (code 0))
     (mf-byte-frame-33
      tag
@@ -861,19 +860,18 @@ SIZE はデータの大きさ, BITRATE はビットレート.
 BITRATE は 128k なら 128 と 1/1000 の値で指定する."
   (* 8 (/ size (* (or bitrate 0) 1000.0))))
 
-(defun mf-mp3-time-from-buffer (datasize hsize &optional prefix)
+(defun mf-mp3-time-from-buffer (pos size &optional prefix)
   "mp3 FILE の演奏時間等をリストで戻す.
-DATASIZE は音楽データ部分の大きさ、HSIZE はヘッダの大きさをセットする.
+POS はスキャン開始位置、SIZE は音楽データ部分の大きさをセットする.
 戻りのリストは  \(time bitrate sampling-frequency channel) という並び.
 VBR の場合ビットレートはリストで括られる.
 PREFIX が non-nil ならファイルをすべて読み込みビットレートの正確な平均値を得る.
 そうでなければフレーム1の値(たいてい128)になる."
 ;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
   (let ((prefix (or prefix mf-mp3-vbr))
-        (hsize (+ hsize 11))
         frame xing func)
-    (setq frame (mf-mp3-mpeg-frame-p hsize) ; 1st frame
-          xing  (mf-mp3-xing-p hsize))
+    (setq frame (mf-mp3-mpeg-frame-p pos) ; 1st frame
+          xing  (mf-mp3-xing-p pos))
       (cond
        ((and frame xing)
         (append
@@ -883,32 +881,32 @@ PREFIX が non-nil ならファイルをすべて読み込みビットレート�
               (progn
                 (setq func (if (functionp prefix) prefix #'mf-mp3-vbr-average))
                 (funcall func
-                        (+ hsize (mf-mp3-get-frame-size (nth 0 frame) (nth 1 frame)))))
+                        (+ pos (mf-mp3-get-frame-size (nth 0 frame) (nth 1 frame)))))
             (if xing (list (car frame)) (car frame))))
          (cdr frame))) ; sampling rate, channel
        (t
-        (cons (round (mf-mp3-time-exp datasize (car frame))) frame)))))
+        (cons (round (mf-mp3-time-exp size (car frame))) frame)))))
 
-(defun mf-oma-time-from-buffer (datasize hsize tags)
+(defun mf-oma-time-from-buffer (pos size tags)
   "oma file の時間とビットレートをリストで戻す.
-TLEN タグから時間が得られなければ時間はカッコで括られている."
+TLEN タグから時間が得られなければ時間はカッコで括られている.
+POS はデータ先頭位置 SIZE はデータサイズ."
   ;; atrac は{ SamplingRate : 44100Hz / Channels : 2ch? / BitSize : 16bit } 固定らしい?
-  (let* ((pnt     (+ hsize 10 36))
-         (bitrate (assoc-default (char-after pnt) mf-oma-bitrate))
+  (let* ((bitrate (assoc-default (char-after (+ pos 35)) mf-oma-bitrate))
          (tlen    (plist-get (mf-plist-get-list "TLEN" tags) :data)))
     (if (null tlen)
         ;; 稀に TLEN の無いデータが在る. その場合 MP3 式で得(誤差在り) リストで括る.
-        (list (list (floor (mf-mp3-time-exp datasize bitrate))) bitrate)
+        (list (list (floor (mf-mp3-time-exp size bitrate))) bitrate)
       ;; TLEN の 1/1000 が曲長[sec].
       (list (floor (/ (string-to-number tlen) 1000.0)) bitrate))))
   
-(defun mf-mp3-times (file datasize hsize tags)
+(defun mf-mp3-times (file pos size tags)
   "FILE の種類によって時間関数をチョイスし実行."
   (cond
    ((string-match"\\.mp3\\'" file)
-    (mf-mp3-time-from-buffer datasize hsize))
+    (mf-mp3-time-from-buffer pos size))
    ((string-match "\\.oma\\'" file)
-    (mf-oma-time-from-buffer datasize hsize tags))))
+    (mf-oma-time-from-buffer pos size tags))))
 
 (provide 'mf-lib-mp3)
 ;; fin.

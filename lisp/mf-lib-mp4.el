@@ -1,8 +1,8 @@
 ;;; mf-lib-mp4.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021 fubuki
+;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 2.3 $$Name:  $
+;; Version: $Revision: 2.5 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 2.3 $$Name:  $")
+(defconst mf-lib-mp4-version "$Revision: 2.5 $$Name:  $")
 
 (require 'mf-lib-var)
 (require 'cl-lib)
@@ -720,11 +720,11 @@ NO-BINARY が非NIL ならイメージタグは含めない."
       (message
        "`mf-mp4-reload-maegin' に 0.5 以上をセットすると時間情報の獲得ができるかも."))
     (goto-char (point-min))
-    (setq mf-current-mode "mp4" origin (buffer-substring (+ (point) 8) (+ (point) 8 4)))
+    (setq origin (buffer-substring (+ (point) 8) (+ (point) 8 4)))
     (setq tags (mf-mp4-tag-analyze ilst no-binary))
     ;; (unless (assoc version func) (error "Bad music file"))
     (setq tags (cons
-                (list :tag mf-type-dummy :data mf-current-mode :org origin)
+                (list :tag mf-type-dummy :data "mp4" :org origin)
                 tags))
     (cons (list :tag mf-time-dummy
                 :data (if (eq mp4-vbr 'itunes) (mp4-itunes-vbr sec tags) sec))

@@ -1,8 +1,8 @@
 ;;; mf-lib-mp3v1.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2020, 2022 fubuki
+;; Copyright (C) 2020, 2022, 2023 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.20 $$Nmae$
+;; Version: $Revision: 1.23 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -34,7 +34,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3v1-version "$Revision: 1.20 $$Nmae$")
+(defconst mf-lib-mp3v1-version "$Revision: 1.23 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -50,7 +50,7 @@
 ;; "ID3\1" の場合 "ID3\2.3" で書き出すので "ID3\2.3" と同じテーブルを用意しておく.
 (add-to-list 'mf-image-type '("ID3\1" "APIC" nil ("image/jpeg" . "image/png") 3) )
 
-(defcustom mf-id31-alias 
+(defcustom mf-id31-alias
   '((magic     . nil)    (title . "TIT2") (artist  . "TPE1")
     (album     . "TALB") (year  . "TYER") (comment . "COMM")
     (zero-byte . nil)    (track . "TRCK") (genre   . "TCON")
@@ -98,6 +98,8 @@ Entity is alias for `ID3v2.3'."
     (genre     . ,id31-add-genre))
   "`id31-make-dummy-default' で LST 指定のないのもののデフォルト.")
 
+(defvar mf-id31-dummy-mode "ID3\1")
+
 (unless (boundp 'mf-function-list)
   (setq mf-function-list nil))
 (add-to-list 'mf-function-list  mf-mp31-function-list)
@@ -128,10 +130,10 @@ Entity is alias for `ID3v2.3'."
   "FILE が ID3v1 なら 128 bytes のタグブロックの塊を返しさもなくば nil を返す."
   (interactive "f: ")
   (let* ((len (file-attribute-size (file-attributes file)))
-         (tagbody (- len 128)))
-    (when (< 0 tagbody)
+         (beg (- len 128)))
+    (when (< 0 beg)
       (with-temp-buffer
-        (insert-file-contents-literally file nil tagbody)
+        (insert-file-contents-literally file nil beg)
         (set-buffer-multibyte nil)
         (and (string-equal
               "TAG" (buffer-substring (point-min) (+ (point-min) 3)))
@@ -155,15 +157,31 @@ BUFFER が省略されればカレントバッファになる."
       (and (string-match "\ID3[\2\3\4]" str)
            (match-string 0 str)))))
 
+(defun id31-get-tags-filter (lst)
+  "LST 各要素の末尾の余白を削除、数値を文字列化等整正する."
+  (reverse
+   (mapcar #'(lambda (cons)
+               (cons
+                (car cons)
+                (if (member (car cons) '(track genre zero-byte))
+                    (string (+ (aref (cdr cons) 0) ?0))
+                  (replace-regexp-in-string
+                   "[ \0]*\\'" ""
+                   (if (and (assq 'track lst) (eq (car cons) 'comment))
+                       (substring (cdr cons) 0 28)
+                     (cdr cons))))))
+           lst)))
+  
 (defun id31-get-tags (beg end &optional ver)
   "ID31 Footer block をリスト分解して戻す."
-  (let* ((ver (if (zerop (char-after (- end 2)))
+  (let* ((ver (if (zerop (char-after (- end 3)))
                   id31-tbl-ex id31-tbl))
          result)
-    (dolist (v ver (reverse result))
-      (push (cons (car v)
-                  (buffer-substring beg (+ beg (cdr v))))
-            result)
+    (dolist (v ver (id31-get-tags-filter result))
+      (or (memq (car v) '(magic zero-byte))
+          (push (cons (car v)
+                      (buffer-substring beg (+ beg (cdr v))))
+                result))
       (setq beg (+ beg (cdr v))))))
 
 (defun id31-make-dummy-default (lst)
@@ -174,15 +192,23 @@ BUFFER が省略されればカレントバッファになる."
                 (if (memq (car i) '(track genre))
                     (string (string-to-number (cdr tmp)))
                   (substring
-                   (concat (cdr tmp)
-                           (make-string (cdr i) 0))
+                   (concat (cdr tmp) (make-string (cdr i) 0))
                    0 (cdr i)))
               (setq tmp (cdr (assq (car i) id31-dummy-default)))
               (if (numberp tmp)
                   (string tmp)
                 tmp))
             result))))
+
+;;;###autoload
+(defun dired-id32-to-id31 ()
+  (let ((files (dired-get-marked-files)))
+    (dolist (f files)
+      (and (string-match "\\.mp3\\'" f)
+           (id32-to-id31 f)))
+    (revert-buffer)))
 
+;;;###autoload
 (defun id32-to-id31 (file)
   "FILE の MP3 ID32 を削除して ID31 に変換して追加する."
   (interactive "fMP3: ")
@@ -211,14 +237,13 @@ BUFFER が省略されればカレントバッファになる."
   "FILE 先頭にダミーの ID32v3 タグヘッダを付ける.
 既についていればエラーで終了する.
 変数 `id32-add-tag'で Tag の初期値をセット."
-  (let ((mf-current-mode "ID3\3"))
-    (with-temp-buffer
-      (insert-file-contents-literally file)
-      (set-buffer-multibyte nil)
-      (when (id32-buffer-p) (error "The head is already ID3"))
-      (insert (mf-pack-id32 id32-add-tag))
-      (rename-file file (make-backup-file-name file))
-      (write-region (point-min) (point-max) file))))
+  (with-temp-buffer
+    (insert-file-contents-literally file)
+    (set-buffer-multibyte nil)
+    (when (id32-buffer-p) (error "The head is already ID3"))
+    (insert (mf-pack-id32 id32-add-tag))
+    (rename-file file (make-backup-file-name file))
+    (write-region (point-min) (point-max) file)))
 
 (defun dired-id31-add-dummy-footer ()
   (interactive)
@@ -299,16 +324,20 @@ FILE に該当個所が無いとエラーになる."
 
 (defun mf-id31-tag-read (file &optional dummy1 dummy2)
   "for `mf-tag-write'."
-  (setq mf-current-mode "ID3\1")
-  (insert-file-contents-literally file)
-  (set-buffer-multibyte nil)
-  (goto-char (point-min))
-  (cons (list :tag mf-type-dummy :data mf-current-mode)
-        (mf-list-convert
-         (id31-get-tags (- (point-max) 128) (point-max))
-         (list (cons mf-type-dummy mf-current-mode)))))
+  (let ((mf-current-mode "ID3/3")
+        (mf-current-alias mf-id31-alias)
+        size tags sec)
+    (setq size (cadr (insert-file-contents-literally file)))
+    (set-buffer-multibyte nil)
+    (setq tags (mf-list-convert
+                (id31-get-tags (- (point-max) 128) (point-max))
+                (list (cons mf-type-dummy mf-id31-dummy-mode)))
+          sec  (mf-mp3-times file 1 size tags))
+    (append `((:tag ,mf-type-dummy :data ,mf-id31-dummy-mode)
+              (:tag ,mf-time-dummy :data ,sec))
+            tags)))
 
-(defun  mf-id31-write-buffer (tags &optional no-backup)
+(defun mf-id31-write-buffer (tags &optional no-backup)
   "`mf-id31-tag-read' と対になる ID3v1 用書き戻し関数だが ID3v2.3 で書き出される.
 ID3v1 はそのまま末尾に残される."
   (let* ((coding-system-for-write 'no-conversion)

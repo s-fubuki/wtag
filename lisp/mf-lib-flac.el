@@ -1,8 +1,8 @@
 ;;; mf-lib-flac.el -- This library for mf-tag-write.el  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2020, 2021, 2022 fubuki
+;; Copyright (C) 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.60 $$Nmae$
+;; Version: @(#)$Revision: 1.63 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.60 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 1.63 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -68,6 +68,7 @@
     (cover      . "APIC")
     (artwork    . "APIC")
     (lyric      . "LYRICS")             ; 捏造
+    (comment    . "COMMENT")
     (s-album    . "ALBUMSORT")
     (s-title    . "TitleSort")
     (s-artist   . "ArtistSort")
@@ -636,9 +637,8 @@ NO-BINARY が non-nil ならイメージタグは含めない."
 
     (setq sec (mf-flac-time (assq 'STREAMINFO meta) (- fsize hsize)))
     (setq tags (mf-flac-analyze meta no-binary))
-    (setq mf-current-mode "flac"
-          origin (buffer-substring (point-min) (+ 4 (point-min))))
-    (setq tags (cons (list :tag mf-type-dummy :data mf-current-mode :org origin)
+    (setq origin (buffer-substring (point-min) (+ 4 (point-min))))
+    (setq tags (cons (list :tag mf-type-dummy :data "flac" :org origin)
                      tags))
     (cons (list :tag mf-time-dummy :data sec) tags)))
 

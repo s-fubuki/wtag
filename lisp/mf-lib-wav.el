@@ -1,8 +1,8 @@
 ;;; mf-lib-wav.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2021, 2022 fubuki
+;; Copyright (C) 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.14 $$Name:  $
+;; Version: $Revision: 1.16 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-wav-version "$Revision: 1.14 $$Name:  $")
+(defconst mf-lib-wav-version "$Revision: 1.16 $$Name:  $")
 (require 'mf-lib-var)
 ;; (require 'mf-tag-write)
 
@@ -132,6 +132,12 @@ SIZE があればその長さまでしか走査しない."
          (exc
           (setq result (cons (list :tag exc :data data) result))))))))
 
+;; Windows10/11 の 設定 > 地域 > 管理 > システムロケールの変更 >
+;; ワールドワイド言語サポートでユニコードを使用
+;; ↑がチェックされているなら
+;; `mf-lst-pack-coding-system' を utf-8
+;; されていないなら sjis にしないと WMP に表示されるタイトルが化ける.
+(defvar mf-lst-pack-coding-system 'utf-8 "pack list へ渡すコーディング.")
 (defvar mf-pack-list '("ITOC") "Coding 変換しない(素通しする)TAG.")
 
 (defun mf-pack-list (plist coding)
@@ -205,7 +211,6 @@ wave の開かれたバッファから \"fmt \" チャンクの中身を plist �
           'align    (mf-buffer-read-word-le-fd)
           'bsample  (mf-buffer-read-word-le-fd)
           'bsize    (mf-buffer-read-word-le-fd))))
-
 
 (defun mf-wav-tag-read (file &optional length no-binary)
   "wav FILE をカレントバッファに読み込んでタグを plist にして返す.
@@ -245,10 +250,8 @@ NO-BINARY が非NIL ならイメージタグは含めない."
            ((and lst (null id3))
             (setq org (mf-wave-tag-region (nth 1 lst) (+ (nth 1 lst) (nth 2 lst) 8)))
             (mf-exchange-tags org '("LIST" . "id3 ")))))
-    (setq mf-current-mode "ID3\3")
-    (setq tags (cons (list :tag mf-type-dummy :data "wav" :org org) tags))
+    (setq tags (cons (list :tag mf-type-dummy :data "ID3\3" :org org) tags))
     (cons (list :tag mf-time-dummy :data sec) tags)))
-
 
 (defun mf-wav-write-buffer (tags &optional no-backup)
   "カレントバッファに読み込まれている wav バイナリのタグを TAGS(ID3形式) に差し替える.
@@ -258,7 +261,8 @@ MSアプリで認識されるようファイル内での位置も修正される
 NO-BACKUP が 非NIL なら元ファイイルを残さない."
   (let* ((tmp (mf-pack-id33 tags))
          (id3-pack (if (mf-oddp (length tmp)) (concat tmp "\0") tmp))
-         (lst-pack (mf-pack-list (mf-exchange-tags tags '("id3 " . "LIST")) 'sjis))
+         (lst-pack (mf-pack-list (mf-exchange-tags tags '("id3 " . "LIST"))
+                                 mf-lst-pack-coding-system))
          (file mf-current-file)
          riff chunks fmt len active)
     (run-hooks 'mf-wav-write-hook)

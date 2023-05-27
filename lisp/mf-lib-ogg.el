@@ -1,9 +1,8 @@
 ;;; mf-lib-ogg.el
-
-;; Copyright (C) 2022
+;; Copyright (C) 2022, 2023 fubuki
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.5 $$Name:  $
+;; Version: $Revision: 1.7 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -24,7 +23,7 @@
 ;; for `mf-tag-write' ogg music file tag READ(!write) library.
 
 ;;; Code:
-(defconst mf-lib-ogg-version "@(#)$Revision: 1.5 $$Nmae$")
+(defconst mf-lib-ogg-version "@(#)$Revision: 1.7 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-flac)
@@ -222,7 +221,6 @@ ogg はすべて読まないと演奏時間が得られないので,
 LEN はダミーで必ずすべて読み込む.
 NO-BINARY が non-nil ならカバーアートタグの :data を nil にする."
   (let (result granule ident comstr times)
-    (setq mf-current-mode mf-ogg-mode-tag)
     (insert-file-contents-literally file)
     (set-buffer-multibyte nil)
     (while (not (eobp)) ;; 全部読まないと時間は得られない.
@@ -237,7 +235,7 @@ NO-BINARY が non-nil ならカバーアートタグの :data を nil にする.
     (setq times   (cons (/ granule (+ (cadr times) 0.0)) times))
     (append
      (list
-      (list :tag mf-type-dummy :data mf-current-mode)
+      (list :tag mf-type-dummy :data mf-ogg-mode-tag)
       (list :tag mf-time-dummy :data times))
      (ogg-tag-collection-string comstr no-binary))))
 
