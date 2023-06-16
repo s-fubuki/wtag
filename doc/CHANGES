@@ -1,4 +1,53 @@
 # -*- mode: outline -*-
+#+OPTIONS: H:1
+* Sat Jun 17 08:08:24 2023
+** mf-lib-mp3.el: 2.22
+*** add: LAME ABR のビットレートを得る
+    可変ビットレートの場合リストの残り引数に
+    エンコード時のいくつかのパラメータが入る.
+
+*** fix: ID32 のコメントタグの終端獲得を直していなかったのを修正.
+
+** mf-lib-var.el: 1.31
+*** change: `mf-read-size' mp3 を 10% -> 40%
+    LAME のヘッダ域まで読むとなると
+    小さな mp3 の場合 10% では足りないようなので 40% にする.
+
+** wtag.el: 1.286
+*** add: カスタマイズ変数 `wtag-time-form' の引数を追加
+    0 から数えて 3つ目の引数を追加.
+    引数が 1なら prefix、 ツールチップ(バルーンヘルプ)もその値になる.
+    2つなら 2つ目が prefix とツールチップ兼用になる.
+    3つ目があればそれがツールチップ専用になる.
+    つまり3つ指定するとすべてを別々の値にすることができる.
+ 
+    デフォルト値は以下の設定になっていて、
+    MP3 だとツールチップが常に LAME ABR のビットレート表示になっている.
+
+#+BEGIN_SRC emacs-lisp
+  '((mp3 "%2m'%02s\"" "%2m'%02s\"%4bk(%r%v)" "%2m'%02s\"%4ak [%r%v]")
+    (mp4 "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r%v")
+    (*   "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r"))
+#+END_SRC
+
+*** `%b' ビットレート
+    全読み込で平均ビットレート、そうでないとき可変ビットレートなら
+    フレーム1 のビットレート(たいていは 128)になる.
+    但し LAME ABR ならエンコード時に指定したビットレートになる[fn:: 但し LAME が 255 までしか記録できない仕様なので、指定時の値がそれ以上、例えば 256 でも 320 でも一律に 255 となる].
+
+*** `%a' LAME ABR の値
+    常にエンコード指定時の値が得られる.
+    但し LAME でないなら フレーム 1の値になる.
+
+*** `%v' VBR なら種別文字列
+    LAME Header を見て "abr" などになる.
+    詳細は変数 `wtag-time-option-mp3-vbr-method' 参照.
+
+    % 展開の詳細は関数 `wtag-format や `format-seconds' を参照してください.
+
+*** add: `wtag-put-mark-time' マークファイルの積算時間表示
+*** change: `wtag-comment-disable-file-regexp' から flac, ogg を外す
+
 * Sat May 27 08:51:35 2023
 ** mf-lib-* すべて
 *** fix: mf-tag-read-(alias|alist) 等からも mf-current-* 系変数を参照できるようにした.
@@ -70,15 +119,14 @@
 *** add: カスタム変数 `wtag-name-push' 2行目 `C-u 0 w' に当たる箇所に comment を追加.
 *** chnage: フェイス `wtag-album-artis' を `font-lock-regexp-face' に変更.
 
-** shuffle-all 
+** shuffle-all 1.18
    非同梱のテストプログラムです.
    `playall.el' を Sub directory の中も見るようにゼロから書き直し.
-   同梱していないので以下にに在ります.
+   以下に在ります.
    ふたつ目のアドレスにマニュアルを置いてあります.
 
    : https://gist.github.com/s-fubuki/1de0bb7cddab734631743c15054ccd3b
    : https://gist.github.com/s-fubuki/1de0bb7cddab734631743c15054ccd3b#file-shuffle-all-org
-
 
    playall.el に対応するコマンド名が
 
@@ -438,7 +486,7 @@ oma のとき計算で割り出した時間の場合は値がリストで括ら�
 
  となっています.
  用途としては小文字にしたい、逆順にしたいなどくらいしょうか.
-
+ 
 *** fix `wtag-time-foram' -> `wtag-time-form' スペルミス.
 
 *** 変数 `wtag-vbr' が non-nil なら mp3/vbr のとき正しいビットレートを表示.

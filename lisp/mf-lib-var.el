@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020, 2021, 2022, 2023 fubuki
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.28 $$Name:  $
+;; Version: $Revision: 1.31 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.28 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.31 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -372,14 +372,14 @@ once ならバックアップがあればバックアップしない."
   (mapcar #'floor (list (/ sec 3600) (/ (mod sec 3600) 60) (mod sec 60))))
 
 (defcustom mf-read-size
-  '(("\\.oma\\'" . 30) ("\\.\\(m4a\\|mp3\\|wma\\)\\'" . 10)
-    ("\\.mp4\\'" . 50) ("\\.flac\\'" . 3) ("\\.wav\\'" . 3))
+  '(("\\.oma\\'" . 30) ("\\.\\(m4a\\|wma\\)\\'" . 10) ("\\.mp3\\'" . 40)
+    ("\\.mp4\\'" . 50) ("\\.\\(flac\\|wav\\)\\'" . 3))
   "ファイルサイズに対する読み込みの割合."
   :type  '(repeat (cons regexp integer))
   :group 'music-file-get-title)
 
 (defun mf-read-size (file)
-  (let ((per  (assoc-default file mf-read-size 'string-match))
+  (let ((per (assoc-default file mf-read-size 'string-match))
         (len (file-attribute-size (file-attributes file))))
     (if per (round (* (/ len 100.0) per)) len)))
       

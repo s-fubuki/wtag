@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.15 $$Name:  $
+;; Version: $Revision: 2.22 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.15 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.22 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -404,7 +404,7 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
           ;; "COM" も同様
           (setq code (char-after)
                 dsc  (progn (forward-char 4) (mf-asciiz-string code))
-                data (mf-asciiz-string code))
+                data (mf-asciiz-string code (- (+ beg len) (point)))) ; limit for fre:ac.
           (setq result (cons (list :tag tag :cdsc dsc :data data) result)))
          ((and (null no-binary) (member tag '("PIC")))
           ;; "PIC" SIZE<3bytes> CODE<byte> FMT<3bytes> TYPE<byte> DESCz OBJECT
@@ -842,17 +842,43 @@ BITRATE は 1/1000 で指定することを想定している."
               (setq tmp (char-after (+ pos 3)))
               (nth (logand (ash tmp -6) 3) mf-mp3-channel))))))
 
-(defun mf-mp3-xing-p (&optional pos)
-  "POS に mpegフレーム先頭ポイントを指定し,
-Xing として使われているフレームなら総フレーム数を返す.
+(defun mf-mp3-xing-p (pos)
+  "POS に 1st frame 先頭を指定し Xing file であれば総フレーム数を返す.
 さもなくば nil."
-  (let ((pos (or pos (point)))
-        tmp)
-    (when (setq tmp (mf-mp3-mpeg-frame-p pos))
-      (setq tmp (nth 2 tmp))
-      (setq pos (+ pos 4 (if (eq 'mono tmp) 17 32)))
-      (if (equal (buffer-substring pos (+ pos 4)) "Xing")
-          (mf-buffer-read-long-word (+ pos 8))))))
+  (let* ((pos   (or pos (point)))
+         (frame (mf-mp3-mpeg-frame-p pos))
+         (pos   (+ pos 4 (if (eq (nth 2 frame) 'mono) 17 32))))
+    (if (equal (buffer-substring pos (+ pos 4)) "Xing")
+        (mf-buffer-read-long-word (+ pos 8)))))
+
+(defvar mf-mp3-lame-magic-re "\\`\\(LAME\\|GOGO\\)")
+
+(defun mf-mp3-lame-abr (pos)
+  "POS に 1st frame 先頭を指定し LAME ABR なら一部先頭データを list で戻す.
+さもなくば nil.
+リスト内訳は \(Magic Rev VBRmethod LPF Gain Flag Bitrate)."
+  ;; http://gabriel.mp3-tech.org/mp3infotag.html
+  (let* ((pos   (or pos (point)))
+         (frame (mf-mp3-mpeg-frame-p pos))
+         (pos   (+ pos 4 (if (eq (nth 2 frame) 'mono) 17 32)))
+         (mf-buffer-read-functions
+          (cons '(split mf-mp3-msb-lsb 1) mf-buffer-read-functions))
+         tmp)
+    (when (and (equal (buffer-substring pos (+ pos 4)) "Xing")
+               (logand (mf-buffer-read-long-word (+ pos 4)) 8))
+      (setq tmp (mf-buffer-read-unpack '(9 split c Q c c) (+ pos 120)))
+      (and (string-match mf-mp3-lame-magic-re (car tmp)) (flatten-tree tmp)))))
+
+(defun mf-mp3-msb-lsb (&optional pos)
+  "Retern value is \(Revision ABR-Method)."
+  (let ((ch (char-after (or pos (point)))))
+    (list (logand (ash ch -4) 15) (logand ch 15))))
+
+(defun mf-mp3-vbr-bitrate-guess (vbr)
+  "VBR に平均値を指定しエンコードされた値を推測."
+  (catch 'out
+    (dolist (a (butlast (cdr mf-mp3-bitrate)))
+      (if (< vbr a) (throw 'out a)))))
 
 (defun mf-mp3-time-exp (size bitrate)
   "MP3 の演奏秒数を得る.
@@ -860,32 +886,54 @@ SIZE はデータの大きさ, BITRATE はビットレート.
 BITRATE は 128k なら 128 と 1/1000 の値で指定する."
   (* 8 (/ size (* (or bitrate 0) 1000.0))))
 
-(defun mf-mp3-time-from-buffer (pos size &optional prefix)
-  "mp3 FILE の演奏時間等をリストで戻す.
-POS はスキャン開始位置、SIZE は音楽データ部分の大きさをセットする.
-戻りのリストは  \(time bitrate sampling-frequency channel) という並び.
-VBR の場合ビットレートはリストで括られる.
-PREFIX が non-nil ならファイルをすべて読み込みビットレートの正確な平均値を得る.
-そうでなければフレーム1の値(たいてい128)になる."
-;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
-  (let ((prefix (or prefix mf-mp3-vbr))
-        frame xing func)
-    (setq frame (mf-mp3-mpeg-frame-p pos) ; 1st frame
-          xing  (mf-mp3-xing-p pos))
-      (cond
-       ((and frame xing)
-        (append
-         (list
-          (round (* xing (/ 1152.0 (nth 1 frame)))) ; time second
+(defun mf-mp3-vbr-bitrate (pos frame prefix xing lame)
+  (let (bitrate func)
+    (setq bitrate
           (if prefix ; 可変 bitrate(vbr)ならリストで括られる(1.39).
               (progn
                 (setq func (if (functionp prefix) prefix #'mf-mp3-vbr-average))
                 (funcall func
-                        (+ pos (mf-mp3-get-frame-size (nth 0 frame) (nth 1 frame)))))
+                         (+ pos (mf-mp3-get-frame-size (nth 0 frame) (nth 1 frame)))))
             (if xing (list (car frame)) (car frame))))
-         (cdr frame))) ; sampling rate, channel
-       (t
-        (cons (round (mf-mp3-time-exp size (car frame))) frame)))))
+    (append bitrate lame)))
+
+(defun mf-mp3-time-from-buffer (pos size &optional prefix)
+  "MP3 FILE の演奏時間等をリストで戻す.
+POS はスキャン開始位置、SIZE は音楽データ部分の大きさをセットする.
+戻りのリストは  \(time bitrate sampling-frequency channel) という並び.
+VBR の場合ビットレートはリストで括られ CAR に入る. CDR にデータが続く場合も在る.
+PREFIX が non-nil ならファイルをすべて読み込みビットレートの正確な平均値を得る.
+そうでなければフレーム1の値(たいてい128)か
+LAME ならリストの中から設定値を得る(See `mf-mp3-lame-abr')."
+  ;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
+  (let* ((prefix (or prefix mf-mp3-vbr))
+         (frame  (mf-mp3-mpeg-frame-p pos)) ; 1st frame
+         (lame   (mf-mp3-lame-abr pos)) ; lame header parameter 
+         (xing   (mf-mp3-xing-p pos))   ; frame size
+         (time   (and xing (round (* xing (/ 1152.0 (nth 1 frame)))))) ; time second
+         func br vr)
+    (cond
+     ((and lame (null prefix))
+      (setq br (nth 6 lame)
+            vr (nth 2 lame)
+            lame (cons
+                  (cond
+                   ((/= vr 2)
+                    (car frame)) ; 1st frame bitrate.
+                   ;; ((= br 255) ; and vr == 2
+                   ;;  ;; これだと 256 にしかならない! 引数には平均値を渡さないと意味がない.
+                   ;;  (mf-mp3-vbr-bitrate-guess br))
+                   (t br))
+                  lame))
+      (append (list time lame) (cdr frame)))
+     ((and frame xing)
+      (append
+       (list
+        time
+        (mf-mp3-vbr-bitrate pos frame prefix xing lame))
+       (cdr frame))) ; sampling rate, channel
+     (t
+      (cons (round (mf-mp3-time-exp size (car frame))) frame)))))
 
 (defun mf-oma-time-from-buffer (pos size tags)
   "oma file の時間とビットレートをリストで戻す.

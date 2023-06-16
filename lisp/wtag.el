@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.277 $$Name:  $
+;; Version: @(#)$Revision: 1.286 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 
 (defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 
-(defconst wtag-version "@(#)$Revision: 1.277 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.286 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -229,18 +229,26 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 
 (defvar-local wtag-times* nil)
 (defvar wtag-time-format-alist
-  '((?b . wtag-time-b)  ; Bit Rate
+  '((?a . wtag-time-a)  ; MP3 LAME ABR Bitrate
+    (?b . wtag-time-b)  ; Bitrate
     (?B . wtag-time-B)  ; Bit Size
     (?c . wtag-time-c)  ; Channel
     (?r . wtag-time-r)  ; Sampling Rate
     (?t . wtag-time-t)  ; Codec Type
-    (?v . wtag-time-v)) ; VBR?
+    (?v . wtag-time-v)) ; VBR String
   "`wtag-time-form' 用 対応関数リスト.
-%b がビットレート、%o は `wtag-time-option-format' でマッチしたタイプが展開される.")
+%b のビットレートは MP3 の場合 ABR なら 圧縮指定時のもの(%a は常のこの値).
+VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込まれたときは平均値になる.")
 
-(defvar wtag-time-form '((mp3 "%2m'%02s\"" "%2m'%02s\"%4bkbps (%r%v)")
-                         (mp4 "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r%v")
-                         (*   "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r")))
+(defcustom wtag-time-form
+  '((mp3 "%2m'%02s\"" "%2m'%02s\"%4bk(%r%v)" "%2m'%02s\"%4ak [%r%v]")
+    (mp4 "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r%v")
+    (*   "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r"))
+  "0 から数えて、ふたつめは prefix 時と help-echo 併用で、
+3つ目の要素があればそちらが help-echo に使われる.
+ふたつめ以降はなくてもいい. その場合ひとつめが help-echo に併用される."
+  :type  'sexp
+  :group 'wtag)
 
 ;;; (defcustom wtag-time-form '("%2m'%02s\"" . "%2m'%02s\"%4bkbps %B/%r%v")
 ;;;   "時間表示のフォーマット文字列. 変数 `wtag-time-format-alist' に対応.
@@ -414,6 +422,7 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   "wtag-mode-name-face."
   :group 'wtag-faces)
 
+(make-obsolete 'wtag-read-length-alist 'mf-read-size "1.280")
 (defcustom wtag-read-length-alist
   '(("mp3" . 10) ("oma" . 33) ("mp4" . 60) ("m4a" . 10)
     ("flac" . 3) ("wav" . 3))
@@ -459,6 +468,15 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   (if (consp elt) (car elt) elt))
 
 (defun wtag-format (form val)
+  "VAL is time seconds.
+In FORM addition to the functionality of function `format-seconds',
+%a  is MP3 LAME ABR Bitrate.
+%b  is Bitrate.
+%B  is Bit Size.
+%c  is Channel.
+%r  is Sampling Rate.
+%t  is Codec Type.
+%v  is VBR String."
   (when (> emacs-major-version 28)
     (advice-add 'string-trim :override #'wtag-kill-string-trim))
   (setq wtag-times* (if (consp val) val (list val)))
@@ -473,10 +491,31 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
     (when (> emacs-major-version 28)
       (advice-remove 'string-trim #'wtag-kill-string-trim))))
 
+(defun wtag-time-a ()
+  "MP3 Specified bitrate."
+  (let ((bitrate (nth 1 wtag-times*)))
+    (cond
+     ((numberp bitrate)
+      bitrate)
+     ((and (consp bitrate) (memq (nth 3 bitrate) '(3 4 5 6)))
+      (car bitrate)) ; VBR だと nth 7 に圧縮指定時のビットレートは入っていない.
+     ((and (consp bitrate) (nth 7 bitrate))
+      (nth 7 bitrate))
+     ((consp bitrate)
+      (car bitrate))
+     (t
+      0))))
+
 ;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
 (defun wtag-time-b ()
-  "Bitrate"
-  (or (wtag-car-read (nth 1 wtag-times*)) 0))
+  "Bitrate."
+  (let ((bitrate (nth 1 wtag-times*)))
+    (cond
+     ((and (consp bitrate) (cdr bitrate))
+      ;; (if (= 255 (nth 7 bitrate)) 256 (car bitrate)))
+      (car bitrate))
+     (t
+      (or (wtag-car-read bitrate) 0)))))
 
 (defun wtag-time-B ()
   "Bitsize(Bits/Sample)"
@@ -503,12 +542,44 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   "*%v で表示される文字列.
 コンスセルならイネーブル時に CAR, さもなくば CDR が使われる.")
 
+(defvar wtag-time-option-mp3-vbr-method
+  '((0 . "/unknown")
+    (1 . "/cbr")
+    (2 . "/abr")
+    (3 . "/vbrM1")
+    (4 . "/vbrM2")
+    (5 . "/vbrM3")
+    (6 . "/vbrM4")
+    (7 . "")
+    (8 . "/cbr2")
+    (9 . "/abr2"))
+  "0 -> Unknown
+1 -> CBR
+2 -> ABR
+3 -> Full VBR Method 1
+4 -> Full VBR Method 2
+5 -> Full VBR Method 3
+6 -> Full VBR Method 4
+7 -> n/a
+8 -> CBR 2 Pass
+9 -> ABR 2 Pass
+.
+. n/a
+.
+15 -> Reserved")
+
 (defun wtag-time-v ()
   "For VBR Value `wtag-time-option-mp3-vbr' else \"\"."
-  (let* ((var wtag-time-option-mp3-vbr)
+  (let* ((time (nth 1 wtag-times*))
+         (var wtag-time-option-mp3-vbr)
          (enable  (if (consp var) (car var) var))
          (disable (if (consp var) (cdr var) "")))
-  (if (consp (nth 1 wtag-times*)) enable disable)))
+    (cond
+     ((and (consp time) (cdr time))
+      (cdr (assq (nth 3 time) wtag-time-option-mp3-vbr-method)))
+     ((consp (nth 1 wtag-times*))
+      enable disable)
+     (t ""))))
 
 (make-obsolete 'wtag-time-o-mp3-vbr 'wtag-time-option-mp3-vbr "1.236")
 (defvar wtag-time-o-mp3-vbr " VBR(%rkHz)")
@@ -723,31 +794,29 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
   (and alst (cdr (assoc file alst))))
 
 (defsubst wtag-form-select (form &optional prefix)
-  "FORM が string ならそのまま戻し、
-でなければ list と見なし PREFIX が non-nil なら CDR, さもなくば CAR を戻す."
-  (let ((func (if prefix #'cdr #'car)))
+  "FORM は string, pair list, タイプ別リストで
+string ならそのまま戻し、リストなら PREFIX でリストの中の位置が決まる.
+nil なら 0、 non-nil なら 1、数値ならそのままオフセットになる.
+但し list の長さが指定オフセットに満たないときはリスト末尾の値になる.
+list が pair ならフラットなリストにしてから処理する.
+タイプ別リストのときは `mf-current-mode' によりリストを決定した後
+リスト内位置を上記のルールで決める."
+  (let ((pt (cond ((numberp prefix) prefix) (prefix 1) (t 0))))
     (if (stringp form)
         form
-      (cond
-       ((consp (car form))
-        (setq form
-              (wtag-assq-match
-               (assoc-default mf-current-mode wtag-mode-links #'string-match)
-               form)))
-       ((not (wtag-pair form))
-        (setq form (cons (car form) (cadr form)))))
-      (or (funcall func form) wtag-not-available-string))))
-
-(defun wtag-assq-match (key lst)
-  "assq KEY LST の CDR を戻すが、得られなければ最終要素の CDR を戻す.
-つまり LST の最終要素には何にもマッチしなかったときに戻すデフォルトをセットしておく."
-  (let ((result (or (cdr (assq key lst)) (cdar (last lst)))))
-    (setq result (if (wtag-pair result)
-                     result
-                   (cons (nth 0 result) (nth 1 result))))
-    (if (cdr result)
-        result
-      (cons (car result) (car result)))))
+      (setq form
+            (cond
+             ((wtag-pair form)
+              form)
+             (t
+              (or
+               (assoc-default
+                (assoc-default mf-current-mode wtag-mode-links #'string-match)
+                form)
+               (cdar (last wtag-time-form))))))
+      (setq form (flatten-tree form)
+            pt (if (< (length form) (1+ pt)) (1- (length form)) pt))
+      (or (nth pt form) wtag-not-available-string))))
 
 (defun wtag-pair (a)
   "A が Dot pair なら t さもなくば nil."
@@ -867,7 +936,7 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
          (if (null times)
              " -----"
            (propertize (wtag-format (wtag-form-select wtag-time-form prefix) times)
-                       'help-echo (wtag-format (wtag-form-select wtag-time-form t) times)
+                       'help-echo (wtag-format (wtag-form-select wtag-time-form 2) times)
                        'mouse-face 'highlight
                        'face (if (consp (car times)) 'wtag-time-other 'wtag-time))))
        (propertize " "
@@ -918,6 +987,7 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
         (wtag-kill-process))
       (unless wtag-process
         (run-hooks 'wtag-writable-tag-hook)
+        (wtag-unmark-all-file)
         (setq wtag-artist-name-truncate-mode-save wtag-artist-name-truncate-mode)
         (wtag-artist-name-truncate-mode -1)
         (setq buffer-read-only nil)
@@ -2034,21 +2104,51 @@ PREFIX は整数で指定があればその行に移動してから実行され�
                    (wtag-get-property-value 'filename)))))
     (and result (reverse result))))
 
+(defvar-local wtag-mark-time nil)
+(defvar-local wtag-mark-time-ov nil)
+
+(defun wtag-put-mark-time ()
+  (let (beg end)
+    (save-excursion
+      (goto-char (point-min))
+      (setq end (line-end-position)
+            beg
+            (text-property-any
+             (line-beginning-position) end 'face 'wtag-time))
+      (and wtag-mark-time-ov (delete-overlay wtag-mark-time-ov))
+      (setq wtag-mark-time-ov (make-overlay beg end))
+      (overlay-put wtag-mark-time-ov 'display
+                   (wtag-format
+                    (wtag-form-select wtag-time-all-form)
+                    (apply #'+ (mapcar #'cdr wtag-mark-time)))))))
+
+(defun wtag-get-filename-time ()
+  (cons 
+   (wtag-alias-value 'filename (wtag-get-property-value 'stat))
+   (car (wtag-alias-value '*time (wtag-get-property-value 'stat)))))
+
 (defun wtag-point-mark-file (&optional char)
   "point のファイルをマークする."
   (let ((inhibit-read-only t)
         (char (or char "*")))
     (when (wtag-get-property-value 'filename)
+      (add-to-list 'wtag-mark-time (wtag-get-filename-time))
       (beginning-of-line)
       (put-text-property
        (point) (1+ (point)) 'display (propertize char 'face 'wtag-mark))
-      (set-buffer-modified-p nil))))
+      (set-buffer-modified-p nil)
+      (wtag-put-mark-time))))
 
 (defun wtag-point-unmark-file ()
   "point のファイルのマークを解除する."
   (let ((inhibit-read-only t))
     (when (wtag-get-property-value 'display)
       (beginning-of-line)
+      (setq wtag-mark-time (delete (wtag-get-filename-time) wtag-mark-time))
+      (if wtag-mark-time
+          (wtag-put-mark-time)
+        (and wtag-mark-time-ov
+             (delete-overlay wtag-mark-time-ov)))
       (when (wtag-get-property-value 'display)
         (remove-text-properties (point) (1+ (point)) '(display nil))
         (set-buffer-modified-p nil)))))
