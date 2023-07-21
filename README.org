@@ -5,7 +5,7 @@
   利用配布規定は GPL3 に準じます.
 
 * このセットのバージョン
-  番号で管理する能力がないので Jun 17 2023 版とします.
+  番号で管理する能力がないので [Jul 22 2023] 版とします.
 
 * 基本関数(必須)
 1. mf-tag-write.el   - タグの書き換えバックエンド関数
@@ -28,7 +28,7 @@
 1. mf-tag-write.org
 2. alias-table.org - mf-tag-write で使える TAG の alias 表.
 3. wtag.org
-4. CHENGES
+4. CHENGES - いわゆる ChangeLog Text.
 5. README.org もしくは README.md
 
 * インストール

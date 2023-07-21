@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.22 $$Name:  $
+;; Version: $Revision: 2.25 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.22 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.25 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -352,7 +352,7 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
           ;;   FILE は encode されたファイル名. 空文字で終端文字 TERM だけの場合がある.
           ;;   終端文字 TERM は ascii なら 1バイトの 0 そうでないなら 2バイトの 0 である.
           (setq code (char-after)
-                mime (progn (forward-char) (mf-asciiz-string code))
+                mime (progn (forward-char) (mf-asciiz-string 0))
                 type (char-after)
                 file (progn (forward-char) (mf-asciiz-string code))
                 data (buffer-substring (point) (+ beg len)))
@@ -441,10 +441,11 @@ LENGTH があれば整数と見なしその長さだけ読み込む.
 タグ情報だけが必要で書き戻す必要が無いなら, この数値をファイルサイズの 10% 等の値にしておくと
 読み直しが起きたときを鑑みても巨大ファイルの場合すべて読むよりは総合的に速くなる.
 NO-BINARY が非NIL ならバイナリ系タグは含めない."
-  (let ((func mf-mp3-analyze-function-list)
-        (fsize (file-attribute-size (file-attributes file)))
-        mode hsize tags sec)
-    (if (and mf-mp3-vbr (string-match "\\.mp3\\'" file)) (setq length nil)) ; for VBR
+  (let* ((func mf-mp3-analyze-function-list)
+         (fsize (file-attribute-size (file-attributes file)))
+         (length (if (and mf-mp3-vbr (string-match "\\.mp3\\'" file)) nil length)) ; for VBR
+         (mf-mp3-vbr (null length))
+         mode hsize tags sec)
     (setq length (cadr (insert-file-contents-literally file nil 0 length)))
     (set-buffer-multibyte nil)
     (setq mode (buffer-substring (point) (+ 4 (point))))
@@ -812,10 +813,9 @@ BITRATE は 1/1000 で指定することを想定している."
       (if (not (memq (car tmp) result))
           (setq result (cons (car tmp) result)))
       (goto-char (+ (point) (mf-mp3-get-frame-size (nth 0 tmp) (nth 1 tmp)))))
-    (setq tmp (length all))
     (append
      (sort result #'<)
-     (list ":" (/ (apply #'+ all) tmp)))))
+     (list ":" (/ (apply #'+ all) (length all))))))
 
 (defun mf-mp3-vbr-average (pos)
   "POS 以降の mpeg フレームのビットレートの平均値をリストで返す."
@@ -824,8 +824,7 @@ BITRATE は 1/1000 で指定することを想定している."
     (while (and (not (eobp)) (setq tmp (mf-mp3-mpeg-frame-p)))
       (setq result (cons (car tmp) result))
       (goto-char (+ (point) (mf-mp3-get-frame-size (nth 0 tmp) (nth 1 tmp)))))
-    (setq tmp (length result))
-    (list (/ (apply #'+ result) tmp))))
+    (list (/ (apply #'+ result) (length result)))))
 
 (defun mf-mp3-mpeg-frame-p (&optional pos)
   "POS が mpeg1 layer3 の frame 先頭なら \(bitrate sampling-frequency channel) を返す.

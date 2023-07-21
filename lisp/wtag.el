@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.286 $$Name:  $
+;; Version: @(#)$Revision: 1.287 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 
 (defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 
-(defconst wtag-version "@(#)$Revision: 1.286 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.287 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -2474,19 +2474,25 @@ winカカシが漢字ASCII混合の場合、
                   (prefix-numeric-value current-prefix-arg)
                 wtag-artist-name-truncate-length))
          (ellipsis wtag-artist-name-ellipsis)
-         prop)
+         pad prop)
     (wtag-artist-name-truncate-clear)
     (when (< len wtag-artist-name-max)
       (save-excursion
         (goto-char (point-min))
-        (while (setq prop (text-property-search-forward 'old-performer))
+        (while (setq prop
+                     (or (text-property-search-forward 'old-aartist)
+                         (text-property-search-forward 'old-performer)))
           (let* ((beg (point))
-                 (end (progn (text-property-search-forward 'old-title) (1- (point))))
+                 (end (progn
+                        (or (text-property-search-forward 'old-album)
+                            (text-property-search-forward 'old-title))
+                        (1- (point))))
                  (org (prop-match-value prop))
                  (org-len (string-width org))
-                 (short (truncate-string-to-width org len nil 32 ellipsis)))
+                 (short (truncate-string-to-width org len nil pad ellipsis)))
             (setq wtag-artist-name-truncate
-                  (cons (make-overlay beg end) wtag-artist-name-truncate))
+                  (cons (make-overlay beg end) wtag-artist-name-truncate)
+                  pad 32)
             (overlay-put (car wtag-artist-name-truncate) 'display short)
             (overlay-put (car wtag-artist-name-truncate) 'help-echo org)))))))
 

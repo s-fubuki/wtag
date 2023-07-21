@@ -1,5 +1,22 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Jul 22 08:18:17 2023
+** mf-lib-mp3.el: 2.25
+*** fix: `mf-oma-tags-analyze'
+    Artwork tag の file name がマルチバイトだと
+    その前にある mime を誤読して(マルチバイトとして読んでしまっていた)
+    うまく load できなかった bug fix.
+
+*** fix: `mf-oma-tag-read' 非インタラクティブ実行だと、
+    全読み込み時にビットレートの平均値を出さないバグを修正.
+
+*** chnage: `mf-mp3-lame-abr' LAME Magic を
+    変数化(`mf-mp3-lame-magic-re')し "\\`GOGO" も許容するようにする.
+    ただ午後のこ〜だが Win10 で動かなかったのでデータを使った検証はしていない.
+
+** wtag.el: 1.287
+*** change: `wtag-artist-name-truncate' アルバム・アーティストも縮小表示に対応.
+
 * Sat Jun 17 08:08:24 2023
 ** mf-lib-mp3.el: 2.22
 *** add: LAME ABR のビットレートを得る
