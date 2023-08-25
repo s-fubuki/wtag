@@ -1,5 +1,10 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Aug 26 08:19:52 2023
+** wtag 1.288
+*** fix: `wtag-flush-tag' `oma' では comment tag を付けないようにする.
+*** change: `wtag-artist-name-truncate' アルバム・アーティストにも縮小対応.
+
 * Sat Jul 22 08:18:17 2023
 ** mf-lib-mp3.el: 2.25
 *** fix: `mf-oma-tags-analyze'

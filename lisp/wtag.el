@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.287 $$Name:  $
+;; Version: @(#)$Revision: 1.288 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 
 (defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 
-(defconst wtag-version "@(#)$Revision: 1.287 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.288 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -1257,21 +1257,20 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
              (new-title     (wtag-get-name 'old-title     'end-title))
              (filename      (wtag-get-property-value 'filename))
              (ext           (downcase (file-name-extension filename)))
-             (mp3           (and (string-equal ext "mp3") mode))
-             (mp4           (member ext '("mp4" "m4a")))
              (force         (or prefix (equal mode "ID3\1")))
              tags)
         ;; Disk number.
-        (when (or force (and (or mp4 mp3) (not (string-equal old-disk new-disk))))
+        (when (or force (and (member ext '("mp3" "mp4" "m4a"))
+                             (not (string-equal old-disk new-disk))))
           (push (wtag-cons 'disk new-disk) tags))
         ;; Release year.
-        (when (or force (and (not (string-equal old-year new-year))))
+        (when (or force (not (string-equal old-year new-year)))
           (push (wtag-cons 'year new-year) tags))
         ;; Album artist.
-        (when (or force (and (not (string-equal old-aartist new-aartist))))
+        (when (or force (not (string-equal old-aartist new-aartist)))
           (push (wtag-cons 'a-artist new-aartist) tags))
         ;; Track number.
-        (when (or force (and (not (string-equal old-track new-track))))
+        (when (or force (not (string-equal old-track new-track)))
           (push (wtag-cons 'track new-track) tags))
         ;; Performer (AKA Artist)
         (when (not (string-equal old-performer new-performer))
@@ -1284,10 +1283,11 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
         (when (or force (not (string-equal new-album old-album)))
           (push (wtag-cons 'album new-album) tags))
         ;; Genre name.
-        (when (or force (and (not (string-equal new-genre old-genre))))
+        (when (or force (not (string-equal new-genre old-genre)))
           (push (wtag-cons 'genre new-genre) tags))
         ;; Comment.
-        (when (or force (and (not (string-equal new-comment old-comment))))
+        (when (or force (and (not (equal ext "oma"))
+                             (not (string-equal new-comment old-comment))))
           (push (wtag-cons 'comment new-comment) tags))
         ;; Album cover artwork.
         (when (wtag-image-filename-exist)
