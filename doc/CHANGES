@@ -1,5 +1,16 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Sep 23 08:12:46 2023
+** mf-tag-write.el: 1.78
+*** change: `mf-tag-write' 引数名の簡素化.
+
+** wtag.el: 1.296
+*** - add: `wtag-music-play-mouse' マウスで再生に対応.
+    `shuffle-all' を入れてあっても動く.
+    対応している訳ではなくたまたま衝突しないからで、
+    shuffle 側で Play したときもマウスで停止できるが
+    シェードが降りたままになる等弊害もある.
+
 * Sat Aug 26 08:19:52 2023
 ** wtag 1.288
 *** fix: `wtag-flush-tag' `oma' では comment tag を付けないようにする.

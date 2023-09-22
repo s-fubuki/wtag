@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.288 $$Name:  $
+;; Version: @(#)$Revision: 1.296 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -69,7 +69,7 @@
 
 (defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
 
-(defconst wtag-version "@(#)$Revision: 1.288 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.296 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -227,9 +227,12 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   '(("\\`ID3" . mp3) ("\\`ea3\3" . oma) ("mp4" . mp4) ; ← m4a も "mp4" なのでコレ.
     ("flac" . flac) ("wma" . wma) ("ogg" . ogg) ("wav" . wav)))
 
-(defvar-local wtag-times* nil)
+(defvar wtag-times* nil)
 (defvar wtag-time-format-alist
-  '((?a . wtag-time-a)  ; MP3 LAME ABR Bitrate
+  '((?h . wtag-time-h)
+    (?m . wtag-time-m)
+    (?s . wtag-time-s)
+    (?a . wtag-time-a)  ; MP3 LAME ABR Bitrate
     (?b . wtag-time-b)  ; Bitrate
     (?B . wtag-time-B)  ; Bit Size
     (?c . wtag-time-c)  ; Channel
@@ -244,7 +247,8 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
   '((mp3 "%2m'%02s\"" "%2m'%02s\"%4bk(%r%v)" "%2m'%02s\"%4ak [%r%v]")
     (mp4 "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r%v")
     (*   "%2m'%02s\"" "%2m'%02s\"%4bkbps %B/%r"))
-  "0 から数えて、ふたつめは prefix 時と help-echo 併用で、
+  "`wtag-time-format-alist' で使える %シーケンスを使い構成する.
+0 から数えて、ふたつめは prefix 時と help-echo 併用で、
 3つ目の要素があればそちらが help-echo に使われる.
 ふたつめ以降はなくてもいい. その場合ひとつめが help-echo に併用される."
   :type  'sexp
@@ -263,14 +267,14 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
   :group 'wtag)
 
 (defcustom wtag-time-all-form '("%m'%02s\"" . "%2h@%2m'%02s\"")
-  "総時間表示のフォーマット.  `format-seconds' にそのまま渡す.
+  "総時間表示のフォーマット.  `wtag-format' にそのまま渡す.
 コンスセルで指定すると CDR がバルーン用になる."
   :type '(choice string (cons string string))
   :group 'wtag)
 
 (make-obsolete 'wtag-time-all-form-balloon 'wtag-time-all-form "1.238")
 (defcustom wtag-time-all-form-balloon "%2h@%2m'%02s\""
-  "help-echo用 総時間表示のフォーマット.  `format-seconds' にそのまま渡す."
+  "help-echo用 総時間表示のフォーマット.  `wtag-format' にそのまま渡す."
   :type 'string
   :group 'wtag)
 
@@ -460,16 +464,16 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
          'mode-line-buffer-identification
          'wtag-mode-line)))
 
-(defun wtag-kill-string-trim (string &optional trim-left trim-right)
-  string)
-
 (defsubst wtag-car-read (elt)
   "ELT がアトムならそのまま返しコンセルなら car を返す."
   (if (consp elt) (car elt) elt))
 
+(defvar wtag-time-h-flag nil)
 (defun wtag-format (form val)
-  "VAL is time seconds.
-In FORM addition to the functionality of function `format-seconds',
+  "VAL is `mf-time-dummy-symbol' tag value.
+%h  is Hour.
+%m  is Minut. If FORM does not have %h, it will also be added.
+%s  is Second.
 %a  is MP3 LAME ABR Bitrate.
 %b  is Bitrate.
 %B  is Bit Size.
@@ -477,19 +481,21 @@ In FORM addition to the functionality of function `format-seconds',
 %r  is Sampling Rate.
 %t  is Codec Type.
 %v  is VBR String."
-  (when (> emacs-major-version 28)
-    (advice-add 'string-trim :override #'wtag-kill-string-trim))
-  (setq wtag-times* (if (consp val) val (list val)))
-  (prog1
-      (format-seconds
-       (format-spec form
-                    (mapcar
-                     #'(lambda (a) (cons (car a) (funcall (cdr a))))
-                     wtag-time-format-alist)
-                    'ignore)
-       (wtag-car-read (car wtag-times*)))
-    (when (> emacs-major-version 28)
-      (advice-remove 'string-trim #'wtag-kill-string-trim))))
+  (let ((wtag-times* (if (consp val) val (list val)))
+        (wtag-time-h-flag (string-match "%[[:digit:]]*h" form)))
+    (format-spec form wtag-time-format-alist)))
+
+(defun wtag-time-h ()
+  (/ (wtag-car-read wtag-times*) 3600))
+
+(defun wtag-time-m()
+  (let ((sec (wtag-car-read wtag-times*)))
+    (if wtag-time-h-flag
+        (/ (mod sec 3600) 60)
+      (/ sec 60))))
+
+(defun wtag-time-s()
+  (mod (wtag-car-read wtag-times*) 60))
 
 (defun wtag-time-a ()
   "MP3 Specified bitrate."
@@ -2021,39 +2027,59 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
    (t ; 'track line.
     nil)))
 
+(defun wtag-get-point-filename ()
+  (cddr (assq 'filename (get-text-property (line-beginning-position) 'stat))))
+
 (defun wtag-music-play (prefix)
-  "point のファイルを `wtag-music-players' で設定されたコマンドで実行.
+  "point のファイルを `wtag-music-players' の引数として実行.
 PREFIX は整数で指定があればその行に移動してから実行される.
 この移動を正しく行なうためにバッファローカル変数 `wtag-beginning-line-of-track' に\
 トラック1の行番を号設定しておくこと."
   (interactive "p")
-  (let* ((ppty 'filename)
-         pnt file cmds)
-    (cond
-     ((and current-prefix-arg (< 0 current-prefix-arg))
-      (goto-char (point-min))
-      (forward-line (+ prefix (- wtag-beginning-line-of-track 2))))
-     ((wtag-common-area-p)
-      (goto-char (point-min))
-      (forward-line 2)))
-    (setq pnt  (next-single-property-change
-                (line-beginning-position) ppty nil (line-end-position))
-          file (get-text-property pnt ppty)
-          cmds (and file (assoc-default file wtag-music-players #'string-match)))
+  (cond
+   ((and current-prefix-arg (< 0 current-prefix-arg))
+    (goto-char (point-min))
+    (forward-line (+ prefix (- wtag-beginning-line-of-track 2))))
+   ((wtag-common-area-p)
+    (goto-char (point-min))
+    (forward-line 2)))
+  (wtag--music-play)
+  (when wtag-music-play-next
+    (when (numberp wtag-music-play-next)
+      (sleep-for wtag-music-play-next))
+    (forward-line)))
+
+(defun wtag-music-play-mouse (event)
+  "マウスがポイントした曲を再生.
+ポイントされた曲が再生中なら停止し、別の曲ならそちらを新たに再生."
+  (interactive "e")
+  (let* ((pos (if (eq (car event) 'mouse-1) (cadr event)))
+         (file (and pos (wtag-get-point-filename)))
+         (ps (car (memq wtag-process (process-list))))
+         (prv (and ps (nth 1 (process-command ps)))))
+    (if (and prv (equal prv file))
+        (wtag-kill-process)
+      (wtag--music-play))
+    (beginning-of-line)
+    (wtag-move-to-property 'title)))
+
+(defun wtag--music-play ()
+  "point のファイルを `wtag-music-players' で設定されたコマンドで再生."
+  (let* ((stat   (get-text-property (line-beginning-position) 'stat))
+         (file   (mf-alias-get 'filename stat))
+         (artist (mf-alias-get 'artist stat))
+         (title  (mf-alias-get 'title stat))
+         (time   (wtag-format "%m'%02s\"" (mf-alias-get mf-time-dummy-symbol stat)))
+         (cmds   (and file (assoc-default file wtag-music-players #'string-match))))
     (if (and file (file-exists-p file) cmds)
         (let* ((prog (car cmds))
                (opts (cdr cmds))
                (args (append opts (list file)))
-               (proc wtag-process-name)
-               (buff proc))
-          (message (file-name-nondirectory file))
+               (proc wtag-process-name))
+          (message " `%s - %s (%s)'" artist title time)
           (and (memq wtag-process (process-list))
                (delete-process wtag-process))
-          (setq wtag-process (apply #'start-process proc buff prog args))
-          (when wtag-music-play-next
-            (when (numberp wtag-music-play-next)
-              (sleep-for wtag-music-play-next))
-            (forward-line)))
+          (setq wtag-process (apply #'start-process proc proc prog args)))
       (error "Undefined or does not exist `%s'" (or file "NIL")))))
 
 (defun wtag-kill-process ()
@@ -2625,6 +2651,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "q"               'quit-window)
     (define-key map "Q"               'wtag-exit)
     (define-key map [drag-n-drop]     'wtag-mouse-load)
+    (define-key map [mouse-1]         'wtag-music-play-mouse)
     (define-key map "\C-x\C-q"        'wtag-writable-tag)
     (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
     (define-key menu-map

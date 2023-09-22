@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.77 $
+;; Version: $Revision: 1.78 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.77 $")
+(defconst mf-tag-write-version "$Revision: 1.78 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -369,31 +369,31 @@ atom なら第4の値をそのまま返す. いずれも eval して返す."
       (eval alias))))
 
 ;;;###autoload
-(defun mf-tag-write (file &optional new-tags no-backup time-opt)
-  "FILE の既存タグに plist形式の NEW-TAGS が含まれれば置き換え無ければ追加し書き換える.
+(defun mf-tag-write (file &optional tags no-backup stamp)
+  "FILE の既存タグに plist形式の TAGS が含まれれば置き換え無ければ追加し書き換える.
 NO-BACKUP が非NIL なら Backup file を作らない.
 NO-BACKUP が文字列ならそのファイルに書き出す。その場合バックアップはされない.
-TIME-OPT が非NIL ならタイムスタンプを継承する."
+STAMP が非NIL ならタイムスタンプを継承する."
   (interactive "fFile: \nxTags: ")
-  (let* ((time-opt (and time-opt (mf-sixth (file-attributes file))))
+  (let* ((stamp (and stamp (mf-sixth (file-attributes file))))
          (func   (mf-func-get file mf-function-list))
          (wfunc  (mf-wfunc func))
          (cvfunc (mf-cvfunc func))
-         tags)
+         org)
     (unless func (error "Unknow file type `%s'" file))
     (unless wfunc (error "Write function not ready `.%s'" (file-name-extension file)))
     (with-temp-buffer
       (mf-set-make-local-variables mf-current-values)
       (set-buffer-multibyte nil)
       (setq mf-current-func func
-            tags (mf--tag-read file)
-            mf-current-mode (mf-get-mode tags)
-            mf-current-alias (mf-alias func tags mf-current-mode))
+            org (mf--tag-read file)
+            mf-current-mode (mf-get-mode org)
+            mf-current-alias (mf-alias func org mf-current-mode))
       (if (stringp no-backup)
           (setq mf-current-file no-backup)
         (setq mf-current-file file))
-      (funcall wfunc (mf-tag-merge tags (funcall cvfunc new-tags tags)) no-backup))
-    (and time-opt (symbolp no-backup) (set-file-times file time-opt))))
+      (funcall wfunc (mf-tag-merge org (funcall cvfunc tags org)) no-backup))
+    (and stamp (symbolp no-backup) (set-file-times file stamp))))
 
 (defun mf--tag-read (file &optional length no-binary)
   "FILE 名により `mf-read-function-alist' で設定された関数を実行する.
