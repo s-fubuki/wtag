@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.25 $$Name:  $
+;; Version: $Revision: 2.26 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.25 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.26 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -455,7 +455,7 @@ NO-BINARY が非NIL ならバイナリ系タグは含めない."
       (message "Reload file %s size %d header %d(%d%%)."
                file fsize hsize (round (/ (* hsize 100.0) fsize)))
       (erase-buffer)
-      (insert-file-contents-literally file nil 0 (+ hsize 11 4 32 120)))
+      (insert-file-contents-literally file nil 0 (+ hsize 11 4 32 120 21)))
     (forward-char 10)
     (setq tags (funcall (mf-second (assoc mode func)) hsize) ; Collection.
           tags (funcall (mf-third  (assoc mode func)) tags no-binary) ; Analyze.

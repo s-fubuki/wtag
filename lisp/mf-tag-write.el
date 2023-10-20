@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.78 $
+;; Version: $Revision: 1.79 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.78 $")
+(defconst mf-tag-write-version "$Revision: 1.79 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -238,6 +238,12 @@ CDR を nil とするとそのタグを削除する."
   "FILE のタグを \(ALIAS . DATA) の list にして返す."
   (mapcar #'(lambda (lst) (cons (car lst) (cddr lst)))
           (mf-tag-read-alias file len no-bin)))
+
+(defun mf-tag-read-alias-plist (file &optional len no-bin)
+  "FILE のタグを \(alias (TAG . DATA) ...) の plist にして返す."
+  (let (result)
+    (dolist (a (mf-tag-read-alias file len no-bin) result)
+      (setq result (append (list (car a) (cdr a)) result)))))
 
 (defun mf-alist-add-tag (alist alias case)
   "ALIST の各要素 \(TAG . DATA) に TAG に対応する alias を ALIAS から捜して cons し

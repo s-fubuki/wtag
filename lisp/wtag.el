@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.296 $$Name:  $
+;; Version: @(#)$Revision: 1.301 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -36,6 +36,7 @@
 (require 'time-date)
 (require 'rx)
 ;; (require 'make-atrac-index)
+(require 'cursor-sensor)
 
 (defgroup wtag nil
   "Writable music file tag."
@@ -44,32 +45,22 @@
   :prefix "wtag-")
 
 (defvar wtag-test nil "真なら書き換えが実行されない.")
-
-(defvar-local wtag-frame nil)
-(defvar-local wtag-old-content nil)
-(defvar-local wtag-old-cover nil)
-(defvar-local wtag-old-point nil)
 (defvar wtag-process nil "Work.")
 (defvar wtag-process-name "*wtag process*")
-(defvar-local wtag-image-filename nil "for buffer local variable.")
-(put 'wtag-image-filename 'permanent-local t)
-(defvar-local wtag-jump-list nil)
-(defvar-local wtag-window-configuration nil)
-(put 'wtag-window-configuration 'permanent-local t)
-(defvar-local wtag-base-name nil)
-(put 'wtag-base-name 'permanent-local t)
-(defvar-local wtag-init-prefix nil)
-(put 'wtag-init-prefix 'permanent-local t)
-(defvar-local wtag-mode-name nil)
-(put 'wtag-mode-name 'permanent-local t)
-(defvar-local wtag-write-notready nil)
-(put 'wtag-write-notready 'permanent-local t)
+
+(defvar-local wtag-works nil)
+(put 'wtag-works 'permanent-local t)
+
 (defvar-local wtag-mode-line nil)
 (put 'wtag-mode-line 'risky-local-variable t)
 
-(defvar-local wtag-music-copy-dst-buff nil "music copy destination work buffer.")
+(defun wtag-get (prop)
+  (plist-get wtag-works prop))
 
-(defconst wtag-version "@(#)$Revision: 1.296 $$Name:  $")
+(defun wtag-set (prop val)
+  (setq wtag-works (plist-put wtag-works prop val)))
+
+(defconst wtag-version "@(#)$Revision: 1.301 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -324,6 +315,11 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
 (make-obsolete-variable 'wtag-flush-tag-hook 'wtag-flush-hook "1.191" 'set)
 (defvar wtag-flush-tag-hook nil "ノーマル・フック")
 
+(defcustom wtag-startup-hook nil
+  "wtag を実行後に実行するノーマルフック."
+  :type  'hook
+  :group 'wtag)
+
 (defcustom wtag-writable-tag-hook nil
   "wtag writable mode に移行するときに実行されるノーマルフック."
   :type  'hook
@@ -441,6 +437,10 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
   "コーデックの表示文字列."
   :type  '(repeat (cons (regexp :tag "Regexp") (string :tag "Letter")))
   :group 'wtag)
+
+(defun wtag-version ()
+  (interactive)
+  (message "%s" wtag-version))
 
 (defun wtag-insert-elt (lst plc elt)
   "LST の PLC の前に ELT を挿入したリストを戻す."
@@ -592,13 +592,6 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
 (make-obsolete 'wtag-time-o-format 'wtag-time-option-format "1.236")
 (defvar wtag-time-o-format  " %B/%r" "%B BitSize / %c Channel / %r SamplingRate")
 
-(defun wtag-max-width (lst sym)
-  "SYM 文字列の LST から最大`幅'を返す.
-`wtag-directory-set' が生成する alist の束から SYM の要素の最長値を返す."
-  (let ((mx 0))
-    (dolist (a lst mx)
-      (setq mx (max (string-width (wtag-alias-value sym a)) mx)))))
-
 (defcustom wtag-artwork-buffer-suffix "*art*"
   "*Cover buffer名サフィクス."
   :type  'string
@@ -614,6 +607,11 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
   :type  'string
   :group 'wtag)
 
+(defcustom wtag-sub-frame-name "*wtag sub frame*"
+  "*Sub frame name."
+  :type  'string
+  :group 'wtag)
+
 (defcustom wtag-not-available-string  "n/a"
   "*TAG が無いときの代替文字列."
   :type  'string
@@ -622,38 +620,50 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
 (defmacro wtag-alias-value (alias lst)
   `(or (mf-alias-get ,alias ,lst) wtag-not-available-string))
 
+(defun wtag-max-width (lst sym)
+  "SYM 文字列の LST から最大`幅'を返す.
+`wtag-directory-set' が生成する alist の束から SYM の要素の最長値を返す."
+  (let ((mx 0))
+    (dolist (a lst mx)
+      (setq mx (max (string-width (wtag-alias-value sym a)) mx)))))
+
 (defun wtag-kill-artwork-buffer ()
   "カレントバッファが `wtag-index-buffer-suffix' なら
 紐付けられたアートワークバッファを削除する."
   (when (string-match
-         (rx (eval wtag-index-buffer-suffix) eos)
+         (regexp-quote wtag-index-buffer-suffix)
          (buffer-name (current-buffer)))
     (and (buffer-live-p (get-buffer (wtag-artwork-buffer-name)))
          (kill-buffer (get-buffer (wtag-artwork-buffer-name))))
     (remove-hook 'kill-buffer-hook #'wtag-kill-artwork-buffer)))
 
 (defun wtag-base-name (name)
-  "NAME 末尾から `wtag-artwork-buffer-suffix' または `wtag-index-buffer-suffix' を\
-削除して戻す.
-末尾がそれらでないなら NAME がそのまま戻る."
-  (let ((result name)
-        pnt)
+  "NAME から wtag buffer name の装飾を取り除いた基本名を戻す.
+末尾が `wtag-artwork-buffer-suffix' に一致すれば
+`wtag-artwork-buffer-prefix' も削除し
+末尾が `wtag-index-buffer-suffix' に一致すればそれを削除し
+どちらも合致しなければ NAME がそのまま戻る."
+  (let ((idx (concat
+              "\\`\\(?1:.+?\\)"
+              (regexp-quote wtag-index-buffer-suffix) "\\'"))
+        (art (concat
+              "\\`" (regexp-quote wtag-artwork-buffer-prefix)
+              "\\(?1:.+?\\)"
+              (regexp-quote wtag-artwork-buffer-suffix) "\\'")))
     (catch 'out
-      (dolist (ext (list wtag-artwork-buffer-suffix wtag-index-buffer-suffix))
-        (setq pnt (- (length name) (length ext)))
-        (if (eq (compare-strings name pnt nil ext nil nil) t)
-            (throw 'out (setq result (substring name 0 pnt))))))
-    result))
-  
+      (dolist (re (list idx art) name)
+        (if (string-match re name)
+            (throw 'out (setq name (match-string 1 name))))))))
+
 (defun wtag-artwork-buffer-name (&optional base)
   "STR is index buffer name.
 Convert index buffer name to artwork buffer name."
   (concat wtag-artwork-buffer-prefix
-          (or base wtag-base-name)
+          (or base (wtag-get :base-name))
           wtag-artwork-buffer-suffix))
 
 (defun wtag-index-buffer-name (&optional base)
-  (concat (or base wtag-base-name) wtag-index-buffer-suffix))
+  (concat (or base (wtag-get :base-name)) wtag-index-buffer-suffix))
 
 (defun get-wtag-buffer (buff)
   (and (get-buffer buff)
@@ -711,12 +721,8 @@ Convert index buffer name to artwork buffer name."
 (defun wtag-directory-files-list (dir)
   "DIRECTORY の中のファイルのタグリストを返す."
   (let* ((sorts   wtag-sort-track)
-         (suffixs (mf-re-suffix mf-lib-suffix-all))
-         (files   (if (and (file-regular-p dir)
-                           (assoc-default dir mf-function-list 'string-match))
-                      (list dir)
-                    (directory-files dir t suffixs))))
-    (sort (wtag-directory-set files) sorts)))
+         (suffixs (mf-re-suffix mf-lib-suffix-all)))
+    (sort (wtag-directory-set (directory-files dir t suffixs)) sorts)))
 
 (defun wtag-total-time (lst)
   (let ((total 0)
@@ -776,14 +782,16 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
           art-buff (wtag-artwork-buffer-name base))
     (and (get-wtag-buffer buff) (kill-buffer buff))
     (and (get-buffer art-buff) (kill-buffer art-buff))
-    (and (setq obj (mf-alias-get 'cover (car result)))
-         (wtag-artwork-load obj art-buff 'no-disp t))
+    (run-hooks 'wtag-startup-hook)
     (with-current-buffer (get-buffer-create buff)
-      (setq wtag-window-configuration wconf
-            wtag-base-name base
-            wtag-init-prefix (if (and prefix (atom prefix))
-                                 (list prefix)
-                               prefix))
+      (wtag-set :window-configuration wconf)
+      (wtag-set :base-name base)
+      (wtag-set :init-prefix
+                (if (and prefix (atom prefix))
+                    (list prefix)
+                  prefix))
+      (and (setq obj (mf-alias-get 'cover (car result)))
+           (wtag-artwork-load obj art-buff 'no-disp t))
       (when (and wtag-artwork-buffer-prefix
                  (string-match "\\` " wtag-artwork-buffer-prefix))
         (make-local-variable 'kill-buffer-hook)
@@ -793,7 +801,7 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
       (set-buffer-modified-p nil)
       (goto-char (point-min))
       (wtag-view-mode)
-      (and (get-buffer art-buff) (switch-to-buffer art-buff))
+      (and (get-buffer art-buff) (set-window-buffer nil art-buff))
       (pop-to-buffer buff wtag-pop-action))))
 
 (defsubst wtag-get-cache-time (alst file)
@@ -862,7 +870,7 @@ list が pair ならフラットなリストにしてから処理する.
          (total (wtag-total-time index))
          (mf-current-mode  (wtag-alias-value '*type (car index)))
          ;; (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
-         (prefix wtag-init-prefix)
+         (prefix (wtag-get :init-prefix))
          (old-comment (substring-no-properties (wtag-alias-value 'comment (car index))))
          title file ext mode modes cache comm)
     (setq comm (wtag-beginning-string
@@ -917,16 +925,16 @@ list が pair ならフラットなリストにしてから処理する.
             mf-current-mode  (wtag-alias-value '*type a)
             mode  (wtag-mode-string mf-current-mode ext)
             modes (or (member mode modes) (cons mode modes)))
-      (and wtag-init-prefix
-           (not (assq 'cache wtag-init-prefix))
+      (and (wtag-get :init-prefix)
+           (not (assq 'cache (wtag-get :init-prefix)))
            (setq cache
                  (cons
                   (cons file (wtag-alias-value mf-time-dummy-symbol a))
                   cache)))
       (if (null (mf-wfunc (assoc-default (concat "." ext) mf-function-list #'string-match)))
-          (setq wtag-write-notready
-                (or (member mf-current-mode wtag-write-notready)
-                    (cons mf-current-mode wtag-write-notready))))
+          (wtag-set :write-notready
+                    (or (member mf-current-mode (wtag-get :write-notready))
+                        (cons mf-current-mode (wtag-get :write-notready)))))
       (insert
        (propertize " "
                    'old-track (wtag-alias-value 'track a)
@@ -937,7 +945,7 @@ list が pair ならフラットなリストにしてから処理する.
                    'face 'wtag-track-number)
        ;; Time.
        " "
-       (let ((times (or (wtag-get-cache-time (assq 'cache wtag-init-prefix) file)
+       (let ((times (or (wtag-get-cache-time (assq 'cache (wtag-get :init-prefix)) file)
                         (cdr (alist-get mf-time-dummy-symbol a)))))
          (if (null times)
              " -----"
@@ -961,10 +969,10 @@ list が pair ならフラットなリストにしてから処理する.
        
        "\n")
       (setq wtag-total-track (1+ wtag-total-track)))
-    (setq wtag-mode-name (reverse modes))
-    (and wtag-init-prefix
-         (not (assq 'cache wtag-init-prefix))
-         (setq wtag-init-prefix (cons (cons 'cache cache) wtag-init-prefix)))))
+    (wtag-set :mode-name (reverse modes))
+    (and (wtag-get :init-prefix)
+         (not (assq 'cache (wtag-get :init-prefix)))
+         (wtag-set :init-prefix (cons (cons 'cache cache) (wtag-get :init-prefix))))))
 
 (defun wtag-mode-name-alias (mode)
   (or (assoc-default mode wtag-mode-name-alias #'string-match-p) mode))
@@ -986,7 +994,7 @@ list が pair ならフラットなリストにしてから処理する.
 (defun wtag-writable-tag ()
   "タグの書き換えできるモードに入る."
   (interactive)
-  (if wtag-write-notready
+  (if (wtag-get :write-notready)
       (error "Write function not ready")
     (let ((inhibit-read-only t))
       (when (and wtag-process (or wtag-process-break (y-or-n-p "Stop process?")))
@@ -1228,9 +1236,10 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
         (sfunc wtag-make-sort-string-function)
         (modify-cover
          (buffer-modified-p
-          (get-buffer (wtag-artwork-buffer-name wtag-base-name))))
+          (get-buffer (wtag-artwork-buffer-name))))
         keep-name new-disk new-aartist new-album new-genre new-year new-title new-comment
         old-disk old-aartist old-album old-genre old-year old-comment track directory tmp)
+    (buffer-disable-undo)
     (when wtag-cursor-intangible (cursor-intangible-mode -1))
     (goto-char (point-min))
     (setq new-disk    (wtag-get-name 'old-disk    'end-disk)
@@ -1321,14 +1330,14 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
             (wtag-message "File error `%s'" filename)))
          (forward-line)))
     ;; Salvage old cover.
-    (when (and wtag-old-cover modify-cover (eq wtag-load-without-query 'keep))
+    (when (and (wtag-get :old-cover) modify-cover (eq wtag-load-without-query 'keep))
       (let* ((coding-system-for-write 'no-conversion)
-             (ext  (mf-image-type wtag-old-cover))
+             (ext  (mf-image-type (wtag-get :old-cover)))
              (ext  (if (eq ext 'jpeg) "jpg" (symbol-name ext)))
              (file (expand-file-name (concat keep-name "." ext) directory)))
         (when (file-exists-p file)
           (rename-file file (wtag-safe-keep-name file)))
-        (write-region wtag-old-cover nil file)))
+        (write-region (wtag-get :old-cover) nil file)))
     (wtag-init-buffer directory (current-buffer))))
 
 (defcustom wtag-log-buffer "*wtag log*"
@@ -1512,7 +1521,7 @@ ARG 等は `wtag-beginning-of-line' を参照."
                (forward-char))))))
 
 (defun wtag-make-jump-list ()
-  "`wtag-jump-list' に
+  "`wtag-works' の :wtag-jump-list に
 `wtag-forward-junp-points' と `wtag-backward-jump-points' で
 ジャンプするポイントをセット."
   (let (lst)
@@ -1524,13 +1533,13 @@ ARG 等は `wtag-beginning-of-line' を参照."
       (forward-line)
       (push (progn (wtag-move-to-property 'old-performer) (1+ (point))) lst)
       (push (progn (goto-char (1- (point-max))) (point)) lst))
-    (setq wtag-jump-list lst)))
+    (wtag-set :jump-list nil)))
 
 (defun wtag-forward-jump-points ()
-  "降順ソートされた `wtag-jump-list' の位置へ順番にポイントを移動."
+  "降順ソートされた `wtag-works' :jump-list の位置へ順番にポイントを移動."
   (interactive)
   (let* ((p (copy-sequence
-             (or wtag-jump-list (wtag-make-jump-list))))
+             (or (wtag-get :jump-list) (wtag-make-jump-list))))
          (p (sort p '<)))
     (and (equal (point) (apply #'max p)) (goto-char (1- (apply #'min p))))
     (goto-char
@@ -1541,10 +1550,10 @@ ARG 等は `wtag-beginning-of-line' を参照."
          (setq p (cdr p)))))))
 
 (defun wtag-backward-jump-points ()
-  "昇順ソートされた `wtag-jump-list' の位置へ順番にポイントを移動."
+  "昇順ソートされた `wtag-works' :jump-list の位置へ順番にポイントを移動."
   (interactive)
   (let* ((p (copy-sequence
-             (or wtag-jump-list (wtag-make-jump-list))))
+             (or (wtag-get :jump-list) (wtag-make-jump-list))))
          (p (sort p '>)))
     (and (equal (point) (apply #'min p)) (goto-char (1+ (apply #'max p))))
     (goto-char
@@ -1835,20 +1844,12 @@ length は marker の 2バイト分を除いたセグメントの長さ.
                          (mf-buffer-read-word (+ pnt 2))
                          (mf-buffer-read-word pnt)))))))))
 
-(defun wtag-image-buffer-main-mode-p (mode)
-  "カレントバッファが MODE か wtag-image-mode のとき\
-その主バッファが MODE なら NON-NIL."
-  (let ((name (wtag-index-buffer-name wtag-base-name)))
-    (or (eq major-mode mode)
-        (and (eq major-mode 'wtag-image-mode)
-             (eq (with-current-buffer name major-mode) mode)))))
-
 (defvar wtag-unknown "Unknown file `%s'")
 
 (defun wtag-mouse-load (event)
   "ファイルをマウス左ボタンで Emacs にドラッグ&ドロップ.
 * 画像ファイル:
- wtga-writable-mode ならアートワークにセットされる.
+ wtag-writable-mode ならアートワークにセットされる.
 変数 `wtag-force-load' が NON-NIL なら wtag-view-mode でも実行される.
  query なら問い合わせ在り t ならなし.
 * 音楽ファイル:
@@ -1857,13 +1858,16 @@ length は marker の 2バイト分を除いたセグメントの長さ.
 尚 Windows でしか使えない機能のよう(?)."
   (interactive "e")
   (let* ((file (car (mf-third event)))
+         (idx  (wtag-index-buffer-name
+                (wtag-base-name (buffer-name (get-buffer (current-buffer))))))
          (func (assoc-default file wtag-mouse-funcs #'string-match)))
+    (unless (equal (buffer-name (current-buffer)) idx) (set-buffer idx))
     ;; D&D か?
     (when (eq (car event) 'drag-n-drop)
       (cond
        ;; Image File でライタブルか?
        ((and (string-match mf-image-regexp file)
-             (wtag-image-buffer-main-mode-p 'wtag-writable-mode))
+             (eq major-mode 'wtag-writable-mode))
         (funcall func file))
        ;; Image FIle で *非* ライタブルか?
        ((string-match mf-image-regexp file)
@@ -1879,13 +1883,12 @@ length は marker の 2バイト分を除いたセグメントの長さ.
                (setq wtag-force-timer
                      (run-at-time
                       wtag-force-load nil #'(lambda () (setq wtag-force-timer nil)))))
-          (with-current-buffer (wtag-index-buffer-name wtag-base-name)
-            (wtag-writable-tag))
+          (with-current-buffer idx (wtag-writable-tag))
           (funcall func file)))
        ;; Music File か?
        ((and (string-match (mf-re-suffix mf-lib-suffix-all) file)
              ;; *非* Writable mode か?
-             (wtag-image-buffer-main-mode-p 'wtag-view-mode))
+             (eq major-mode 'wtag-view-mode))
         (funcall func file))
        (t
         (ding)
@@ -1900,14 +1903,15 @@ length は marker の 2バイト分を除いたセグメントの長さ.
    ((file-attributes file) "")))
 
 (defun wtag-artwork-load (file-or-object &optional name no-disp no-modified)
-  "ファイルまたはオブジェクトをカレントバッファを元に生成した名前の画像バッファに表示する.
+  "ファイルまたはオブジェクトを画像バッファに表示する.
+バッファ名はカレントバッファを元に生成した名前になる.
 既に画像バッファがあるときは読み込んでいいか通常問い合わせをするが
 `wtag-load-without-query' が NON-NIL だと確認をしない.
 NAME があればその名前そのものでバッファを作る.
 NO-DISP が NON-NIL なら load 後再表示を試みない.
 NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをクリアする."
   (interactive "fImage: ")
-  (let ((buff (or name (wtag-artwork-buffer-name wtag-base-name)))
+  (let ((buff (or name (wtag-artwork-buffer-name)))
         (image-auto-resize wtag-image-auto-resize)
         (ext (wtag-filename-extention file-or-object)))
     (unless (or (null ext) (member (downcase ext) '("jpg" "jpeg" "png")))
@@ -1917,30 +1921,38 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
             (y-or-n-p "Change artwork?"))
         (progn
           (with-current-buffer (get-buffer-create buff)
-            (setq wtag-base-name (wtag-base-name buff))
             (kill-all-local-variables)
             (set-buffer-multibyte nil)
             (erase-buffer)
             (cond
              ((null ext)
               (insert file-or-object)
-              (setq wtag-image-filename nil))
+              (wtag-set :image-filename nil))
              (t
               (insert-file-contents-literally file-or-object)
-              (setq wtag-image-filename (expand-file-name file-or-object))))
+              (wtag-set :image-filename (expand-file-name file-or-object))))
             (and no-modified (set-buffer-modified-p nil))
             (wtag-image-mode))
           (and (null (get-buffer-window buff))
-               (not no-disp) (display-buffer buff)))
-      (message nil))))
+               (not no-disp)
+               (wtag-set-window buff))))
+      (message nil)))
+
+(defun wtag-set-window (buff)
+  (if (wtag-get :old-cover)
+      (set-window-buffer nil buff)
+    (save-selected-window
+      (and (window-prev-sibling)
+           (select-window (window-prev-sibling)))
+      (set-window-buffer nil buff))))
 
 (defun wtag-recovery-artwork (cover)
   "COVER 画像をバッファに復帰する.
 紐づけされていたファイル名もクリアされる."
-  (let ((buff (wtag-artwork-buffer-name wtag-base-name)))
-    (setq wtag-old-cover nil)
+  (let ((buff (wtag-artwork-buffer-name)))
+    (wtag-set :old-cover nil)
     (with-current-buffer (get-buffer-create buff)
-      (setq wtag-image-filename nil)      
+      (wtag-set :image-filename nil)
       (kill-all-local-variables)
       (erase-buffer)
       (insert cover)
@@ -1949,18 +1961,21 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
       (wtag-image-mode))))
 
 (defun wtag-image-filename-exist ()
-  (let ((buff (wtag-artwork-buffer-name wtag-base-name)))
+  (let ((buff (wtag-artwork-buffer-name)))
     (and (get-buffer buff)
          (with-current-buffer buff
-           wtag-image-filename))))
+           (wtag-get :image-filename)))))
 
 (defun wtag-open-frame ()
   (interactive)
-  (let ((buff (wtag-artwork-buffer-name wtag-base-name)))
+  (let ((buff (wtag-artwork-buffer-name)))
     (set-buffer buff)
-    (set (make-local-variable 'wtag-frame) (make-frame '((minibuffer))))
-    (select-frame wtag-frame)
-    (switch-to-buffer buff)))
+    (wtag-set :frame
+              (make-frame `((name . ,wtag-sub-frame-name)
+                            (title . ,(wtag-get :base-name))
+                            (minibuffer))))
+    (select-frame (wtag-get :frame))
+    (set-window-buffer nil buff)))
 
 (defun wtag-reload-buffer ()
   (interactive)
@@ -1975,14 +1990,15 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
 (defun wtag-popup-artwark ()
   (interactive)
   (let ((buff  (current-buffer))
-        (abuff (wtag-artwork-buffer-name wtag-base-name)))
+        (abuff (wtag-artwork-buffer-name)))
     (and (get-buffer abuff)
+         (not (window-live-p (get-buffer-window abuff)))
          (switch-to-buffer abuff)
          (pop-to-buffer buff wtag-pop-action))))
 
 (defun wtag-fit-artwork-toggle ()
   (interactive)
-  (let ((buff (get-buffer (wtag-artwork-buffer-name wtag-base-name)))
+  (let ((buff (get-buffer (wtag-artwork-buffer-name)))
         (reset (if (not (fboundp 'image-transform-reset-to-original))
                    'image-transform-original
                  'image-transform-reset-to-original)))
@@ -1994,18 +2010,22 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
 
 (defun wtag-quit ()
   (interactive)
-  (if (and (boundp 'wtag-frame) wtag-frame)
-      (progn
-        (setq wtag-frame nil)
-        (delete-frame wtag-frame)
-        (with-current-buffer (wtag-artwork-buffer-name wtag-base-name)
-          (wtag-image-mode)))
-    (quit-window))
-  (run-hooks 'wtag-quit-hook))
+  (let ((frame (frame-parameter nil 'name)))
+    (cond
+     ((and (equal frame wtag-sub-frame-name) (wtag-get :frame))
+      (delete-frame (wtag-get :frame))
+      (wtag-set :frame nil)
+      (with-current-buffer (wtag-artwork-buffer-name)
+        (wtag-image-mode)))
+     (t
+      (and (wtag-get :window-configuration)
+           (set-window-configuration (wtag-get :window-configuration)))))
+           ;; (quit-window))))
+    (run-hooks 'wtag-quit-hook)))
 
 (defun wtag-exit ()
   (interactive)
-  (let ((abuff (wtag-artwork-buffer-name wtag-base-name))
+  (let ((abuff (wtag-artwork-buffer-name))
         (buff (current-buffer)))
     (when (y-or-n-p "Quit Wtag?")
       (delete-window)
@@ -2013,8 +2033,8 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
       (when (get-buffer abuff)
         ;; (or (one-window-p) (delete-window (get-buffer-window abuff)))
         (kill-buffer abuff)))
-    (and wtag-window-configuration
-         (set-window-configuration wtag-window-configuration))
+    (and (wtag-get :window-configuration)
+         (set-window-configuration (wtag-get :window-configuration)))
     (message nil)
     (run-hooks 'wtag-quit-hook)))
 
@@ -2055,9 +2075,8 @@ PREFIX は整数で指定があればその行に移動してから実行され�
   (interactive "e")
   (let* ((pos (if (eq (car event) 'mouse-1) (cadr event)))
          (file (and pos (wtag-get-point-filename)))
-         (ps (car (memq wtag-process (process-list))))
-         (prv (and ps (nth 1 (process-command ps)))))
-    (if (and prv (equal prv file))
+         (ps (car (memq wtag-process (process-list)))))
+    (if (and ps (member file (process-command ps)))
         (wtag-kill-process)
       (wtag--music-play))
     (beginning-of-line)
@@ -2084,7 +2103,7 @@ PREFIX は整数で指定があればその行に移動してから実行され�
 
 (defun wtag-kill-process ()
   (interactive)
-  (and (get-process wtag-process) (kill-process wtag-process))
+  (and (get-process wtag-process) (delete-process wtag-process))
   (setq wtag-process nil))
 
 (defun wtag-goto-line (prefix)
@@ -2241,39 +2260,30 @@ point が 1行目ならすべてマークする."
 (defun wtag-init-buffer (&optional dir buff)
   "DIR 内の音楽ファイルタグを BUFF に展開し `wtag-view-mode' にする.
 カレントバッファが BUFF に変更されたままになる."
-  (let* ((buff (or buff (current-buffer)))
-         (dir  (or dir (wtag-buffer-directory buff)))
+  (let* ((buff  (or buff (current-buffer)))
+         (dir   (or dir (wtag-buffer-directory buff)))
+         (abuff (wtag-artwork-buffer-name))
          ;; (mf-mp3-vbr (or wtag-vbr wtag-init-prefix))
-         abuff result obj)
+         result obj)
+    (when (and (wtag-get :old-cover) (get-buffer abuff))
+      (delete-window (get-buffer-window abuff)))
     (set-buffer buff)
-    (setq abuff (wtag-artwork-buffer-name wtag-base-name))
-    (when (get-buffer abuff)
-      (delete-window (get-buffer-window abuff))
-      (kill-buffer abuff))
-    (setq buffer-read-only  nil
-          inhibit-read-only t)
+    (setq buffer-read-only nil inhibit-read-only t)
     (erase-buffer)
     (setq result (wtag-directory-files-list dir))
     (wtag-insert-index result dir)
-    (setq wtag-base-name (wtag-get-common-property-value 'old-album))
-    (rename-buffer (wtag-index-buffer-name wtag-base-name) 'unique)
+    (wtag-set :base-name (wtag-get-common-property-value 'old-album))
+    (rename-buffer (wtag-index-buffer-name (wtag-get :base-name)) 'unique)
     (set-buffer-modified-p nil)
     (goto-char (point-min))
     (setq wtag-artist-name-truncate-mode wtag-artist-name-truncate-mode-save)
     (wtag-view-mode)
-    (and (setq obj (wtag-alias-value 'cover (car result)))
-         (if (equal obj wtag-not-available-string) (setq obj nil) t)
-         (wtag-artwork-load
-          obj (wtag-artwork-buffer-name wtag-base-name) 'no-disp t))
-    (and obj (switch-to-buffer (wtag-artwork-buffer-name wtag-base-name)))
-    (pop-to-buffer buff wtag-pop-action)))
+    (setq obj (wtag-alias-value 'cover (car result)))
+    (unless (string-equal obj wtag-not-available-string)
+      (wtag-artwork-load obj nil nil t))
+    (or (get-buffer-window buff)
+        (pop-to-buffer buff wtag-pop-action 'norecord))))
 
-(defun wtag-mp3-get-id (file)
-  "mp3 FILE の ID 4バイトを返す."
-  (with-temp-buffer
-    (insert-file-contents-literally file nil 0 32)
-    (set-buffer-multibyte nil)
-    (buffer-substring (point-min) (+ (point-min) 4))))
 
 ;; COPY part.
 (defun wtag-music-file-copy (src dst &optional srt)
@@ -2283,7 +2293,7 @@ SRT が non-nil なら sort tag をアペンドする."
   (let* ((pty (if (bufferp dst) (wtag-get-common-properties dst)))
          (dst (wtag-buffer-directory dst))
          args)
-    (setq wtag-music-copy-dst-buff dst) ;; obsolete.
+    (wtag-set :music-copy-dst-buff dst) ;; obsolete.
     (if (null pty)
         (copy-file src dst 0)
       (setq args (wtag-music-file-copy-pty-get pty (string-match "\\.oma\\'" src))
@@ -2381,11 +2391,14 @@ SRT が non-nil なら sort tag をアペンドする."
             (y-or-n-p "Cancel?"))
     (save-excursion
       (buffer-disable-undo)
-      (and (boundp 'wtag-old-cover)
-           wtag-old-cover (wtag-recovery-artwork wtag-old-cover))
+      ;; (and (boundp 'wtag-old-cover)
+      ;;  wtag-old-cover (wtag-recovery-artwork wtag-old-cover))
+      (if (wtag-get :old-cover)
+          (wtag-recovery-artwork (wtag-get :old-cover))
+        (kill-buffer (wtag-artwork-buffer-name)))
       (setq inhibit-read-only t)
       (erase-buffer)
-      (insert wtag-old-content)
+      (insert (wtag-get :old-content))
       (set-buffer-modified-p nil)
       (setq buffer-read-only  t
             inhibit-read-only nil)
@@ -2595,15 +2608,15 @@ winカカシが漢字ASCII混合の場合、
 (define-derived-mode wtag-writable-mode text-mode "Editable Tag"
   "Music file writable tag mode.
 \\{wtag-writable-mode-map}"
-  (set (make-local-variable 'wtag-old-content) (buffer-string))
+  (wtag-set :old-content (buffer-string))
   (let ((inhibit-read-only t))
     (remove-text-properties (point-min) (point-max) '(face nil))
     (wtag-read-only-visualiz))
-  (and (get-buffer (wtag-artwork-buffer-name wtag-base-name))
-       (set (make-local-variable 'wtag-old-cover)
-            (with-current-buffer (wtag-artwork-buffer-name wtag-base-name)
-              (buffer-string))))
-  (set (make-local-variable 'wtag-old-point) (point))
+  (and (get-buffer (wtag-artwork-buffer-name))
+       (wtag-set :old-cover
+                 (with-current-buffer (wtag-artwork-buffer-name)
+                   (buffer-string))))
+  (wtag-set :old-point (point))
   (set (make-local-variable 'query-replace-skip-read-only) t)
   (setq-local truncate-lines wtag-truncate-lines))
 
@@ -2648,8 +2661,9 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "\C-c\C-c"        'wtag-kill-process)
     (define-key map "\C-c="           'wtag-stat-view)
     (define-key map "."               'wtag-artist-name-truncate-mode)
-    (define-key map "q"               'quit-window)
+    (define-key map "q"               'wtag-quit)
     (define-key map "Q"               'wtag-exit)
+    (define-key map "\C-c\C-v"        'wtag-version)
     (define-key map [drag-n-drop]     'wtag-mouse-load)
     (define-key map [mouse-1]         'wtag-music-play-mouse)
     (define-key map "\C-x\C-q"        'wtag-writable-tag)
@@ -2685,7 +2699,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key menu-map [dashes4] '("--"))
     (define-key menu-map [wtag-writable-tag]
                 '(menu-item "Writable Tag Mode" wtag-writable-tag
-                            :enable (null wtag-write-notready)))
+                            :enable (null (wtag-get :write-notready))))
     (define-key menu-map [wtag-exit] '("Quit & Kill Buffer" . wtag-exit))
     (define-key menu-map [quit-window] '("Quit" . quit-window))
     map)
@@ -2693,8 +2707,8 @@ winカカシが漢字ASCII混合の場合、
 
 (defvar wtag-view-mode-line
   '(:propertize
-    ("<" (:eval (mapconcat #'identity wtag-mode-name " ")) "> ")
-     face wtag-mode-name))
+    ("<" (:eval (mapconcat #'identity (wtag-get :mode-name) " ")) "> ")
+     face (wtag-get :mode-name)))
 
 (defvar wtag-image-mode-line
   '(:propertize
@@ -2707,9 +2721,9 @@ winカカシが漢字ASCII混合の場合、
   "Music file tag view mode.
 \\{wtag-view-mode-map}"
   (setq buffer-read-only  t
-        inhibit-read-only nil)
+        inhibit-read-only nil
+        default-directory (wtag-get-common-property-value 'directory))
   (setq-local truncate-lines wtag-truncate-lines)
-  (setq-local default-directory (wtag-get-common-property-value 'directory))
   (setq-local wtag-beginning-line-of-track 3)
   (wtag-mode-line-set wtag-view-mode-line)
   (and wtag-artist-name-truncate-mode (wtag-artist-name-truncate-mode)))
