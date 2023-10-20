@@ -1,5 +1,49 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Oct 21 08:42:19 2023
+** mf-lib-mp3.el: 2.26
+*** fix: `mf-oma-tag-read' 読み直し時の量を増やす.
+    極端に短かい曲のとき `mf-mp3-lame-abr' で読み込み失敗するので
+    その読み込み分 21バイトを加算.
+
+*** fix: `mf-oma-tags-analyze'
+    Artwork tag の file name がマルチバイトだと
+    その前にある mime を誤読して(マルチバイトとして読んでしまっていた)
+    うまく load できなかった bug fix.
+
+** mf-tag-write.el:: 1.79
+*** new function `mf-tag-read-alias-plist': mf-tag-read-alias と同形式を plist にしたもの.
+     (alias (tag . data) ...) を繰り返す.
+
+*** change: `mf-tag-write' 引数名の簡素化.
+
+** wtag.el: 1.301
+*** fix: `wtag-kill-process' kill-process -> delete-process.
+    1曲再生したあとそのままだと wtag-process がクリアされず
+    その状態でタグ書換起動で同関数を実行したとき
+    実プロセスがなく kill-process だとエラーを起こしていた.
+
+*** バイトコンパイル警告を黙らせる微調整.
+
+*** add: 変数 `wtag-startup-hook'.
+
+*** fix: ジャケなしデータに対応.
+
+*** add: `wtag-view-mode-map' C-c C-v で `wtag-version'.
+
+*** ジャケ画像を artwork frame にも D&D できるようになった.
+
+*** change: `wtag-quit' window-configuration で戻すようにする.
+    wtag-view-mode-map の `q' もこれで終わるようにする.
+    エディット在りで終了した場合 再び idx buffer を経由してしまうのを(帰還ルートが変わってしまう)
+    どうしても直せなかったことが理由.
+
+*** fix: `wtag-music-play-mouse' アプリによって終了に失敗するバグを修正.
+
+*** fix: `wtag-popup-artwark' を連続実行したとき画面分割され続けてしまう動作の抑止.
+
+*** バッファ・ローカル変数をひとつにまとめ、プロパティリストで管理.
+
 * Sat Sep 23 08:12:46 2023
 ** mf-tag-write.el: 1.78
 *** change: `mf-tag-write' 引数名の簡素化.
