@@ -1,5 +1,35 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Nov 18 09:34:57 2023
+** wtag.el: 1.307
+*** autoload に対応
+Emacs 29.x.x からファイルのロードが異常に遅くなったので
+init.el からできるだけ require を排除し `autoload' でイけるよう調整 (Windows版の問題?)
+
+今まで init.el に (require 'wtag) と書いていた箇所を以下のようにできます
+
+: (autoload 'wtag "wtag" nil t)
+
+*** fix: アートワークなしデータのエディットをキャンセルするとエラーになってしまうのを修正.
+*** fix: リロード時カーソルが index buffer に戻らない場合があるバグ修正.
+*** ライタブル時の行移動関係
+`wtag-transpose-lines' (C-x C-t) を `repeat-mode' に対応させ、
+連続実行する場合 2nd ストロークキーのみで
+C-x C-t C-t C-t ... などとイケるようにしたんですが
+使い勝手がイマイチだったので
+
+`wtag-transpose-lines2' を作って (C-x C-<up>, C-x C-<down>) にバインド.
+実行後カーソルが移動した行に留まるので
+C-x C-<up> C-<up> C-<up> .... などと連続実行すると
+その行(トラック)をどんどん上下に移動させていけます.
+トラック番号は自動的に書き換えられます.
+
+カスタム変数 `wtag-transpose-lines-repeat' が non-nil で有効になりますが、
+デフォルト t で有効なので切りたい場合この変数に nil をセットしてください.
+
+元々の `wtag-transpose-lines' は Emacs デフォである 'transpose-lines' そのものなので
+今のところ C-x C-t に残してあります.
+
 * Sat Oct 21 08:42:19 2023
 ** mf-lib-mp3.el: 2.26
 *** fix: `mf-oma-tag-read' 読み直し時の量を増やす.

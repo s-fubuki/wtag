@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.301 $$Name:  $
+;; Version: @(#)$Revision: 1.307 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -23,7 +23,7 @@
 
 ;;; Installation:
 
-;; (require 'wtag)
+;; (autoload 'wtag "wtag" nil t)
 
 ;;; Change Log:
 
@@ -37,6 +37,7 @@
 (require 'rx)
 ;; (require 'make-atrac-index)
 (require 'cursor-sensor)
+(require 'keymap)
 
 (defgroup wtag nil
   "Writable music file tag."
@@ -60,7 +61,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 1.301 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.307 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -314,6 +315,13 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
 
 (make-obsolete-variable 'wtag-flush-tag-hook 'wtag-flush-hook "1.191" 'set)
 (defvar wtag-flush-tag-hook nil "ノーマル・フック")
+
+(defcustom wtag-transpose-lines-repeat t
+  "non nil なら `wtag-transpose-lines' で `repeat-mode' が有効化.
+通常連続実行する場合 C-x C-t C-x C-t ... などとする処が
+C-x C-t t t t... で済む."
+  :type  'boolean
+  :group 'wtag)
 
 (defcustom wtag-startup-hook nil
   "wtag を実行後に実行するノーマルフック."
@@ -1007,7 +1015,7 @@ list が pair ならフラットなリストにしてから処理する.
         (setq buffer-read-only nil)
         (wtag-protect)
         (wtag-writable-mode)
-        (when wtag-cursor-intangible (cursor-intangible-mode 1))
+        (and wtag-cursor-intangible (cursor-intangible-mode 1))
         (buffer-enable-undo)))))
 
 (defun wtag-read-only-visualiz ()
@@ -1573,14 +1581,50 @@ ARG 等は `wtag-beginning-of-line' を参照."
   (kill-region (point) (next-single-property-change (point) 'read-only)))
 
 (defun wtag-transpose-lines (&optional arg)
-  "カーソル行と上の行を入れ替えリナンバーもする."
+  "ポイント行と上の行を入れ替えリナンバーする.
+prefix ARG が 0 ならマーク行との入れ替えになる."
   (interactive "*p")
   (let ((inhibit-read-only t)
         (line (count-lines (point-min) (if (eobp) (point) (1+ (point))))))
     (if (or (< line 4) (eobp))
-        (error "Out of range")
+        (progn (and repeat-mode (repeat-mode -1))
+               (error "Out of range"))
+      (and wtag-transpose-lines-repeat
+           (let ((inhibit-message t)) (repeat-mode 1)))
       (transpose-lines arg)
       (wtag-renumber-tracks))))
+
+(defun wtag-transpose-lines2 (&optional arg down)
+  "ポイント行と上の行を入れ替えリナンバーする.
+`wtag-transpose-lines' と違い
+入れ替えられた行にポイントが移動し
+結果的にポイントが移動した行に留まるような動作になる.
+よって連続実行するとそのまま次々と行を移動することができる*.
+DOWN が non-nil なら下の行が対象、つまり下に移動していく.
+wtag-transpose-lines のコードを流用したが
+ARG の利用は想定していない.
+* `repeat-mode' に対応しているので 2nd ストロークのキーのみでリピートできる."
+  (interactive "*p")
+  (let ((inhibit-read-only t)
+        (line (count-lines (point-min) (if (eobp) (point) (1+ (point)))))
+        (maxline (count-lines (point-min) (point-max)))
+        (col (current-column)))
+    (if (or (eobp) (< line 3) (and (null down) (< line 4))
+            (and down (>= line maxline)))
+        (progn (and repeat-mode (repeat-mode -1))
+               (error "Out of range"))
+      (save-cursor-intangible-mode
+       (and wtag-transpose-lines-repeat
+            (let ((inhibit-message t)) (repeat-mode 1)))
+       (and down (progn (forward-line) (move-to-column col)))
+       (transpose-lines arg)
+       (wtag-renumber-tracks)))
+    (forward-line (if down -1 -2))
+    (move-to-column col)))
+
+(defun wtag-transpose-lines2-down (&optional arg)
+  (interactive "*p")
+  (wtag-transpose-lines2 arg 'down))
 
 (defun wtag-sort-albums ()
   (cddr (assq 'album (get-text-property (point) 'stat))))
@@ -1983,7 +2027,7 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
          (dir
           (wtag-alias-value
            'directory (wtag-get-common-properties buff))))
-    (and (one-window-p) (split-window))
+    ;; (and (one-window-p) (split-window))
     (wtag-init-buffer dir buff)
     (message nil)))
 
@@ -2395,7 +2439,8 @@ SRT が non-nil なら sort tag をアペンドする."
       ;;  wtag-old-cover (wtag-recovery-artwork wtag-old-cover))
       (if (wtag-get :old-cover)
           (wtag-recovery-artwork (wtag-get :old-cover))
-        (kill-buffer (wtag-artwork-buffer-name)))
+        (and (get-buffer (wtag-artwork-buffer-name))
+             (kill-buffer (wtag-artwork-buffer-name))))
       (setq inhibit-read-only t)
       (erase-buffer)
       (insert (wtag-get :old-content))
@@ -2561,6 +2606,8 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "\C-o"          'undefined)
     (define-key map "\M-^"          'undefined)
     (define-key map "\C-x\C-t"      'wtag-transpose-lines)
+    (define-key map [?\C-x C-up]    'wtag-transpose-lines2)
+    (define-key map [?\C-x C-down]  'wtag-transpose-lines2-down)
     (define-key map "\C-c\C-c"      'wtag-flush-tag-ask)
     (define-key map "\C-c\C-l"      'wtag-truncate-lines)
     (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
@@ -2592,6 +2639,8 @@ winカカシが漢字ASCII混合の場合、
     (define-key menu-map [dashes2] '("--"))
     (define-key menu-map [wtag-all-title-erase]
       '("All Title Erase" . wtag-all-title-erase))
+    (define-key menu-map [wtag-transpose-lines2]
+      '("Transpose Title Line" . wtag-transpose-lines2))
     (define-key menu-map [wtag-sort-tracks]
       '("Album Name Sort" . wtag-sort-tracks))
     (define-key menu-map [wtag-track-number-adjust]
@@ -2604,6 +2653,15 @@ winカカシが漢字ASCII混合の場合、
       '(menu-item "Cancel" wtag-writable-tag-cancel :key-sequence "\C-x\C-q"))
     map)
   "`wtag-writable-mode' 用キーマップ.")
+
+(defvar-keymap wtag-writable-mode-repeat-map
+  :repeat t
+  "C-t"      #'wtag-transpose-lines
+  "t"        #'wtag-transpose-lines
+  "<up>"     #'wtag-transpose-lines2
+  "C-<up>"   #'wtag-transpose-lines2
+  "<down>"   #'wtag-transpose-lines2-down
+  "C-<down>" #'wtag-transpose-lines2-down)
 
 (define-derived-mode wtag-writable-mode text-mode "Editable Tag"
   "Music file writable tag mode.
@@ -2708,7 +2766,7 @@ winカカシが漢字ASCII混合の場合、
 (defvar wtag-view-mode-line
   '(:propertize
     ("<" (:eval (mapconcat #'identity (wtag-get :mode-name) " ")) "> ")
-     face (wtag-get :mode-name)))
+    face wtag-mode-name))
 
 (defvar wtag-image-mode-line
   '(:propertize
