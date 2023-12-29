@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.307 $$Name:  $
+;; Version: @(#)$Revision: 1.311 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -61,7 +61,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 1.307 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 1.311 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -321,6 +321,18 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
 通常連続実行する場合 C-x C-t C-x C-t ... などとする処が
 C-x C-t t t t... で済む."
   :type  'boolean
+  :group 'wtag)
+
+(defcustom  wtag-regular-file-name-re "[.?:*/\\~\"'<>|]"
+  "Regular file name regexp."
+  :type  '(choice regexp (const nil))
+  :group 'wtag)
+
+(defcustom wtag-regular-file-name 32
+  "Default regular file name or length."
+  :type  '(choice (integer :tag "Album name length") ; この長さに切りつめたアルバム名
+                  (string :tag "Fixed name")         ; 固定名
+                  (const  :tag "Album name" nil))    ; アルバム名そのまんま
   :group 'wtag)
 
 (defcustom wtag-startup-hook nil
@@ -912,11 +924,13 @@ list が pair ならフラットなリストにしてから処理する.
       (make-string (+ max-width-track 2) 32)
       'old-genre (wtag-alias-value 'genre (car index)))
      (propertize (wtag-alias-value 'genre (car index)) 'genre t
-                 'mouse-face 'highlight 'face 'wtag-genre-name)
+                 'mouse-face 'highlight 'face 'wtag-genre-name
+                 'help-echo "genre")
      (propertize " " 'old-year (wtag-alias-value 'year (car index)))
      (propertize (wtag-alias-value 'year (car index))
                  'year t 'mouse-face 'highlight
-                 'face 'wtag-release-year)
+                 'face 'wtag-release-year
+                 'help-echo "year")
      (propertize " " 'old-comment old-comment)
      (propertize comm 'comment t 'mouse-face 'highlight 'face 'wtag-comment
                  'help-echo old-comment)
@@ -1157,11 +1171,15 @@ BEG と END のデフォルトはポイントの行頭と行末.
   "NAME が null string なら nil として SYM に cons."
   (cons sym (if (string-equal name "") nil name)))
 
-(defvar wtag-regular-file-name "[.?:*/\\~\"'<>|]")
-
 (defun wtag-regular-file-name (str)
-  (let ((reg wtag-regular-file-name))
-    (replace-regexp-in-string reg "_" str)))
+  (let ((re wtag-regular-file-name-re)
+        (max wtag-regular-file-name))
+    (cond
+     ((and (numberp max) (< max (length str)))
+      (setq str (substring str 0 max)))
+     ((stringp max)
+      (setq str max)))
+    (and re (replace-regexp-in-string re "_" str))))
 
 (defun wtag-safe-keep-name (file)
   "FILE を元にして重複しない番号バックアップ名にして返す.
