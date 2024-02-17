@@ -1,9 +1,9 @@
 ;;; mf-lib-var-20200418.el
 
-;; Copyright (C) 2020, 2021, 2022, 2023 fubuki
+;; Copyright (C) 2020, 2021, 2022, 2023, 2024 fubuki
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.31 $$Name:  $
+;; Version: $Revision: 1.34 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.31 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.34 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -371,9 +371,17 @@ once ならバックアップがあればバックアップしない."
   "整数秒 SEC を時間リスト \(h m s) に変換."
   (mapcar #'floor (list (/ sec 3600) (/ (mod sec 3600) 60) (mod sec 60))))
 
+(defun mf-indirect-car (elt)
+  "ELT がアトムになるまで car を掘る.
+擬似 tag `mf-time-dummy' の、時間(nth 0)やビットレート(nth 1)が、
+リストで括られている場合でも、意識せず値を得るためのクッション関数."
+  (if (consp elt)
+      (mf-indirect-car (car elt))
+    elt))
+
 (defcustom mf-read-size
   '(("\\.oma\\'" . 30) ("\\.\\(m4a\\|wma\\)\\'" . 10) ("\\.mp3\\'" . 40)
-    ("\\.mp4\\'" . 50) ("\\.\\(flac\\|wav\\)\\'" . 3))
+    ("\\.mp4\\'" . 30) ("\\.\\(flac\\|wav\\)\\'" . 3))
   "ファイルサイズに対する読み込みの割合."
   :type  '(repeat (cons regexp integer))
   :group 'music-file-get-title)
@@ -383,6 +391,5 @@ once ならバックアップがあればバックアップしない."
         (len (file-attribute-size (file-attributes file))))
     (if per (round (* (/ len 100.0) per)) len)))
       
-
 (provide 'mf-lib-var)
 ;;; mf-lib-var.el ends here

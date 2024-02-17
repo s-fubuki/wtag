@@ -1,5 +1,51 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Feb 17 10:14:56 2024
+** wtag.el: 2.1
+*** new: One Directory に多枚組ディスクすべて入れておくような構成に対応.
+共用していたディスク番号をトラック枚に個別に扱えるようにした.
+画面が少し変わったのでメジャーバージョンを 2 とする.
+
+*** chnage: `P' でのトラック指定が ディスク番号とトラック番号を
+くっつけて指定するように変更されました.
+例えば Disc 2 / Track 5 ならば `25P' となります
+そのディレクトリに1枚のディスクしかない場合は、従来と同じでディスク番号は不要です.
+操作を統一したい場合は `wtag-play-single-disk' を nil にしてください.
+
+*** fix: oma file の TLEN タグなしのタイムのとき wtag-format でエラーになるエンバグを修正.
+
+*** add: face - `wtag-disk-number-other' トラック 1 以外のディスク番号フェイス.
+
+*** fix: write - `wtag-forward-jump-points' (デフォルトバインド `M-{', `M-}')
+いつのまにか動いていなかったことに気づきリライト.
+アー名や各ディスク頭のトラックにも立ち寄るようにする.
+
+*** new: view - `wtag-forward-disk-points', `wtag-backward-disk-points'. (`[', `]')
+各ディスクのトラック1に巡回訪問.
+
+*** new: view - 各ディスク番号1番目のトラックの help-echo にそのディスクの総時間を表示.
+*** new: カスタム変数 `wtag-disk-name'. 上記に関する文字列.
+
+*** chnage: `wtag-artwork-buffer-suffix' を "*a", `wtag-index-buffer-suffix' "*i" に短縮.
+
+*** new: view - Disc Area Fold 機能(いわゆる折り畳み).
+`wtag-invisible-show', `wtag-invisible-hide', `wtag-invisible-toggle'
+とこれらの `-all' 版. `s' `h' `tab' `backtab' `S' `H' 等にバインド. See menu.
+
+*** new: Disc fold 用 カスタム変数 `wtag-ellipsis', フェイス `wtag-ellipsis'.
+
+*** new: view - `wtag-view-mode-line' に help-echo `wtag-music-title'.
+モードラインのコーデック表示の上にマウスポインタを合わせると
+再生中の曲名がバルーン表示される.
+同じものが右端の余白にも出るが、見切れることも多いための措置.
+
+*** change: m4a(mp4) 読み込み時に
+mf-lib-mp4.el の `mf-mp4-reload-maegin' を wtag 側ローカルで 0.5 にセットし
+数十秒など演奏時間が極端に短かい小さな mp4 ファイルでも時間情報取得に失敗しないようにする.
+
+** mf-lib-var: 1.34
+*** chnage: `mf-read-size' 調整.
+
 * Sat Dec 30 08:21:26 2023
 ** wtag.el: 1.311
 *** カスタム変数 `wtag-regular-file-name'
