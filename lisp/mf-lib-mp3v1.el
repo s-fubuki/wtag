@@ -1,8 +1,8 @@
 ;;; mf-lib-mp3v1.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2020, 2022, 2023 fubuki
+;; Copyright (C) 2020-2024 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 1.23 $$Nmae$
+;; Version: $Revision: 1.27 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -20,11 +20,27 @@
 ;;; Commentary:
 
 ;; This is the standard oma, mp3(ID3v1.0, ID3v1.1) read/write module for mf-tag-write.el.
-;; Different from other functions. Read ID3.[01]. Export with ID3.3.
+;; Different from other functions. Read ID3 v1.0 or 1.1. Export with v2.3.
 
 ;;; Installation:
 
 ;; (require 'mf-lib-mp3v1)
+
+;; レクワイアすると `mf-tag-read' 等で、
+;; 拡張子 ".mp3" のファイルが読み込まれたとき発動します.
+;; ID3 version 2 のタグが在ればそちらが読まれ
+;; 無ければ Version 1 のタグが読まれます.
+;; `mf-tag-write' 等で書き戻すときは version 2.3 で書き戻します.
+
+;; Version 1 と v2 のタグは併存できるので
+;; 双方在る場合(もしくは v1 が無いときは) v2 の方が読まれますが
+;; カスタム変数 `mf-mp3-id31-1st' を non-nil にすると
+;; version 2 が在っても v1 のタグが読まれます.
+;; v1 TAG はファイル末尾なので必ずファイルを総て読み込むので遅くなります.
+
+;; (let ((mf-mp3-id31-1st t))
+;;   (mf-tag-read-plist "chinacatrider.mp3" nil t)))
+;; ;; --> (*time (813 320 44100 stereo (1 . 3)) *type "ID3" title "China Cat Rider" artist "Grateful Dead" album "" year "" comment "" track "B" genre "Blues")
 
 ;;; Bug:
 
@@ -34,7 +50,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3v1-version "$Revision: 1.23 $$Nmae$")
+(defconst mf-lib-mp3v1-version "$Revision: 1.27 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -102,7 +118,7 @@ Entity is alias for `ID3v2.3'."
 
 (unless (boundp 'mf-function-list)
   (setq mf-function-list nil))
-(add-to-list 'mf-function-list  mf-mp31-function-list)
+(add-to-list 'mf-function-list 'mf-mp31-function-list)
 
 ;; 拡張子だけでは MP3 の種類まで判別できないので ".mp3" なら中身も見る為の仕掛.
 (add-hook 'mf-func-get-hook #'mf-id31-file-set)
@@ -111,20 +127,21 @@ Entity is alias for `ID3v2.3'."
   (defun mf-id31-file-set ()
     (setq file (mf-id31-add-suffix file))))
 
+(defcustom mf-mp3-id31-1st nil
+  "non-nil なら ID31 を優先."
+  :type  'boolean
+  :group 'wtag)
+
 (defun mf-id31-add-suffix (file)
-  "FILE が mp3 ID3 v1 (or v1.1) なら suffix \".1\" を FILE 末尾に付け
-さもなくばそのまま返す."
-  (if (and (file-exists-p file) 
-           (string-match "\\.mp3\\'" file))
-      (cond
-       ;; ID3[234] と ID31 は共存できるので ID3[234] があればそちら優先.
-       ((mf-id32p file)
-        file)
-       ((mf-id31p file)
-        (concat file ".1"))
-       (t
-        file))
-    file))
+  "FILE が mp3 ID3 v1 (or v1.1) なら \".1\" を FILE 末尾に付けて戻す.
+MF-ID31-1ST が non-nil なら ID31 を優先する."
+  (let ((id32p #'(lambda (file) (and (mf-id32p file) file)))
+        (id31p #'(lambda (file) (and (mf-id31p file) (concat file ".1")))))
+    (if (and (file-exists-p file) (string-match "\\.mp3\\'" file))
+        (if mf-mp3-id31-1st
+            (or (funcall id31p file) (funcall id32p file))
+          (or (funcall id32p file) (funcall id31p file)))
+      file)))
 
 (defun mf-id31p (file)
   "FILE が ID3v1 なら 128 bytes のタグブロックの塊を返しさもなくば nil を返す."
@@ -160,18 +177,25 @@ BUFFER が省略されればカレントバッファになる."
 (defun id31-get-tags-filter (lst)
   "LST 各要素の末尾の余白を削除、数値を文字列化等整正する."
   (reverse
-   (mapcar #'(lambda (cons)
+   (mapcar #'(lambda (elt)
                (cons
-                (car cons)
-                (if (member (car cons) '(track genre zero-byte))
-                    (string (+ (aref (cdr cons) 0) ?0))
-                  (replace-regexp-in-string
-                   "[ \0]*\\'" ""
-                   (if (and (assq 'track lst) (eq (car cons) 'comment))
-                       (substring (cdr cons) 0 28)
-                     (cdr cons))))))
+                (car elt)
+                (cond
+                 ((memq (car elt) '(track zero-byte))
+                  (string (+ (aref (cdr elt) 0) ?0)))
+                 ((eq (car elt) 'genre)
+                  (cdr (assq (string-to-number (cdr elt)) mf-tag-tco)))
+                 (t
+                  (let ((str
+                         (replace-regexp-in-string
+                          "[ \0]*\\'" ""
+                          (if (and (assq 'track lst) (eq (car elt) 'comment))
+                              (substring (cdr elt) 0 28)
+                            (cdr elt)))))
+                    (decode-coding-string
+                     str (detect-coding-string str 'car)))))))
            lst)))
-  
+
 (defun id31-get-tags (beg end &optional ver)
   "ID31 Footer block をリスト分解して戻す."
   (let* ((ver (if (zerop (char-after (- end 3)))
@@ -326,13 +350,18 @@ FILE に該当個所が無いとエラーになる."
   "for `mf-tag-write'."
   (let ((mf-current-mode "ID3/3")
         (mf-current-alias mf-id31-alias)
-        size tags sec)
+        size tags sec beg)
     (setq size (cadr (insert-file-contents-literally file)))
     (set-buffer-multibyte nil)
+    (setq beg (if (looking-at "ID3[\2\3\4]")
+                  (prog1
+                      (setq beg (+ (mf-buffer-read-long-word-unpack7 7) 11))
+                    (setq size (- size (+ beg 10))))
+                1))
     (setq tags (mf-list-convert
                 (id31-get-tags (- (point-max) 128) (point-max))
                 (list (cons mf-type-dummy mf-id31-dummy-mode)))
-          sec  (mf-mp3-times file 1 size tags))
+          sec  (mf-mp3-times file beg size tags))
     (append `((:tag ,mf-type-dummy :data ,mf-id31-dummy-mode)
               (:tag ,mf-time-dummy :data ,sec))
             tags)))

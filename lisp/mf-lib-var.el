@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020, 2021, 2022, 2023, 2024 fubuki
 
 ;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.34 $$Name:  $
+;; Version: $Revision: 1.36 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.34 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.36 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -74,6 +74,9 @@
 (defconst mf-ilst-data-type
   '((0 . binary) (1 . string) (13 . jpeg) (14 . png) (21 . number)) "ilst data type.")
 
+(defun mf-function-list ()
+  (mapcar #'(lambda (f) (if (symbolp f) (eval f) f)) mf-function-list))
+
 (defun mf-re-suffix (lst)
   "拡張子シンボルのリスト LST にマッチする正規表現文字列を生成."
   (let ((seq (mapcar #'symbol-name lst)))
@@ -84,19 +87,6 @@
 ;;   (concat "\\.\\("
 ;;           (mapconcat #'concat (mapcar #'symbol-name (eval lst)) "\\|")
 ;;           "\\)\\'"))
-
-(defun mf-write-suffixs (&optional suffixs)
-  "SUFFIXS を書き込み関数のあるものだけにして戻す.
-SUFFIXS を省略すると `mf-lib-suffix-all' の値を使う."
-  (let ((suffixs (or suffixs mf-lib-suffix-all)))
-    (delq nil
-          (mapcar
-           #'(lambda (ext)
-               (and
-                (mf-wfunc
-                 (mf-func-get (concat "." (symbol-name ext)) mf-function-list))
-                ext))
-           suffixs))))
 
 (defun mf-first   (a) (nth 0 a))
 (defun mf-second  (a) (nth 1 a))
@@ -377,7 +367,7 @@ once ならバックアップがあればバックアップしない."
 リストで括られている場合でも、意識せず値を得るためのクッション関数."
   (if (consp elt)
       (mf-indirect-car (car elt))
-    elt))
+    (round elt)))
 
 (defcustom mf-read-size
   '(("\\.oma\\'" . 30) ("\\.\\(m4a\\|wma\\)\\'" . 10) ("\\.mp3\\'" . 40)

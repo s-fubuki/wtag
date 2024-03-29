@@ -1,40 +1,138 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Mar 30 07:57:31 2024
+** mf-lib-mp3.el: 2.38
+*** fix: 部分読み込みのときの読み直し時の量を増やす
+極端に短かい曲のとき `mf-mp3-lame-abr' で読み込み失敗するので
+その読み込み分 21バイトを加算.
+
+*** change or add: mpeg version 2 & 2.5 に再び対応
+`mf-mp3-mpeg-frame-p' の戻りリストの最後にコンスセル (MPEG-VERSION . LAYER) を追加.
+これは擬似タグ " *time" で得られるデータの最後にもつく.
+  ->  (TIME BITRATE SAMPLING-RATE STEREO-MODE NIL NIL MPEG-VERSION).
+ - lame 等でエンコードされたデータなら BITRATE はリストになり圧縮時の情報等も判る.
+ - MPEG-VERSION は先に書いた通りのドットペアのコンスセル.
+ - 前に挟まるふたつの NIL は lib-mp4, lib-flac 互換のため.
+
+*** fix: `mf-oma-tags-analyze' SJIS タグへの対応修正
+カスタム変数 `mf-mp3-sjis-force' が non-ni なら SJIS で格納された規格違反のタグに対応.
+デフォルトは t で SJIS に対応.
+この変数に face を指定すると wtag で SJIS のときその face になる.
+
+*** add: ID3 Version2.4 "ID3\4" の簡易的読み込み対応
+`ID3\3' として書き戻す機能も用意したが安全のためデフォルトでは利用できない.
+これで書き戻すと TAG テーブルは v2.3 `ID3\3' のものを流用し `ID3\3' のヘッダになる.
+`ID3\4' で拡張されたタグを操作すると書き戻しで失われる.
+これらの副作用を留意した上書き戻す機能を利用する簡単な方法は
+init.el 等に以下のように書いておく.
+
+: (add-hook 'mf-func-get-hook #'mf-mp3-id3-24-mode)
+
+*** change: TLEN tag 無き .oma file の時間計算がやや正しくなる
+公式が判った訳ではなく力技でデータを取った結果なので心許無いことには変わりは無し.
+対応した(つもり)なのは 352 256 132 128 96 64 48 の各ビットレート.
+
+** mf-lib-mp3v1.el: 1.27
+*** new: カスタム変数 `mf-mp3-id31-1st'
+non-nil なら ID3 v2 があっても ID3 v1 を優先する.
+
+*** fix: ジャンルが番号文字列(数値ではなく)になっていたので、対応名文字列に変換する
+
+*** add: 極たまにしか出番が無く忘れているので冒頭に実装法や発動ルール作用等を書き留める
+
+*** add: SJIS だった場合も考慮
+
+** mf-lib-mp4.el: 2.6
+*** fix: スペルミス訂正 `mf-mp4-reload-maegin' -> `mf-mp4-reload-margin'
+
+** mf-lib-var.el: 1.36
+*** add: `mf-function-list' 定義がシンボルなら eval する
+
+*** change: `mf-read-size' mp4 50% -> 30% に戻す
+wtag 側ローカルで `mf-mp4-reload-maegin' をつけたすようにしたため.
+
+*** fix: `mf-indirect-car' 整数に丸めこんで戻す
+ogg で時間表示が壊れていた.
+
+** mf-tag-write.el: 1.87
+*** add: new function `mf-tag-read-alias-plist'
+`mf-tag-read-alias' と同形式を plist にしたもの.
+(alias (tag . data) ...) を繰り返す形式.
+
+*** new: `mf-tag-write' 5つ目の引数にノーエラーフラグを追加
+例えば flac にある `DATE' tag は mp3 には無いので
+flac から読んだタグリストにそれが含まれていた場合
+mp3 の書き出しにそのまま渡すとエラーになるが
+このフラグを立てることによりスルーされるので
+タグのコピーが以下のようにフィルタ処理なしで直接できる.
+:  (mf-tag-write "foo.mp3" (mf-tag-read-alias-alist "bar.flac") nil nil t)
+
+*** change: `mf-func-get' 第2引数の廃止. 同じ値しか呼んでいないので
+
+***  fix: `mf-tag-merge'
+タグを削除する場合、最初のものしか削除していなかったが
+指定したタグが複数在ってもすべて削除するようにする.
+古い iTunes が mp3 のときコメントタグを拡張タグとして利用していて
+一つのファイルにコメントタグが複数入っているものがあった.
+
+** wtag.el: 2.11
+*** fix: `wtag-exit' ふたつあったウィンドウが何らかの拍子でひとつになってしまっていた場合
+終了時にエラーになってしまうのを修正.
+
+*** add: `wtag-copy' prefix で 通常のファイルコピーでコピーをする
+コピー先に wtag buffer が存在していてもタグの調整をせずそのままコピーする.
+また wtag buffer としてコピーするときは、コピー先の disk 番号に書換えていたが
+ひとつのディレクトリに複数のディスクが入っている場合は困るので
+disk 番号はコピー対象から外す.
+
+*** change: `wtag-view-mode-map' バインドを `d' -> 'D' に変更
+問い合わせが伴い d でも危険性は低いが Copy に合わ大文字にする.
+
+*** change: 変数 `wtag-sort-track' を defcustom 化
+合わせて file name でソートする `wtag-sort-file-name' を追加.
+
+*** change: ascii 逆正規化(全角化)を自前関数でやるように変更
+`japanese-zenkaku' のテーブルを個人的に書換えていて
+MusicCenter の全角化と食い違いがあったため.
+
+*** fix: 外部変数 `mf-mp4-reload-margin' のスペルミス訂正
+
 * Sat Feb 17 10:14:56 2024
 ** wtag.el: 2.1
-*** new: One Directory に多枚組ディスクすべて入れておくような構成に対応.
+*** new: One Directory に多枚組ディスクすべて入れておくような構成に対応
 共用していたディスク番号をトラック枚に個別に扱えるようにした.
 画面が少し変わったのでメジャーバージョンを 2 とする.
 
-*** chnage: `P' でのトラック指定が ディスク番号とトラック番号を
-くっつけて指定するように変更されました.
-例えば Disc 2 / Track 5 ならば `25P' となります
+*** chnage: `P' でのトラック指定の変更
+ディスク番号とトラック番号をくっつけて指定するように変更されました.
+例えば Disc 2 / Track 5 ならば `25P' となります.
 そのディレクトリに1枚のディスクしかない場合は、従来と同じでディスク番号は不要です.
 操作を統一したい場合は `wtag-play-single-disk' を nil にしてください.
 
-*** fix: oma file の TLEN タグなしのタイムのとき wtag-format でエラーになるエンバグを修正.
+*** fix: oma file の TLEN タグなしのタイムのとき wtag-format でエラーになるエンバグを修正
 
-*** add: face - `wtag-disk-number-other' トラック 1 以外のディスク番号フェイス.
+*** add: face `wtag-disk-number-other' トラック 1 以外のディスク番号フェイス
 
-*** fix: write - `wtag-forward-jump-points' (デフォルトバインド `M-{', `M-}')
+*** fix: write `wtag-forward-jump-points' (デフォルトバインド `M-{', `M-}')
 いつのまにか動いていなかったことに気づきリライト.
 アー名や各ディスク頭のトラックにも立ち寄るようにする.
 
-*** new: view - `wtag-forward-disk-points', `wtag-backward-disk-points'. (`[', `]')
+*** new: view `wtag-forward-disk-points', `wtag-backward-disk-points'. (`[', `]')
 各ディスクのトラック1に巡回訪問.
 
-*** new: view - 各ディスク番号1番目のトラックの help-echo にそのディスクの総時間を表示.
-*** new: カスタム変数 `wtag-disk-name'. 上記に関する文字列.
+*** new: view - 各ディスク番号1番目のトラックの help-echo にそのディスクの総時間を表示
 
-*** chnage: `wtag-artwork-buffer-suffix' を "*a", `wtag-index-buffer-suffix' "*i" に短縮.
+*** new: カスタム変数 `wtag-disk-name'. 上記に関する文字列
 
-*** new: view - Disc Area Fold 機能(いわゆる折り畳み).
+*** chnage: `wtag-artwork-buffer-suffix' を "*a", `wtag-index-buffer-suffix' "*i" に短縮
+
+*** new: view - Disc Area Fold 機能(いわゆる折り畳み)
 `wtag-invisible-show', `wtag-invisible-hide', `wtag-invisible-toggle'
 とこれらの `-all' 版. `s' `h' `tab' `backtab' `S' `H' 等にバインド. See menu.
 
-*** new: Disc fold 用 カスタム変数 `wtag-ellipsis', フェイス `wtag-ellipsis'.
+*** new: Disc fold 用 カスタム変数 `wtag-ellipsis', フェイス `wtag-ellipsis'
 
-*** new: view - `wtag-view-mode-line' に help-echo `wtag-music-title'.
+*** new: view `wtag-view-mode-line' に help-echo `wtag-music-title'
 モードラインのコーデック表示の上にマウスポインタを合わせると
 再生中の曲名がバルーン表示される.
 同じものが右端の余白にも出るが、見切れることも多いための措置.
@@ -44,7 +142,7 @@ mf-lib-mp4.el の `mf-mp4-reload-maegin' を wtag 側ローカルで 0.5 にセ�
 数十秒など演奏時間が極端に短かい小さな mp4 ファイルでも時間情報取得に失敗しないようにする.
 
 ** mf-lib-var: 1.34
-*** chnage: `mf-read-size' 調整.
+*** chnage: `mf-read-size' 調整
 
 * Sat Dec 30 08:21:26 2023
 ** wtag.el: 1.311

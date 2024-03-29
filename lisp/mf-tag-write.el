@@ -1,8 +1,8 @@
 ;;; mf-tag-write.el -- Music file tag write.  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
+;; Copyright (C) 2018-2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.79 $
+;; Version: $Revision: 1.87 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.79 $")
+(defconst mf-tag-write-version "$Revision: 1.87 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -173,18 +173,19 @@ LST はドットペアでも 2要素のリストでも良い.
                      (t data)))
     (list tag data)))
 
+(defvar-local mf-tag-write-noerror nil)
 (defun mf-list-convert (alst oldtags)
-  "ALST 形式のタグデータを `mf-tag-write' が読める形式の plist に変換する.
-OLDTAGS は適合する alias list の選択のための手がかりとして使う plist.
-要素に :tag というシンボルがあれば素通してそのまま返す.
-画像や歌詞のタグの場合ファイル名文字列だけでもいい.
+  "ALST 形式のタグデータを `mf-tag-write' が読める plist に変換する.
 ALST は \((\"TAG\" . \"DATA\") \"filename.jpg\" ...) のように指定する.
 CAR が文字列ならタグ、シンボルなら alias として処理する.
-CDR を nil とするとそのタグを削除する."
+CDR を nil とするとそのタグを削除する.
+OLDTAGS は plist で適合する alias list の選択のための手がかりとして使う.
+要素に :tag というシンボルがあればそのまま戻値に追加し
+文字列の場合、画像や歌詞のファイル名と見なしてタグに変換して追加する."
   (let* ((mode  mf-current-mode)
          (alias mf-current-alias)
          result)
-    (dolist (a alst (reverse result))
+    (dolist (a alst (remove nil (reverse result)))
       (push
        (cond
         ((and (stringp a) (string-match mf-image-regexp a))
@@ -197,7 +198,9 @@ CDR を nil とするとそのタグを削除する."
          (cl-multiple-value-bind (tag data) (mf-pair-set a alias)
            (cond
             ((null tag)
-             (error "Illegale TAG"))
+             (if mf-tag-write-noerror
+                 nil
+               (error "Illegale TAG `%s'" a)))
             ((null data) ; tag remove
              (list :tag tag :file nil :data nil))
             ((member tag mf-omg-tags)
@@ -213,7 +216,7 @@ CDR を nil とするとそのタグを削除する."
 (defun mf-tag-read-alist (file &optional len no-bin)
   "FILE のタグを \(TAG . DATA) または \(DSC . DATA) の alist にして返す."
   (let* ((plst (mf-tag-read file len no-bin))
-         (func (mf-func-get file mf-function-list))
+         (func (mf-func-get file))
          (mode (mf-get-mode plst))
          result)
     (setq mf-current-alias (mf-alias func plst mode))
@@ -268,7 +271,7 @@ CASE が non-nil(FLAC or OGG)のときだけ、戻されるとき TAG が upper 
   "FILE のタグを ALIAS と DATA を交互に並べた plist にして返す."
   (let* ((alist (mf-tag-read-alist file len no-bin))
          (case  (string-match "\\.\\(flac\\|ogg\\)\\'" file))
-         (mlist (mf-func-get file mf-function-list))
+         (mlist (mf-func-get file))
          (mode  (cdr (assoc mf-type-dummy alist)))
          (alias (cons
                  (cons mf-time-dummy-symbol mf-time-dummy)
@@ -307,28 +310,17 @@ lst は\((alias tag . data) ...) という形式. 一致が無ければ  nil を
   "LST に :dsc が在れば :dsc の、さもなくば :tag のプロパティを得る."
   (or (plist-get lst :dsc) (plist-get lst :tag)))
 
-(defun mf-assoc-property (tag lst)
-  "LST から TAG と `mf-string-equal' のプロパティリストを無ければ nil を戻す.
-LST はプロパティリスト束."
-  (catch 'out
-    (dolist (a lst)
-      (if (mf-string-equal tag (mf-get-tag-propety a)) (throw 'out a)))))
-
-(defun mf-delq-nodata-property (lst)
-  "プロパティリスト束 LST から :data プロパティが nil のリストを削除したリストを戻す."
-  (let (result)
-    (dolist (a lst (reverse result))
-      (and (plist-get a :data) (push a result)))))
-
-(make-obsolete 'mf-add-tags 'mf-tag-merge "Revision: 1.75")
 (defun mf-tag-merge (org new)
   "ORG へ NEW をマージしたリストを戻す.
 重複は NEW のタグに置き換えられ :data が nil のタグは削除される."
-  (let (tmp result)
-    (dolist (a org (mf-delq-nodata-property (append (reverse result) new)))
-      (and (setq tmp (mf-assoc-property (mf-get-tag-propety a) new))
-           (setq new (delete tmp new)))
-      (push (or tmp a) result))))
+  (let ((org2 (purecopy org))
+        new2)
+    (dolist (a new)
+      (dolist (b org)
+        (if (equal (plist-get a :tag) (plist-get b :tag))
+            (setq org2 (remove b org2)))))
+    (dolist (a new) (if (plist-get a :data) (push a new2)))
+    (append org2 (reverse new2))))
 
 (defun mf-set-make-local-variables (vals)
   (dolist (v vals)
@@ -337,11 +329,11 @@ LST はプロパティリスト束."
 (defvar mf-func-get-hook nil)
 
 ;; from mf-write-tag
-(defun mf-func-get (file funclist)
+(defun mf-func-get (file)
   "FILE にマッチする関数セットを FUNCLIST list より取得. 無ければ NIL.
 FUNCLIST は \((REGEXP READ-FUNC WRITE-FUNC CV-FUNC ALIAS-LIST ) (...)) といった形式."
     (run-hooks 'mf-func-get-hook)
-    (assoc-default file funclist 'string-match))
+    (assoc-default file (mf-function-list) 'string-match))
 
 ;; 引数がまちまちなのでバッファローカル変数化して引数なしにするかも.
 (defun mf-rfunc (funclist)
@@ -349,14 +341,32 @@ FUNCLIST は \((REGEXP READ-FUNC WRITE-FUNC CV-FUNC ALIAS-LIST ) (...)) とい�
 関数の引数は file length no-binary の 3つ."
   (car funclist))
 
-(defun mf-wfunc (funclist)
+(defvar mf-mp3-magic
+  (regexp-opt (mapcar #'car mf-mp3-analyze-function-list)))
+
+(defun mf-wfunc (funclist &optional file-or-magic)
   "FUNCLIST から Write function を返す.
-関数の引数は tag-list no-binary の 2つ."
-  (cadr funclist))
+mp3 のときはファイル名か ID3マジックを FILE-OR-MAGIC を指定する."
+  (cond
+   ((and file-or-magic (string-match "\\.mp3\\'" file-or-magic))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert-file-contents-literally file-or-magic nil 0 16)
+      (and
+       (nth 3 (assoc
+               (buffer-substring (point) (+ 4 (point)))
+               mf-mp3-analyze-function-list))
+       (nth 1 funclist))))
+   ((and file-or-magic (string-match mf-mp3-magic file-or-magic))
+    (and
+     (nth 3 (assoc file-or-magic mf-mp3-analyze-function-list))
+     (nth 1 funclist)))
+   (t
+    (nth 1 funclist))))
 
 (defun mf-cvfunc (funclist)
   "FUNCLIST から Convert function を返す. 引数は list のみ."
-  (caddr funclist))
+  (nth 2 funclist))
 
 (defun mf-alias (funclist tags &optional mode)
   "FUNCLIST から mf-current-mode または MODE の alias 設定を得る.
@@ -375,16 +385,18 @@ atom なら第4の値をそのまま返す. いずれも eval して返す."
       (eval alias))))
 
 ;;;###autoload
-(defun mf-tag-write (file &optional tags no-backup stamp)
+(defun mf-tag-write (file &optional tags no-backup stamp noerror)
   "FILE の既存タグに plist形式の TAGS が含まれれば置き換え無ければ追加し書き換える.
 NO-BACKUP が非NIL なら Backup file を作らない.
 NO-BACKUP が文字列ならそのファイルに書き出す。その場合バックアップはされない.
-STAMP が非NIL ならタイムスタンプを継承する."
+STAMP が非NIL ならタイムスタンプを継承する.
+NOERROR が non-nil なら適合するタグが存在しない場合でもエラーにならずスキップされる."
   (interactive "fFile: \nxTags: ")
   (let* ((stamp (and stamp (mf-sixth (file-attributes file))))
-         (func   (mf-func-get file mf-function-list))
-         (wfunc  (mf-wfunc func))
+         (func   (mf-func-get file))
+         (wfunc  (mf-wfunc func file))
          (cvfunc (mf-cvfunc func))
+         (mf-tag-write-noerror noerror)
          org)
     (unless func (error "Unknow file type `%s'" file))
     (unless wfunc (error "Write function not ready `.%s'" (file-name-extension file)))
@@ -417,7 +429,7 @@ LENGTH は読み込む大きさ. NO-BINARY が非NIL だと返り値に画像タ
     (with-temp-buffer
       (mf-set-make-local-variables mf-current-values)
       (setq mf-current-file file
-            mf-current-func (mf-func-get file mf-function-list))
+            mf-current-func (mf-func-get file))
       (prog1
           (setq result (mf--tag-read file length no-binary))
         (setq mf-current-mode (mf-get-mode result))))))

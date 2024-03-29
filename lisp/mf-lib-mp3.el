@@ -1,8 +1,8 @@
 ;;; mf-lib-mp3.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
+;; Copyright (C) 2018-2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.26 $$Name:  $
+;; Version: $Revision: 2.38 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.26 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.38 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -43,6 +43,8 @@
 (defcustom mf-mp3-analyze-function-list
   '(("ID3\2" mf-id32-tags-collect mf-id32-tags-analyze mf-pack-id32)
     ("ID3\3" mf-oma-tags-collect  mf-oma-tags-analyze  mf-pack-id33)
+    ;; ("ID3\4" mf-id3.24-tags-collect mf-oma-tags-analyze mf-pack-id33)
+    ("ID3\4" mf-id3.24-tags-collect mf-oma-tags-analyze)
     ("ea3\3" mf-oma-tags-collect  mf-oma-tags-analyze  mf-pack-id33))
   "CAR に対応する Tag 集荷/解析/パックのファンクション郡."
   :type  '(repeat (list string function function function))
@@ -57,13 +59,24 @@
     mf-oma-tag-read
     mf-oma-write-buffer
     mf-list-convert
-    (("ID3\3" . mf-id33-tag-alias)
+    (("ID3\4" . mf-id33-tag-alias)
+     ("ID3\3" . mf-id33-tag-alias)
      ("ID3\2" . mf-id32-tag-alias)
      ("ea3\3" . mf-oma-tag-alias))))
 
 (unless (boundp 'mf-function-list)
   (setq mf-function-list nil))
-(add-to-list 'mf-function-list  mf-mp3-function-list)
+(add-to-list 'mf-function-list 'mf-mp3-function-list)
+
+(defcustom mf-mp3-sjis-force t
+  "Forced SJIS decoding even in `iso-latin-1' for non-nil.
+If face, display that face on `wtag'."
+  :type  '(choice
+           (const :tag "Disable" nil)
+           (const :tag "Enable"  t)
+           (face  :tag "Face for wtag" wtag-warning-sjis))
+  :group 'wtag
+  :group 'music-file)
 
 (defvar mf-oma-write-hook nil "`tag' にフィルタをかけたいとき等に利用.")
 
@@ -192,6 +205,13 @@
   :type  '(repeat (cons symbol string))
   :group 'music-file)
 
+(define-minor-mode mf-mp3-id3-24-mode
+  "ID3 version 2.4 を 2.3 で書き戻せるようにする."
+  :init nil
+  (let ((lst (assoc "ID3\4" mf-mp3-analyze-function-list)))
+    (when lst
+      (setcdr (nthcdr 2 lst) (if mf-mp3-id3-24-mode '(mf-pack-id33))))))
+
 (defun mf-buffer-read-long-word-unpack7 (&optional pos)
   "POS から ロングワードのヘッダサイズを取得. MP3 と同形式の模様.
 それぞれのバイトの有効長は下位7ビットでそれを詰めてロングワード(有効長は内28bit)とする."
@@ -206,7 +226,7 @@
 ポイントは末尾の \"\0\" または \"\0\0\" の先まで進めるが、
 string にはそれらは含まれない.
 LIMIT が non-nil ならその長さまでとする."
-  (let ((beg (point)) end)
+  (let ((beg (point)) end str)
     (setq end
           (if limit
               (+ (point) limit)
@@ -218,8 +238,14 @@ LIMIT が non-nil ならその長さまでとする."
                            (forward-char 2)))
                   (- (point) 2))
               (search-forward "\0")
-              (1- (match-end 0)))))
-    (decode-coding-region beg end (cdr (assq coding mf-oma-encode)) t)))
+              (1- (match-end 0))))
+          str (buffer-substring beg end)
+          coding (if (and mf-mp3-sjis-force
+                          (zerop coding)
+                          (eq 'cp932 (mf-string-true-encode str)))
+                     'cp932
+                   (cdr (assq coding mf-oma-encode))))
+    (decode-coding-string str coding)))
 
 (defun mf-plist-get-list (tag lst)
   ":tag プロパティが TAG のリストを LST から返す. 無ければ nil."
@@ -246,20 +272,27 @@ LIMIT が non-nil ならその長さまでとする."
                 len (- len (+ size 6))))))
     (reverse result)))
 
-(defun mf-oma-tags-collect (len &optional pos)
+(defun mf-id3.24-tags-collect (len &optional pos)
+  (mf-oma-tags-collect len pos t))
+
+(defun mf-oma-tags-collect (len &optional pos fun)
   "ポイント位置から oma/mp3 file のタグの位置情報リストを返す.
 LEN にヘッダサイズを指定しポイントがヘッダ先頭位置になければ POS でその位置を指定する.
 リストは \((tag beg size) ...) という形式で
 tag は 4バイトの TAG 文字列,
 beg はデータの位置(TAG 先頭から 10バイトのオフセットで MP4 とは違うことに注意),
 size は beg からデータの終端までの大きさ(mp4 と違いTAG先頭 からではない).
-BUG 同期形式には対応していない."
-  (let (result)
+BUG 同期形式には対応していない.
+FUN が non-nil ならサイズを Syncsafe Integer として読み込む(for ID3v2.4)."
+  (let ((fun (if fun
+                 #'mf-buffer-read-long-word-unpack7
+               #'mf-buffer-read-long-word))
+        result)
     (or pos (setq pos (point)))
     (catch 'break 
       (while (< 0 len)
         (let ((tag  (mf-buffer-substring pos (+ pos 4)))
-              (size (mf-buffer-read-long-word (+ pos 4))))
+              (size (funcall fun (+ pos 4))))
           (setq pos (+ pos 10))
           (if (and size (string-match "^[A-Z0-9]\\{4\\}" tag))
               (setq result (cons (list tag pos size) result))
@@ -269,9 +302,12 @@ BUG 同期形式には対応していない."
     (reverse result)))
 
 (defun mf-string-true-encode (str)
-  "STR が cp932 ならそのシンボルを返す. (MP3 sjis 対策)"
-  (let ((code (detect-coding-string str)))
-    (if (memq 'cp932 code) 'cp932 (car code))))
+  "STR のコーディングシンボルを返す. (MP3 sjis 対策)"
+  (let* ((str (if (and (not (zerop (length str)))
+                       (equal "\0" (substring str -1)))
+                  (mf-chop str)
+                str)))
+    (detect-coding-string str 'hi)))
 
 (defun mf-get-mp3-alias (tags)
   "TAGS を調べ適合する mp3 ID3/3 の alias aliast を戻す."
@@ -318,12 +354,13 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
             code dsc mime type file data)
         (goto-char beg)
         (cond
-         ;; "USLT"<4> len<4> flag<2>  CODE<1> "eng"<3> dscZ strZ
+         ;; "USLT"<4> len<4> flag<2>  CODE<1> "eng"<3> dscZ str(Z)
          ((member tag '("COMM" "USLT"))
           (setq code (char-after)
                 mime (buffer-substring (1+ (point)) (+ 4 (point))) ; "eng"
                 dsc  (progn (forward-char 4) (mf-asciiz-string code))
-                data (mf-asciiz-string code (- (+ beg len) (point)))) ; limit for fre:ac.
+                ;; limit for fre:ac.
+                data (mf-chop (mf-asciiz-string code (- (+ beg len) (point)))))
           (setq result (cons (list :tag tag  :cdsc dsc :data data) result)))
 
          ;; atrac3pluse dsc = OMG tag
@@ -382,8 +419,11 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
           ;;                       "TRCK" "TCON" "TYER" "TCOM" "TLEN" "TENC" "GRP1"))
           (setq code (char-after)
                 data (buffer-substring (1+ beg) (+ beg len))
-                code (if (zerop code)
-                         (mf-string-true-encode data) (cdr (assq code mf-oma-encode)))
+                code (if (and mf-mp3-sjis-force
+                              (zerop code)
+                              (eq 'cp932 (mf-string-true-encode data)))
+                         'cp932
+                       (cdr (assq code mf-oma-encode)))
                 data (decode-coding-string data code))
           (and (string-equal tag "TCON") ; ID32 式のカテゴリ番号だったときの処理.
                (string-match "([0-9]+)" data)
@@ -428,9 +468,13 @@ NO-BINARY が非NIL なら \"APIC\" \"GEOB\" Tag はスルーしてリストに�
           (setq result (cons (list :tag tag :data (mf-chop data)) result)))
          (t
           (setq code (char-after)
-                data (decode-coding-region
-                      (1+ (point)) (+ beg len)
-                      (cdr (assq code mf-oma-encode)) t))
+                data (buffer-substring (1+ beg) (+ beg len))
+                code (if (and mf-mp3-sjis-force
+                              (zerop code)
+                              (eq 'cp932 (mf-string-true-encode data)))
+                         'cp932
+                       (cdr (assq code mf-oma-encode)))
+                data (decode-coding-string data code))
           (setq result (cons (list :tag tag :data (mf-chop data)) result))))))))
 
 (defun mf-oma-tag-read (file &optional length no-binary)
@@ -616,9 +660,8 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
                 (t
                  (mf-byte-str a)))
                result))))
-    (setq result (concat (apply #'concat result) (make-string 6 ?\0)))
+    (setq result (mapconcat #'identity result))
     (concat "ID3\2\0\0" (mf-long-word-pack7 (length result)) result)))
-
 ;;
 ;; Frame make byte for ID3v2.3
 ;;
@@ -721,11 +764,12 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
 (defun mf-pack-id33 (tags &optional no-mc-delete)
   "TAGS の alist を ID3v2.3 ヘッダ形式にパックして返す.
 NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしない."
-  (let ((id mf-current-mode)
-        (no-mc-delete (or no-mc-delete mf-no-mc-delete))
-        result)
-    (when (string-equal mf-current-mode "ea3\3")
-      (setq tags (mf-oma-sort tags)))
+  (let* ((mode (or mf-current-mode ;; `mf-id31-write-buffer' が偽装しているので変数優先.
+                   (and (fboundp 'mf-get-mode) (mf-get-mode tags))))
+         (mode (if (equal mode "ID3\4") "ID3\3" mode))
+         (no-mc-delete (or no-mc-delete mf-no-mc-delete))
+         result)
+    (when (equal mode "ea3\3") (setq tags (mf-oma-sort tags)))
     (dolist (a tags result)
       (let ((tag (plist-get a :tag))
             (dsc (plist-get a :dsc)))
@@ -740,7 +784,8 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
                  (mf-byte-txxx a))
                 ((string-equal tag "PRIV")
                  (mf-byte-priv a))
-                ((and (not no-mc-delete) ; "OMG_BKLSI"  "OMG_FENCA1"  "OMG_OLINF" "OMG_TDFCA"
+                ;; "OMG_BKLSI"  "OMG_FENCA1"  "OMG_OLINF" "OMG_TDFCA"
+                ((and (not no-mc-delete)
                       (string-equal tag "GEOB")
                       (not (string-equal dsc mf-geob-image)))
                  "")
@@ -752,30 +797,14 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
                 (t
                  (mf-byte-str-33 a)))
                result))))
-    (setq result (concat (apply #'concat result) (make-string 10 ?\0)))
-    (concat (format "%s\0\0" id) (mf-long-word-pack7 (length result)) result)))
-
-(defun mf-pack-id32-for-id33 (tags)
-  "ID3v2.2 のとき ID3v2.3 にコンバートしてバイナリパックし\
- ID3v2.3 ならそのままバイナリパックする."
-  (if (string-equal mf-current-mode "ID3\2")
-      (mf-pack-id33 (mf-id32-to-id33 (reverse tags)))
-    (mf-pack-id33 tags)))
-      
-(defun mf-pack-id33-for-id32 (tags)
-  "ID3v2.3 のとき ID3v2.2 にコンバートしてバイナリパックし \
-ID3v2.2 ならそのままバイナリパックする."
-  (if (string-equal mf-current-mode "ID3\3")
-      (mf-pack-id32 (mf-id33-to-id32 (reverse tags)))
-    (mf-pack-id32 tags)))
-
+    (setq result (mapconcat #'identity result))
+    (concat (format "%s\0\0" mode) (mf-long-word-pack7 (length result)) result)))
 
 (defun mf-oma-write-buffer (tags &optional no-backup)
   "NO-BACKUP が non-nil ならバックアップファイルを作らない."
   (let* ((coding-system-for-write 'no-conversion)
          (inhibit-eol-conversion t)
          (file mf-current-file)
-         (mode mf-current-mode)
          (pack (mf-fourth (assoc mf-current-mode mf-mp3-analyze-function-list)))
          hsize header)
     (run-hooks 'mf-oma-write-hook)
@@ -795,14 +824,87 @@ ID3v2.2 ならそのままバイナリパックする."
   '((#x22 . 48) (#x2e . 64) (#x30 . 132) (#x45 . 96) (#x5c . 128)
     (#xb9 . 256) (#xff . 352)))
 
-(defconst mf-mp3-bitrate   '(free 32 40 48 56 64 80 96 112 128 160 192 224 256 320 reserve))
-(defconst mf-mp3-frequency '(44100 48000 32000 reserve))
-(defconst mf-mp3-channel   '(stereo joint dual mono))
+;; MP3: Reference http://mpgedit.org/mpgedit/mpeg_format/mpeghdr.htm
+(defvar mf-mpeg-bitrate
+  '(((1 . 1) free 32 64 96 128 160 192 224 256 288 320 352 384 416 448 bad)
+    ((1 . 2) free 32 48 56  64  80  96 112 128 160 192 224 256 320 384 bad)
+    ((1 . 3) free 32 40 48  56  64  80  96 112 128 160 192 224 256 320 bad)
+    ((2 . 1) free 32 48 56  64  80  96 112 128 144 160 176 192 224 256 bad)
+    ((2 . 2) free  8 16 24  32  40  48  56  64  80  96 112 128 144 160 bad)
+    ((2 . 3) free  8 16 24  32  40  48  56  64  80  96 112 128 144 160 bad))
+  "bit 15..12: Bitrate index.
+bits `V1 & L1',  `V1 & L2', `V1 & L3', `V2 & L1', `V2 & L2, V2 & L3'.")
+
+(defun mf-get-mpeg-version (val)
+  "bit data VAL を規格上の mpeg version にして戻す.
+bit 19, 20: MPEG Audio version ID.
+0  MPEG Version 2.5
+1  reserved なので正常なデータならこの値になることはない
+2  MPEG Version 2 (ISO/IEC 13818-3)
+3  MPEG Version 1 (ISO/IEC 11172-3)"
+  (nth val '(2.5 nil 2 1)))
+  
+(defun mf-get-mpeg-layer (val)
+  "bit data VAL を規格上の mpeg laer 番号にして戻す.
+bit 18, 17: Layer description.
+0 = reserved, 1 = Layer III, 2 = Layer II, 3 = Layer I"
+  (nth val '(nil 3 2 1)))
+    
+(defun mf-get-mpeg-protection (val)
+  "bit data VAL が protection なら non-nil.
+bit 16: Protection bit.
+0 = Protected by CRC (16bit crc follows header), 1 = Not protected"
+  (nth val '(protect nil)))
+
+(defun mf-get-mpeg-bitrate (ver lay bit)
+  "引数に対応するビットレートを戻す.
+VER がバージョン、 LAY がレイヤーは規格上の番号値で
+BIT はバイナリに埋め込まれている値."
+  (let ((cell (cons (if (= 2.5 ver) 2 ver) lay)))
+    (nth bit (assoc-default cell mf-mpeg-bitrate))))
+
+(defun mf-mpeg-frequency (val ver)
+  "bit data VAL を VER に対応したサンプル周波数にして戻す.
+VER は mpeg version(bit data値ではなく規格上の番号)."
+  (nth val
+       (assoc-default ver
+                      '((1 44100 48000 32000 reserv)
+                        (2 22050 24000 16000 reserv)
+                        (2.5 11025 12000 8000 reserv))
+                      #'=)))
+
+(defun mf-mpeg-channel-mode (val)
+  "bit data VAL に対応するモードをシンボルで戻す."
+  (nth val '(stereo joint dual mono)))
 
 (defsubst mf-mp3-get-frame-size (bitrate frequency)
   "mpeg フレームサイズを求める公式.
 BITRATE は 1/1000 で指定することを想定している."
   (/ (* 144 (* bitrate 1000)) frequency))
+
+(defun mf-mp3-mpeg-frame-p (&optional pos)
+  "POS に frame 先頭を合わせ主なフレームパラメータをリストで返す.
+フレームでないなら nil.
+リストは \(bitrate sampling-frequency channel nil nil (mpegVer . Layer)).
+3, 4 番目の nil は lib-mp4, lib-flac 等との互換用.
+5 は此処で一旦用済みだが 他所から参照したいことがあるかもしれないので
+保険でつけてある."
+  (let ((pos (or pos (point)))
+        ver lay tmp)
+    ;; [11111111 111 11 01 ?] sync(11):2047 mpeg1(2)  :3 layer3(2):1
+    ;; [11111111 111 00 01 ?] sync(11):2047 mpeg2.5(2):0 layer3(2):1
+    (when (and (eq 255 (char-after pos))
+               (eq 224 (logand (char-after (1+ pos)) 224))) ;; 224 == #b11100000
+      (setq ver (mf-get-mpeg-version (ash (logand (char-after (1+ pos)) 24) -3))
+            lay (mf-get-mpeg-layer (ash (logand (char-after (1+ pos)) 7) -1))
+            tmp (char-after (+ pos 2)))
+      (list (mf-get-mpeg-bitrate ver lay (logand (ash tmp -4) 15))
+            (mf-mpeg-frequency (logand (ash tmp -2) 3) ver)
+            (progn
+              (setq tmp (char-after (+ pos 3)))
+              (mf-mpeg-channel-mode (logand (ash tmp -6) 3)))
+            nil nil ;; Dummy for lib-mp4 and lib-flac.
+            (cons ver lay)))))
 
 (defun mf-mp3-vbr-average-list (pos)
   "POS 以降の mpeg フレームから使われているビットレート種別をリストで返す."
@@ -825,21 +927,6 @@ BITRATE は 1/1000 で指定することを想定している."
       (setq result (cons (car tmp) result))
       (goto-char (+ (point) (mf-mp3-get-frame-size (nth 0 tmp) (nth 1 tmp)))))
     (list (/ (apply #'+ result) (length result)))))
-
-(defun mf-mp3-mpeg-frame-p (&optional pos)
-  "POS が mpeg1 layer3 の frame 先頭なら \(bitrate sampling-frequency channel) を返す.
-さもなくば nil."
-  (let ((pos (or pos (point)))
-        tmp)
-    ;; [11111111 111 11 01 ?] sync(11):2047 mpeg1(2):3 layer3(2):1
-    (when (and (eq 255 (char-after pos))
-               (eq 250 (logand (char-after (1+ pos)) 254)))
-      (setq tmp (char-after (+ pos 2)))
-      (list (nth (logand (ash tmp -4) 15) mf-mp3-bitrate)
-            (nth (logand (ash tmp -2) 3)  mf-mp3-frequency)
-            (progn
-              (setq tmp (char-after (+ pos 3)))
-              (nth (logand (ash tmp -6) 3) mf-mp3-channel))))))
 
 (defun mf-mp3-xing-p (pos)
   "POS に 1st frame 先頭を指定し Xing file であれば総フレーム数を返す.
@@ -873,12 +960,6 @@ BITRATE は 1/1000 で指定することを想定している."
   (let ((ch (char-after (or pos (point)))))
     (list (logand (ash ch -4) 15) (logand ch 15))))
 
-(defun mf-mp3-vbr-bitrate-guess (vbr)
-  "VBR に平均値を指定しエンコードされた値を推測."
-  (catch 'out
-    (dolist (a (butlast (cdr mf-mp3-bitrate)))
-      (if (< vbr a) (throw 'out a)))))
-
 (defun mf-mp3-time-exp (size bitrate)
   "MP3 の演奏秒数を得る.
 SIZE はデータの大きさ, BITRATE はビットレート.
@@ -899,19 +980,22 @@ BITRATE は 128k なら 128 と 1/1000 の値で指定する."
 (defun mf-mp3-time-from-buffer (pos size &optional prefix)
   "MP3 FILE の演奏時間等をリストで戻す.
 POS はスキャン開始位置、SIZE は音楽データ部分の大きさをセットする.
-戻りのリストは  \(time bitrate sampling-frequency channel) という並び.
+戻りのリストは  \(time bitrate sampling-frequency channel nil nil mpegver) という並び.
+nil の箇所は lib-mp4, lib-flac 等との互換のためのスロット.
 VBR の場合ビットレートはリストで括られ CAR に入る. CDR にデータが続く場合も在る.
 PREFIX が non-nil ならファイルをすべて読み込みビットレートの正確な平均値を得る.
 そうでなければフレーム1の値(たいてい128)か
 LAME ならリストの中から設定値を得る(See `mf-mp3-lame-abr')."
   ;; 0:MusicSec, 1:BitRate, 2:SampleRate, 3:Channel, 4:Bits/Sample, 5:TotalSample
   (let* ((prefix (or prefix mf-mp3-vbr))
-         (frame  (mf-mp3-mpeg-frame-p pos)) ; 1st frame
+         ;; 1st frame (bitrate sampling-frequency channel nil nil (mpegVer . Layer))
+         (frame  (mf-mp3-mpeg-frame-p pos))
          (lame   (mf-mp3-lame-abr pos)) ; lame header parameter 
          (xing   (mf-mp3-xing-p pos))   ; frame size
          (time   (and xing (round (* xing (/ 1152.0 (nth 1 frame)))))) ; time second
          func br vr)
     (cond
+     ((null frame) nil) ; (error "Unsupported format")
      ((and lame (null prefix))
       (setq br (nth 6 lame)
             vr (nth 2 lame)
@@ -919,9 +1003,6 @@ LAME ならリストの中から設定値を得る(See `mf-mp3-lame-abr')."
                   (cond
                    ((/= vr 2)
                     (car frame)) ; 1st frame bitrate.
-                   ;; ((= br 255) ; and vr == 2
-                   ;;  ;; これだと 256 にしかならない! 引数には平均値を渡さないと意味がない.
-                   ;;  (mf-mp3-vbr-bitrate-guess br))
                    (t br))
                   lame))
       (append (list time lame) (cdr frame)))
@@ -930,10 +1011,25 @@ LAME ならリストの中から設定値を得る(See `mf-mp3-lame-abr')."
        (list
         time
         (mf-mp3-vbr-bitrate pos frame prefix xing lame))
-       (cdr frame))) ; sampling rate, channel
+       (cdr frame))) ; sampling rate, channel,  mpegver
      (t
       (cons (round (mf-mp3-time-exp size (car frame))) frame)))))
 
+(defvar mf-oma-times
+  '((48 . 7.96113) (64 . 7.9048) (96 . 7.96114) (128 . 7.98966)
+    (132 . 7.9819) (256 . 7.98966) (352 . 7.9817)))
+
+(defun mf-oma-time-exp (size bitrate)
+  "SIZE と BITRATE は `mf-mp3-time-exp' と同じ.
+定数 106 は ID3 ヘッダと音源データの間にあるエリア(ATRAC Header?)のサイズ.
+`mf-oma-times' は手持ちデータで数打って力技で TLEN に近い値の出た数値なので
+正確な結果が得られる保証はなし.
+テーブルに無いビッットレートは MP3 の公式の定数 8 が使われるので
+更に誤差が発生する."
+  (let ((bias (or (cdr (assq bitrate mf-oma-times)) 8)))
+    (* bias (/ (- size 106) (* (or bitrate 0) 1000.0)))))
+
+(defvar mf-oma-no-tlen nil "*non-nil なら TLEN を使わない.")
 (defun mf-oma-time-from-buffer (pos size tags)
   "oma file の時間とビットレートをリストで戻す.
 TLEN タグから時間が得られなければ時間はカッコで括られている.
@@ -941,14 +1037,15 @@ POS はデータ先頭位置 SIZE はデータサイズ."
   ;; atrac は{ SamplingRate : 44100Hz / Channels : 2ch? / BitSize : 16bit } 固定らしい?
   (let* ((bitrate (assoc-default (char-after (+ pos 35)) mf-oma-bitrate))
          (tlen    (plist-get (mf-plist-get-list "TLEN" tags) :data)))
-    (if (null tlen)
-        ;; 稀に TLEN の無いデータが在る. その場合 MP3 式で得(誤差在り) リストで括る.
-        (list (list (floor (mf-mp3-time-exp size bitrate))) bitrate)
+    (if (or mf-oma-no-tlen (null tlen))
+        ;; 稀に TLEN の無いデータが在る. その場合定数を変えた MP3 の公式で得リストで括る.
+        (list (list (floor (mf-oma-time-exp size bitrate))) bitrate)
       ;; TLEN の 1/1000 が曲長[sec].
       (list (floor (/ (string-to-number tlen) 1000.0)) bitrate))))
   
 (defun mf-mp3-times (file pos size tags)
-  "FILE の種類によって時間関数をチョイスし実行."
+  "FILE の種類によって時間関数をチョイスし実行.
+POS は音楽データ開始ポジション,SIZE はデータサイズ TAG はタグリスト."
   (cond
    ((string-match"\\.mp3\\'" file)
     (mf-mp3-time-from-buffer pos size))

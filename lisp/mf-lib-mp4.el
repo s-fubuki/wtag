@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
 
 ;; Author: fubuki@frill.org
-;; Version: $Revision: 2.5 $$Name:  $
+;; Version: $Revision: 2.6 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 2.5 $$Name:  $")
+(defconst mf-lib-mp4-version "$Revision: 2.6 $$Name:  $")
 
 (require 'mf-lib-var)
 (require 'cl-lib)
@@ -691,7 +691,7 @@ PREFIX があると位置のパーセント位置も追加する."
                result)))))
     (mf-make-mp4-frame "ilst" (apply #'concat result))))
 
-(defvar mf-mp4-reload-maegin 0.01) ; MusicCenter data なら 0.5 (50%) にしないといけない.
+(defvar mf-mp4-reload-margin 0.01) ; MusicCenter data なら 0.5 (50%) にしないといけない.
 
 (defun mf-mp4-tag-read (file &optional length no-binary)
   "FILE のタグを plist にして返す.
@@ -706,7 +706,7 @@ NO-BINARY が非NIL ならイメージタグは含めない."
     ;; "mdat" まで欲しいので "free" 等をスキップするため
     ;; ヘッダサイズにファイルサイズの 1% を足す.
     (setq hsize (let ((tmp (mp4-flat-scan "moov")))
-                  (+ (nth 1 tmp) (nth 2 tmp) (round (* fsize mf-mp4-reload-maegin)))))
+                  (+ (nth 1 tmp) (nth 2 tmp) (round (* fsize mf-mp4-reload-margin)))))
     (when (< length hsize)
       (message "Reload file %s size %d header %d(%d%%)."
                file fsize hsize (round (/ (* hsize 100.0) fsize)))
@@ -718,7 +718,7 @@ NO-BINARY が非NIL ならイメージタグは含めない."
           sec   (if (mp4-flat-scan "mdat") (mp4-get-time atoms)))
     (unless sec
       (message
-       "`mf-mp4-reload-maegin' に 0.5 以上をセットすると時間情報の獲得ができるかも."))
+       "`mf-mp4-reload-margin' に 0.5 以上をセットすると時間情報の獲得ができるかも."))
     (goto-char (point-min))
     (setq origin (buffer-substring (+ (point) 8) (+ (point) 8 4)))
     (setq tags (mf-mp4-tag-analyze ilst no-binary))
