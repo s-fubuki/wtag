@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023, 2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 2.11 $$Name:  $
+;; Version: @(#)$Revision: 2.25 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -61,7 +61,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 2.11 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 2.25 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -327,7 +327,6 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
   :group 'wtag)
 
 (defvar wtag-artist-name-truncate-mode-save nil "Work.")
-(defvar-local wtag-artist-name-truncate nil "Work.")
 
 (make-obsolete-variable 'wtag-flush-tag-hook 'wtag-flush-hook "1.191" 'set)
 (defvar wtag-flush-tag-hook nil "ノーマル・フック")
@@ -1195,91 +1194,105 @@ list が pair ならフラットなリストにしてから処理する.
       (set-buffer-modified-p nil))))
 
 ;; Disc area overlay
-(defvar-local wtag-disc-area-overlays nil)
-
 (defun wtag-position-line-end (pos)
   "POS の行末のポイントを返す."
   (save-excursion
     (goto-char pos)
     (line-end-position)))
 
-(defun wtag-overlay-disc-area-init ()
-  "`wtag-disk-point' で得られる LST を元に overlay リストで戻す.
-生成される overlay はトラック 1 行末からそのディスクの最終トラック行末までとなる."
+(defun wtag-invisible-init ()
+  "各ディスクを覆うオーバーレイを張る."
   (let ((lst (mapcar #'1- (wtag-disk-point)))
-        result)
+        ov)
     (while lst
-      (push 
-       (make-overlay
-        (wtag-position-line-end (car lst))
-        (if (cdr lst)
-            (1- (cadr lst))
-          (point-max)))
-       result)
+      (setq ov (make-overlay
+                (wtag-position-line-end (car lst))
+                (if (cdr lst)
+                    (1- (cadr lst))
+                  (point-max))))
+      (overlay-put ov 'category 'wtag-disc)
+      (overlay-put ov 'invisible nil)
+      (overlay-put ov 'isearch-open-invisible 'wtag-hide-block-open)
       (setq lst (cdr lst)))
-    (reverse result)))
+    (add-to-invisibility-spec (cons 'wtag-disc t))))
 
-(defun wtag-invisible-init (&optional mode)
-  "各ディスクを覆うオーバーレイのリストを作り `wtag-disc-area-overlays' にセットする.
-MODE が non-nil なら初期状態で close になる.
-オーバーレイはプロパティ invisible に wtag-disc をセットして初期化し
-`buffer-invisibility-spec' に \(wtag-disc . t) をセットする"
-  (let ((mode (and mode 'wtag-disc)))
-    (prog1
-        (setq wtag-disc-area-overlays (wtag-overlay-disc-area-init))
-      (dolist (ov wtag-disc-area-overlays)
-        (overlay-put ov 'invisible mode))
-      (add-to-invisibility-spec (cons 'wtag-disc t)))))
+(defun wtag-hide-block-open (ov)
+  (and (eq 'wtag-disc (overlay-get ov 'category))
+       (overlay-put ov 'invisible nil))
+  (force-window-update))
 
-(defun wtag-disc-area-overlay-p (pos)
-  "POS が含まれる overlay が `wtag-disc-area-overlays' にあればそれを戻す."
+(defun wtag-overlay-find (&optional pos)
+  "POS の  overlay の中からプロパティ category が wtag-disc の overlay を戻す.
+無ければ nil.
+POS が nil ならばポイントの行末を対象にする."
   (catch 'out
-    (dolist (a wtag-disc-area-overlays)
-      (if (and (<= pos (overlay-end a)) (>= pos (overlay-start a)))
-          (throw 'out a)))))
+    (dolist (ov (overlays-at (or pos (line-end-position))))
+      (and (eq 'wtag-disc (overlay-get ov 'category)) (throw 'out ov)))))
 
 (defun wtag-invisible-show ()
   "ポイントのディスク表示を開く."
   (interactive)
-  (let ((ov (wtag-disc-area-overlay-p (line-end-position))))
-    (and ov (eq 'wtag-disc (overlay-get ov 'invisible))
-         (overlay-put ov 'invisible nil))))
+  (let ((ov (wtag-overlay-find)))
+    (and ov (overlay-put ov 'invisible nil))))
 
 (defun wtag-invisible-hide ()
   "ポイントのディスク表示を閉じる."
   (interactive)
-  (let ((ov (wtag-disc-area-overlay-p (line-end-position))))
-    (and ov (null (overlay-get ov 'invisible))
-         (overlay-put ov 'invisible 'wtag-disc))))
+  (let ((ov (wtag-overlay-find)))
+    (and ov (overlay-put ov 'invisible 'wtag-disc))))
 
 (defun wtag-invisible-toggle ()
   "ポイントのディスクを show/hide する.
 またはディスクエリアにいない場合はポイントを 1行進める."
   (interactive)
-  (let ((ov (wtag-disc-area-overlay-p (line-end-position))))
-    (if ov 
+  (let ((ov (wtag-overlay-find)))
+    (if ov
         (if (eq 'wtag-disc (overlay-get ov 'invisible))
             (overlay-put ov 'invisible nil)
           (overlay-put ov 'invisible 'wtag-disc))
       (forward-line))))
 
-(defun wtag-invisible-show-all ()
+(defun wtag-invisible-toggle-and-next (prefix)
+  "ポイントのディスクを show/hide する.
+閉じていれば開き、開いていれば閉じて次のディスクにポイントを進める.
+ディスクエリアにいない場合はポイントを 1行進める.
+PREFIX があれば逆方向に向っていく."
+  (interactive "P")
+  (let ((ov (wtag-overlay-find)))
+    (cond
+     ((null ov)
+      (forward-line))
+     ((eq 'wtag-disc (overlay-get ov 'invisible))
+      (overlay-put ov 'invisible nil))
+     (t
+      (overlay-put ov 'invisible 'wtag-disc)
+      (wtag-forward-disk-point prefix)))))
+
+(defun wtag-invisible-toggle-and-previous ()
   (interactive)
-  (dolist (ov wtag-disc-area-overlays)
-    (overlay-put ov 'invisible nil)))
+  (wtag-invisible-toggle-and-next 'back))
+
+(defun wtag-invisible-show-all (&optional hide)
+  (interactive "P")
+  (let ((pos (point-min))
+        ov)
+    (while (< pos (point-max))
+      (setq pos (next-single-char-property-change pos 'category)
+            ov  (wtag-overlay-find pos))
+      (and ov (overlay-put ov 'invisible (if hide 'wtag-disc))))))
 
 (defun wtag-invisible-hide-all ()
   (interactive)
-  (dolist (ov wtag-disc-area-overlays)
-    (overlay-put ov 'invisible 'wtag-disc)))
+  (wtag-invisible-show-all 'hide))
 
 (defun wtag-invisible-toggle-all ()
   (interactive)
-  (if (overlay-get
-       (car wtag-disc-area-overlays)
-       'invisible)
-      (wtag-invisible-show-all)
-    (wtag-invisible-hide-all)))
+  (let ((ov (wtag-overlay-find
+             (next-single-char-property-change (point-min) 'category))))
+    (and ov 
+         (if (overlay-get ov 'invisible)
+             (wtag-invisible-show-all)
+           (wtag-invisible-hide-all)))))
 ;; Disc area overlay ends here
 
 (defun wtag-beg-limit ()
@@ -1870,36 +1883,46 @@ BACK が non-nil ならリストを逆方向にたどって移動する."
         (setq prev disk)))
     (reverse result)))
 
-(defun wtag-renumber-tracks (&optional slash)
+(defun wtag-renumber-tracks (&optional prefix)
   "バッファのトラックナンバーを書き換え昇順にリナンバーする.
-SLASH が non-nil ならトラック番号、アルバム番号を分数表記にする.
+トラック番号、アルバム番号は分数表記になる.
+PREFIX ありだとトラック番号が全曲数の通し番号になる.
 アルバム番号のリナンバーは行なわない."
   (let* ((trax (wtag-count-tracks))
          (albummax (length trax))
          (trackmax (apply #'max (mapcar #'cdr trax)))
+         (tracktotal (apply #'+ (mapcar #'cdr trax)))
          (width (format "%%%dd" (length (number-to-string trackmax))))
          (width0 (format "%%0%dd" (length (number-to-string trackmax))))
-         form beg end c)
+         beg end slash num (tnum 1))
     (save-excursion
       (goto-char (point-min))
       (forward-line 2)
       (dolist (a trax)
-        (setq c 1)
-        (while (<= c (cdr a))
-          (when slash
-            (setq beg (wtag-move-to-property 'old-disk)
-                  end (wtag-move-to-property 'end-disk))
-            (delete-region beg end)
-            (insert (format "%d/%d" (car a) albummax)))
-          (setq beg (1+ (wtag-move-to-property 'old-track))
-                end (wtag-move-to-property 'end-track))
-          (setq form
-                (if (or slash (string-match "/" (buffer-substring beg end)))
-                    (format (concat width "/" width0) c (cdr a))
-                  (format width c)))
-          (delete-region beg end)
-          (insert form)
-          (setq c (1+ c))
+        (setq num 1)
+        (while (<= num (cdr a))
+          (setq beg   (wtag-move-to-property 'old-disk)
+                end   (wtag-move-to-property 'end-disk)
+                slash (string-match "[[:digit:]]/[[:digit:]]"
+                                    (delete-and-extract-region beg end)))
+          (if slash
+              (insert (format "%d/%d" (car a) albummax))
+            (insert (format "%d" (car a))))
+          (setq beg   (1+ (wtag-move-to-property 'old-track))
+                end   (wtag-move-to-property 'end-track)
+                slash (string-match "[[:digit:]]/[[:digit:]]" 
+                                    (delete-and-extract-region beg end)))
+          (insert
+           (if slash
+               (apply #'format (concat width "/" width0)
+                      (if prefix
+                          (list tnum tracktotal)
+                        (list num (cdr a))))
+             (if prefix
+                 (number-to-string tnum)
+               (number-to-string num))))
+          (setq num  (1+ num)
+                tnum (1+ tnum))
           (forward-line))))))
 
 (defun wtag-transpose-lines (&optional arg)
@@ -1913,6 +1936,7 @@ prefix ARG が 0 ならマーク行との入れ替えになる."
                (error "Out of range"))
       (and wtag-transpose-lines-repeat
            (let ((inhibit-message t)) (repeat-mode 1)))
+      (wtag-disc-number-swap arg)
       (transpose-lines arg)
       (wtag-renumber-tracks))))
 
@@ -1939,31 +1963,34 @@ ARG の利用は想定していない.
        (and wtag-transpose-lines-repeat
             (let ((inhibit-message t)) (repeat-mode 1)))
        (and down (progn (forward-line) (move-to-column col)))
+       (wtag-disc-number-swap)
        (transpose-lines arg)
        (wtag-renumber-tracks)))
     (forward-line (if down -1 -2))
-    (move-to-column col)
-    (wtag-same-number-previous-line)))
+    (move-to-column col)))
+
+(defun wtag-disc-number-swap (&optional prefix)
+  "ポイント行と1行上(PREFIX 0 ならマーク行)のディスク番号が違えば交換."
+  (let ((pos (point))
+        curr prev)
+    (save-excursion
+      (setq curr (wtag-get-string 'old-disk 'end-disk))
+      (if (and prefix (zerop prefix))
+          (progn (goto-char (mark)) (beginning-of-line))
+        (forward-line -1))
+      (setq prev (wtag-get-string 'old-disk 'end-disk))
+      (unless (equal curr prev)
+        (delete-region (wtag-move-to-property 'old-disk)
+                       (wtag-move-to-property 'end-disk))
+        (insert curr)
+        (goto-char pos)
+        (delete-region (wtag-move-to-property 'old-disk)
+                       (wtag-move-to-property 'end-disk))
+        (insert prev)))))
 
 (defun wtag-transpose-lines2-down (&optional arg)
   (interactive "*p")
   (wtag-transpose-lines2 arg 'down))
-
-(defun wtag-same-number-previous-line ()
-  "前行と同じディスクナンバーにする."
-  (let* ((pn (save-excursion
-               (forward-line -1)
-               (buffer-substring-no-properties
-                (wtag-move-to-property 'old-disk)
-                (wtag-move-to-property 'end-disk))))
-         (beg (wtag-move-to-property 'old-disk))
-         (end (wtag-move-to-property 'end-disk))
-         (cn (buffer-substring-no-properties beg end)))
-    (when (and (not (equal pn "")) (not (string-equal pn cn)))
-      (save-excursion
-        (delete-region beg end)
-        (insert pn)
-        (message "<%s>" pn)))))
 
 (defun wtag-sort-albums ()
   (cddr (assq 'album (get-text-property (point) 'stat))))
@@ -2068,27 +2095,32 @@ PREFIX をふたつ打つとリバースになる."
             (string-to-number (car tmp))
             (string-to-number (or def (cadr tmp) "1")))))
 
+(defvar wtag-track-number-adjust-read-answer
+  '("Track number adjust "
+    (("yes" ?y "perform the action")
+     ("no"  ?n "no execution")
+     ("all" ?a "all songs serial numbers"))))
+
 (defun wtag-track-number-adjust (prefix)
-  "すべてのトラックバンバーを \"トラック/トラック数\" というフォーマットにする.
-PREFIX があれば強制的に現状の並びで新たな番号を振り直す."
+  "トラックバンバーをリナンバーし \"トラック/トラック数\" というフォーマットにする.
+PREFIX 在りならトラック番号を全ディスクの通し番号にする.
+問い合わせ時 `a' と入力しても通し番号になる.
+`wtag-track-number-adjust-without-query' が non-nil なら問い合わせは入らない."
   (interactive "P")
-  (let ((trax (wtag-count-tracks))
-        trk beg end)
-    (when (or wtag-track-number-adjust-without-query
-              (prog1 (y-or-n-p "Track number adjust?") (message nil)))
-      (save-excursion
-        (goto-char (point-min))
-        (forward-line 2)
-        (dolist (a trax)
-          (while (not (eobp))
-            (setq beg (wtag-move-to-property 'old-track)
-                  end (wtag-move-to-property 'end-track)
-                  trk (buffer-substring beg end))
-            (unless (string-match "/" trk)
-              (delete-region (1+ beg) end)
-              (insert (wtag-track-regular trk (cdr a))))
-            (forward-line)))
-        (if prefix (wtag-renumber-tracks 'slash))))))
+  (let ((read-answer-short t)
+        (display-buffer-overriding-action
+         '((display-buffer-at-bottom display-buffer-below-selected)
+           (window-height . fit-window-to-buffer)))
+        ans)
+    (unless wtag-track-number-adjust-without-query
+      (setq ans (apply #'read-answer wtag-track-number-adjust-read-answer))
+      (if (equal ans "all") (setq prefix t)))
+    (and
+     (or (null ans) (member ans '("yes" "all")))
+     (wtag-renumber-tracks prefix))
+    (and (null wtag-track-number-adjust-without-query)
+         (get-buffer-window "*Help*")
+         (delete-window (get-buffer-window "*Help*")))))
 
 (defun wtag-point-file-name (prefix)
   "ポイントの曲に対応するファイル名をエコーエリアに表示.
@@ -2448,7 +2480,7 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
                        (if (string-match "/" (car a))
                            (car (split-string (car a) "/"))
                          (car a)))
-                     (if (string-match "/" (cdr a))
+                     (if (string-match "/" (or (cdr a) "1"))
                          (car (split-string (cdr a) "/"))
                        (cdr a))))
                    i)))
@@ -2704,6 +2736,13 @@ point が 1行目ならすべてマークする."
 
 
 ;; COPY part.
+(defun wtag-make-directory (dir)
+  (let (tmp)
+    (dolist (a (split-string (expand-file-name dir) "/" t) tmp)
+      (setq tmp (concat tmp a "/"))
+      (unless (file-exists-p tmp)
+        (make-directory tmp)))))
+
 (defun wtag-music-file-copy (src dst &optional srt)
   "SRC を DST(buffer or dreictory)に `mf-tag-write' でコピー.
 buffer ならその `default-directory' になる.
@@ -2713,7 +2752,12 @@ SRT が non-nil なら sort tag をアペンドする."
          args)
     (wtag-set :music-copy-dst-buff dst) ;; obsolete.
     (if (null pty)
-        (copy-file src dst 0)
+        (let ((dst (if (equal (substring dst -1) "/") dst (concat dst "/"))))
+          (unless (file-exists-p dst)
+            (if (y-or-n-p (format "Create Directory?(%s)" dst))
+                (wtag-make-directory dst)
+              (error "Cancel")))
+          (copy-file src dst 0))
       (setq args (wtag-music-file-copy-pty-get pty (string-match "\\.oma\\'" src))
             args (if srt (wtag-add-sort-tags args) args))
       (mf-tag-write src args (concat dst (file-name-nondirectory src))))))
@@ -2939,10 +2983,7 @@ winカカシが漢字ASCII混合の場合、
     (wtag-new-append alist (wtag-sort-filter ret))))
 
 (defun wtag-artist-name-truncate-clear ()
-  (interactive)
-  (dolist (ov wtag-artist-name-truncate)
-    (delete-overlay ov))
-  (setq wtag-artist-name-truncate nil))
+  (remove-overlays (point-min) (point-max) 'category 'wtag-artist-name-truncate))
 
 (defun wtag-artist-name-truncate (&optional prefix)
   (interactive "P")
@@ -2965,12 +3006,12 @@ winカカシが漢字ASCII混合の場合、
                         (1- (point))))
                  (org (prop-match-value prop))
                  (org-len (string-width org))
-                 (short (truncate-string-to-width org len nil pad ellipsis)))
-            (setq wtag-artist-name-truncate
-                  (cons (make-overlay beg end) wtag-artist-name-truncate)
-                  pad 32)
-            (overlay-put (car wtag-artist-name-truncate) 'display short)
-            (overlay-put (car wtag-artist-name-truncate) 'help-echo org)))))))
+                 (short (truncate-string-to-width org len nil pad ellipsis))
+                 (ov (make-overlay beg end)))
+            (or pad (setq pad 32))
+            (overlay-put ov 'category 'wtag-artist-name-truncate)
+            (overlay-put ov 'display short)
+            (overlay-put ov 'help-echo org)))))))
 
 (define-minor-mode wtag-artist-name-truncate-mode
   "Wtag artist name truncate mode."
@@ -3133,7 +3174,8 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "s"               'wtag-invisible-show)
     (define-key map "H"               'wtag-invisible-hide-all)
     (define-key map "S"               'wtag-invisible-show-all)
-    (define-key map [tab]             'wtag-invisible-toggle)
+    (define-key map "t"               'wtag-invisible-toggle)
+    (define-key map [tab]             'wtag-invisible-toggle-and-next)
     (define-key map "q"               'wtag-quit)
     (define-key map "Q"               'wtag-exit)
     (define-key map "\C-c\C-v"        'wtag-version)

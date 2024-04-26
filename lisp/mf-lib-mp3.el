@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018-2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.38 $$Name:  $
+;; Version: $Revision: 2.39 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.38 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.39 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -766,10 +766,10 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
 NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしない."
   (let* ((mode (or mf-current-mode ;; `mf-id31-write-buffer' が偽装しているので変数優先.
                    (and (fboundp 'mf-get-mode) (mf-get-mode tags))))
-         (mode (if (equal mode "ID3\4") "ID3\3" mode))
+         (mf-current-mode (if (equal mode "ID3\4") "ID3\3" mode))
          (no-mc-delete (or no-mc-delete mf-no-mc-delete))
          result)
-    (when (equal mode "ea3\3") (setq tags (mf-oma-sort tags)))
+    (when (equal mf-current-mode "ea3\3") (setq tags (mf-oma-sort tags)))
     (dolist (a tags result)
       (let ((tag (plist-get a :tag))
             (dsc (plist-get a :dsc)))
@@ -798,7 +798,8 @@ NO-MC-DELETE が NON-NIL だと重複画像等のバイナリの削除をしな�
                  (mf-byte-str-33 a)))
                result))))
     (setq result (mapconcat #'identity result))
-    (concat (format "%s\0\0" mode) (mf-long-word-pack7 (length result)) result)))
+    (concat (format "%s\0\0" mf-current-mode)
+            (mf-long-word-pack7 (length result)) result)))
 
 (defun mf-oma-write-buffer (tags &optional no-backup)
   "NO-BACKUP が non-nil ならバックアップファイルを作らない."
