@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018-2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.87 $
+;; Version: $Revision: 1.88 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.87 $")
+(defconst mf-tag-write-version "$Revision: 1.88 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -317,7 +317,7 @@ lst は\((alias tag . data) ...) という形式. 一致が無ければ  nil を
         new2)
     (dolist (a new)
       (dolist (b org)
-        (if (equal (plist-get a :tag) (plist-get b :tag))
+        (if (equal (mf-get-tag-propety a) (mf-get-tag-propety b))
             (setq org2 (remove b org2)))))
     (dolist (a new) (if (plist-get a :data) (push a new2)))
     (append org2 (reverse new2))))

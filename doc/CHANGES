@@ -1,5 +1,13 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat May  4 08:13:17 2024
+** mf-tag-write.el: 1.88
+*** fix: `mf-tag-merge' TAG の比較関数が間違っていた.
+ `:dsc' が在ればそちらで比較する `mf-get-tag-propety' で照合していなかったせいで
+ `TXXX' tag の変更があるとその他の `TXXX' tag が捨てられてしまうバグになっていた.
+ 1.82 でのエンバグ.
+ 影響があったのは oma とおそらく sort tag の追加された lame mp3 など.
+
 * Sat Apr 27 06:27:50 2024
 ** mf-lib-mp3.el: 2.39
 *** fix: ID3\4 を ID\3 にして書き戻し時の修正
