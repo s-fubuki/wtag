@@ -1,5 +1,11 @@
 # -*- mode: outline -*-
 #+OPTIONS: H:1
+* Sat Jun 15 07:37:06 2024
+** wtag.el: 2.27
+*** fix: `wtag-invisible-toggle-all' エンバグして動かなくなっていたのを修正.
+*** change: マーク face `wtag-mark' を font-lock-constant-face ベースに変更.
+ ィスクナンバーと被っていてマークを使うと気になったので Dired のマークに揃える.
+
 * Sat May  4 08:13:17 2024
 ** mf-tag-write.el: 1.88
 *** fix: `mf-tag-merge' TAG の比較関数が間違っていた.

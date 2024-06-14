@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023, 2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 2.25 $$Name:  $
+;; Version: @(#)$Revision: 2.27 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -61,7 +61,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 2.25 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 2.27 $$Name:  $")
 (defconst wtag-emacs-version
   "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
  of 2021-01-16")
@@ -442,7 +442,7 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
   :group 'wtag-faces)
 
 (defface wtag-mark
-  '((t :inherit error))
+  '((t :inherit font-lock-constant-face))
   "wtag-mark-face."
   :group 'wtag-faces)
 
@@ -1287,12 +1287,15 @@ PREFIX があれば逆方向に向っていく."
 
 (defun wtag-invisible-toggle-all ()
   (interactive)
-  (let ((ov (wtag-overlay-find
-             (next-single-char-property-change (point-min) 'category))))
-    (and ov 
-         (if (overlay-get ov 'invisible)
-             (wtag-invisible-show-all)
-           (wtag-invisible-hide-all)))))
+  (let ((pos (point-min)) ov)
+    (while (not
+            (and
+             (setq ov (car (overlays-at pos)))
+             (eq 'wtag-disc (overlay-get ov 'category))))
+      (setq pos (next-single-char-property-change pos 'category)))
+    (if (overlay-get ov 'invisible)
+        (wtag-invisible-show-all)
+      (wtag-invisible-hide-all))))
 ;; Disc area overlay ends here
 
 (defun wtag-beg-limit ()
