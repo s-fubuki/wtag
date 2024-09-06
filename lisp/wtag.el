@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023, 2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 2.27 $$Name:  $
+;; Version: @(#)$Revision: 3.3 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -61,11 +61,50 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 2.27 $$Name:  $")
-(defconst wtag-emacs-version
-  "GNU Emacs 28.0.50 (build 1, x86_64-w64-mingw32)
- of 2021-01-16")
+(defconst wtag-version "@(#)$Revision: 3.3 $$Name:  $")
+(defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
+(defcustom wtag-without-query '()
+  "non-nil なら実行時の問い合わせのあるコマンドの問い合わせを無くす.
+リストなら指定したコマンドが問い合わせ無しになる.
+指定可能関数は `wtag-artwork-load',  `wtag-artistname-copy-all',
+`wtag-all-title-erase', `wtag-track-number-adjust' の4つ."
+  :type '(choice
+          (const :tag "All nil" nil)
+          (const :tag "All t" t)
+          (repeat :tag "Individual"
+                  (choice
+                   (const wtag-artistname-copy-all)
+                   (const wtag-all-title-erase)
+                   (const wtag-track-number-adjust)
+                   (const wtag-artwork-load))))
+  :group 'wtag)
+
+(defcustom wtag-artwork-keep nil
+  "元のアートワークをファイルに保存する."
+  :type  'boolean
+  :group 'wtag)
+
+(defun wtag-without-query (key)
+  "問い合わせ系コマンドの設定チェック."
+  (or (eq wtag-without-query t)
+      (memq key wtag-without-query)))
+
+(defcustom wtag-variable-name-change t
+  "Important Notice."
+  :type  'boolean
+  :group 'wtag)
+  
+(defun wtag-variable-name-change ()
+  (when (and wtag-variable-name-change
+             (null wtag-without-query) (null wtag-artwork-keep)
+             (and (boundp 'wtag-load-without-query)
+                  (eq wtag-load-without-query 'keep)))
+    (setq wtag-artwork-keep t)
+    (message "The `keep' setting variable has changed. \
+Please use \(setq wtag-artwork-keep t).")))
+
+(make-obsolete-variable 'wtag-load-without-query 'wtag-without-query "2.34")
 (defcustom wtag-load-without-query nil
   "non-nil なら新たなジャケをロードするとき問合せない.
 keep ならそれに加えて元のアートワークをファイルに保存する.
@@ -75,9 +114,9 @@ D&D 主軸の人なら t か keep にしておくと鬱陶しくない."
 
 (defcustom wtag-force-load nil ;; 300
   "non-nil なら `wtag-view-mode' でも D&D でジャケの差替ができる.
-query だと問い合わせが入る.
+query なら問い合わせが入る.
 整数なら最初に 1度だけ取い合わせが入りその秒数後まで問い合わせがなくなる.
-D&D 主軸ならここを数値指定し `wtag-load-without-query' を t or keep にしておくことを推奨."
+D&D 主軸ならここを数値指定し `wtag-artwork-keep' を t にしておくことを推奨."
   :type '(choice (const nil) (const t) (const query) integer)
   :group 'wtag)
 
@@ -142,9 +181,16 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 (defvar wtag-kakashi-nkf  nil)
 (make-obsolete 'wtag-kakashi-nkf nil nil)
 
+(make-obsolete-variable 'wtag-make-sort-string-function 'wtag-add-sort-tag "2.31")
 (defcustom wtag-make-sort-string-function #'wtag-make-sort-string
-  "引数文字列をソートタグ用文字列にして返す関数."
+  "引数文字列をソートタグ用文字列にして返す関数.
+nil ならソートタグの追加はされない."
   :type  'function
+  :group 'wtag)
+
+(defcustom wtag-add-sort-tag t
+  "non-nil ならソートタグを追加する."
+  :type  'boolean
   :group 'wtag)
 
 (defcustom wtag-music-players
@@ -350,11 +396,20 @@ C-x C-t t t t... で済む."
                   (const  :tag "Album name" nil))    ; アルバム名そのまんま
   :group 'wtag)
 
+(defcustom wtag-artwork-write-file-name '(wtag-make-artwork-name)
+  "`wtag-artwork-write' Default file name."
+  :type '(choice string sexp)
+  :group 'wtag)
+
+(defvar wtag-readline-history nil)
+
+(make-obsolete-variable 'wtag-startup-hook 'wtag-view-mode-hook "2.30" 'set)
 (defcustom wtag-startup-hook nil
   "wtag を実行後に実行するノーマルフック."
   :type  'hook
   :group 'wtag)
 
+(make-obsolete-variable 'wtag-writable-tag-hook 'wtag-writable-mode-hook "2.30" 'set)
 (defcustom wtag-writable-tag-hook nil
   "wtag writable mode に移行するときに実行されるノーマルフック."
   :type  'hook
@@ -742,7 +797,7 @@ Convert index buffer name to artwork buffer name."
         (and tags (push (cons (cons 'filename (cons nil f)) tags) result))))))
 
 (defcustom wtag-sort-track nil
-  "2つの引数を比較して真偽値を戻すソート要の比較関数.
+  "2つの引数を比較して真偽値を戻すソート用の比較関数.
 引数はタグのエイリアスリストで \(mf-alias-get \='disk a) などとして値を参照する.
 wtag-sort-track はトラックナンバータグでソート nil も同じ.
 wtag-sort-track-2 はファイル名先頭の数字を数値としてソート.
@@ -882,7 +937,8 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
       (wtag-view-mode)
       (wtag-invisible-init)
       (and (get-buffer art-buff) (set-window-buffer nil art-buff))
-      (pop-to-buffer buff wtag-pop-action))))
+      (pop-to-buffer buff wtag-pop-action)
+      (wtag-variable-name-change))))
 
 (defsubst wtag-get-cache-time (alst file)
   (and alst (cdr (assoc file alst))))
@@ -1379,35 +1435,37 @@ BEG と END のデフォルトはポイントの行頭と行末.
       (setq str max)))
     (and re (replace-regexp-in-string re "_" str))))
 
-(defun wtag-safe-keep-name (file)
-  "FILE を元にして重複しない番号バックアップ名にして返す.
-番号は base name と extention の間にドットで切って挿入される.
-Emacs 標準のものはテキスト向けで末尾に番号を追加するので
-拡張子実行する Windows 環境だとうまくないので自前でやる.
+(defun wtag-string-number-lessp (a b)
+  (let ((rex "\\.\\(?1:[[:digit:]]+\\)\\..+?\\'"))
+    (if (string-match rex a)
+        (setq a (string-to-number (match-string 1 a)))
+      (setq a 0))
+    (if (string-match rex b)
+        (setq b (string-to-number (match-string 1 b)))
+      (setq b 0))
+    (< a b)))
 
-`string-version-lessp' の無い少し前の Emacs だと `string-lessp' で sort するが
-バックアップ番号が飛んでいるとか2桁もあるとかほぼ無いので問題無いはず.
-そもそも古い版だと別の箇所で wtag 自体動かないかもしれない."
-  (let* ((dir   (file-name-directory file))
+(defvar wtag-version-lessp
+  (if (fboundp 'string-version-lessp) 'string-version-lessp 'string-lessp))
+
+(defun wtag-safe-keep-name (file)
+  "FILE と重複しないよう FILE の中に番号を挟んで戻す.
+番号は拡張子の前にドットで切って挿入する.
+重複がないときは FILE がそのまま戻る.
+拡張子の無い FILE には対応していない."
+  (let* ((dir   (or (file-name-directory file) "./"))
          (node  (file-name-base file))
          (ext   (file-name-extension file))
-         (re    (concat (regexp-quote node)
-                        "\\.\\(?1:[0-9]+\\)\\." (regexp-quote ext)))
-         (found (directory-files dir nil re))
-         (cmp   (if (fboundp 'string-version-lessp)
-                   'string-version-lessp
-                 'string-lessp))
-         tmp rev)
-    (setq rev
-          (number-to-string
-           (cond
-            (found
-             (setq tmp (car (reverse (sort found cmp))))
-             (string-match re tmp)
-             (1+ (string-to-number (match-string 1 tmp))))
-            (t
-             1))))
-    (concat dir node "." rev "." ext)))
+         (rex   (concat (regexp-quote node)
+                        "\\.\\(?1:[[:digit:]]+\\.\\)?" (regexp-quote ext)))
+         (found (directory-files dir nil rex t))
+         tmp)
+    (if (null found)
+        file
+      (setq tmp (car (reverse (sort found wtag-version-lessp))))
+      (string-match rex tmp)
+      (format "%s%s.%d.%s"
+              dir node (1+ (string-to-number (or (match-string 1 tmp) "0"))) ext))))
 
 (defun wtag-get-common-properties (&optional buff)
   "BUFF が wtag テキストのバッファならアルバム共通プロパティをまとめて返す.
@@ -1442,22 +1500,23 @@ Emacs 標準のものはテキスト向けで末尾に番号を追加するの�
   (if (equal "\0" (substring str -1))
       (substring str 0 -1)
     str))
-
+
+(make-obsolete 'wtag-flush-tag-ask "Obsolete." "2.33")
 (defun wtag-flush-tag-ask (prefix)
+  ;; writable-mode では read-mode 解除されているのだからありえないのでは?
   "フィニッシュ時バッファが read-only なら問合せる."
   (interactive "P")
   (when (or (not buffer-read-only)
             (and buffer-read-only (y-or-n-p "Do you wanna write?")))
     (wtag-flush-tag prefix))
   (message nil))
-
+
 (defun wtag-flush-tag (prefix)
   "フィニッシュ関数.
 バッファを元にタグを構成しファイルを書き換えロードし直す.
 PREFIX が在れば未変更でも強制的に表示データに書換る."
   (interactive "P")
   (let ((no-backup wtag-no-backup)
-        (sfunc wtag-make-sort-string-function)
         (modify-cover
          (buffer-modified-p
           (get-buffer (wtag-artwork-buffer-name))))
@@ -1539,7 +1598,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
                               (list (car pair))
                             pair))
                       tags))
-          (and sfunc sort (setq tags (wtag-add-sort-tags tags)))
+          (and wtag-add-sort-tag sort (setq tags (wtag-add-sort-tags tags)))
           (wtag-message "wtag re-write tags: \"%s\" %s" filename tags)
           (condition-case err
               (progn
@@ -1554,14 +1613,12 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
             (wtag-message "File error `%s'" filename)))
          (forward-line)))
     ;; Salvage old cover.
-    (when (and (wtag-get :old-cover) modify-cover (eq wtag-load-without-query 'keep))
+    (when (and wtag-artwork-keep modify-cover (wtag-get :old-cover))
       (let* ((coding-system-for-write 'no-conversion)
              (ext  (mf-image-type (wtag-get :old-cover)))
              (ext  (if (eq ext 'jpeg) "jpg" (symbol-name ext)))
              (file (expand-file-name (concat keep-name "." ext) directory)))
-        (when (file-exists-p file)
-          (rename-file file (wtag-safe-keep-name file)))
-        (write-region (wtag-get :old-cover) nil file)))
+        (write-region (wtag-get :old-cover) nil (wtag-safe-keep-name file))))
     (wtag-init-buffer directory (current-buffer))))
 
 (defcustom wtag-log-buffer "*wtag log*"
@@ -1569,6 +1626,8 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
   :type  'string
   :group 'wtag)
 
+(make-obsolete-variable 'wtag-log-save "obsolete" "2.32")
+(make-obsolete-variable 'wtag-message "obsolete" "2.33")
 (defcustom wtag-message nil
   "*NON-NILならログ出力をエコーにも出力."
   :type 'boolean
@@ -1581,11 +1640,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
            (const nil))
   :group 'wtag)
 
-(defcustom wtag-log-save
-  (and wtag-log-file-name (add-hook 'kill-emacs-hook 'wtag-log-save))
-  "emacs 終了時に log をセーブ."
-  :type  'function
-  :group 'wtag)
+(and wtag-log-file-name (add-hook 'kill-emacs-hook 'wtag-log-save))
 
 (defun wtag-message (&rest args)
   "念のためログを記録しておくための関数. セーブはされない."
@@ -1593,10 +1648,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
     (with-current-buffer (get-buffer-create wtag-log-buffer)
       (goto-char (point-max))
       (if (= (length args) 1)
-          (progn 
-            (and wtag-message (message (car args)))
-            (insert ct (car args) "\n"))
-        (and wtag-message (apply #'message args))
+          (insert ct (car args) "\n")
         (insert ct (apply #'format args) "\n")))))
 
 (defun wtag-log-save ()
@@ -2003,11 +2055,11 @@ ARG の利用は想定していない.
   (wtag-get-name 'old-title 'end-title))
 
 (defvar wtag-sort-key-function
-  '(("album"  . wtag-sort-albums)
-    ("artist" . wtag-sort-artist)
-    ("title"  . wtag-sort-title)))
+  '((album  . wtag-sort-albums)
+    (artist . wtag-sort-artist)
+    (title  . wtag-sort-title)))
 
-(defcustom wtag-default-sort-key-function "album"
+(defcustom wtag-default-sort-key-function 'album
   "Sort function for `wtag-sort-tracks'."
   :type (cons
          'choice
@@ -2030,8 +2082,8 @@ PREFIX をふたつ打つとリバースになる."
          (sort (if prefix
                    (assoc-default
                     (setq wtag-default-sort-key-function
-                          (completing-read prompt wtag-sort-key-function
-                                     nil nil nil nil def))
+                          (intern (completing-read prompt wtag-sort-key-function
+                                                   nil nil nil nil def)))
                     wtag-sort-key-function)
                  (cdar wtag-sort-key-function)))
          (rev (and prefix (= 16 (car prefix)))))
@@ -2040,17 +2092,23 @@ PREFIX をふたつ打つとリバースになる."
     (sort-subr rev #'forward-line #'end-of-line sort)
     (wtag-renumber-tracks)))
 
+(make-obsolete-variable 'wtag-artistname-copy-all-without-query 'wtag-without-query "2.34")
 (defcustom wtag-artistname-copy-all-without-query t
   "*NON-NIL なら`wtag-artistname-copy-all' で問い合わせない."
   :type  'boolean
   :group 'wtag)
 
+(defun wtag-y-or-n-p (message command)
+  (or (eq wtag-without-query t)
+      (wtag-without-query command)
+      (y-or-n-p message)))
+
 (defun wtag-artistname-copy-all ()
-  "バッファのアルバムアーティストをバッファのアーティストすべてにコピー."
+  "バッファのアルバムアーティストをバッファのアーティストすべてにコピー.
+変数 `wtag-without-query' に `artistname-copy-all' が在れば問い合わせしない. "
   (interactive)
   (let (beg end album-artist)
-    (when (or (null wtag-artistname-copy-all-without-query)
-              (y-or-n-p "Album artis name copy all?"))
+    (when (wtag-y-or-n-p "Album artis name copy all?" this-command)
       (save-excursion
         (goto-char (point-min))
         (setq album-artist
@@ -2066,15 +2124,16 @@ PREFIX をふたつ打つとリバースになる."
           (forward-line))))
     (message nil)))
 
-(defvar wtag-all-title-erase-without-query t)
+(make-obsolete-variable 'wtag-all-title-erase-without-query 'wtag-without-query "2.34")
+(defvar wtag-all-title-erase-without-query nil)
 
 (defun wtag-all-title-erase ()
   "すべての曲名を削除し1曲目のタイトル位置にポイントを移動する.
-位置はマークされる."
+位置はマークされる.
+変数 `wtag-without-query' に `all-title-erase' が在れば問い合わせしない. "
   (interactive)
   (let (beg end pos)
-    (when (or (null wtag-all-title-erase-without-query)
-              (y-or-n-p "Music name clear all?"))
+    (when (wtag-y-or-n-p "Music name clear all?" this-command)
       (goto-char (point-min))
       (forward-line 2)
       (while (not (eobp))
@@ -2086,6 +2145,7 @@ PREFIX をふたつ打つとリバースになる."
       (goto-char pos))
     (message nil)))
 
+(make-obsolete-variable 'wtag-track-number-adjust-without-query 'wtag-without-query "2.34")
 (defvar wtag-track-number-adjust-without-query nil)
 
 (defun wtag-track-regular (str &optional def)
@@ -2108,20 +2168,20 @@ PREFIX をふたつ打つとリバースになる."
   "トラックバンバーをリナンバーし \"トラック/トラック数\" というフォーマットにする.
 PREFIX 在りならトラック番号を全ディスクの通し番号にする.
 問い合わせ時 `a' と入力しても通し番号になる.
-`wtag-track-number-adjust-without-query' が non-nil なら問い合わせは入らない."
+変数 `wtag-without-query' に `track-number-adjust' が在れば問い合わせしない. "
   (interactive "P")
   (let ((read-answer-short t)
         (display-buffer-overriding-action
          '((display-buffer-at-bottom display-buffer-below-selected)
            (window-height . fit-window-to-buffer)))
         ans)
-    (unless wtag-track-number-adjust-without-query
+    (unless (wtag-without-query this-command)
       (setq ans (apply #'read-answer wtag-track-number-adjust-read-answer))
       (if (equal ans "all") (setq prefix t)))
     (and
      (or (null ans) (member ans '("yes" "all")))
      (wtag-renumber-tracks prefix))
-    (and (null wtag-track-number-adjust-without-query)
+    (and (null (wtag-without-query this-command))
          (get-buffer-window "*Help*")
          (delete-window (get-buffer-window "*Help*")))))
 
@@ -2241,8 +2301,11 @@ length は marker の 2バイト分を除いたセグメントの長さ.
   "ファイルをマウス左ボタンで Emacs にドラッグ&ドロップ.
 * 画像ファイル:
  wtag-writable-mode ならアートワークにセットされる.
+
 変数 `wtag-force-load' が NON-NIL なら wtag-view-mode でも実行される.
- query なら問い合わせ在り t ならなし.
+`query' ならそのとき問い合わせが入る.
+`keep' なら加えて前のアートワークがファイルに待避される.
+
 * 音楽ファイル:
  wtag-view-mode でないと無効.
  実行後バッファをリロードするので、writable だとそのときの編集内容が失なわれてしまうため.
@@ -2251,6 +2314,7 @@ length は marker の 2バイト分を除いたセグメントの長さ.
   (let* ((file (car (mf-third event)))
          (idx  (wtag-index-buffer-name
                 (wtag-base-name (buffer-name (get-buffer (current-buffer))))))
+         (force wtag-force-load)
          (func (assoc-default file wtag-mouse-funcs #'string-match)))
     (unless (equal (buffer-name (current-buffer)) idx) (set-buffer idx))
     ;; D&D か?
@@ -2264,16 +2328,15 @@ length は marker の 2バイト分を除いたセグメントの長さ.
        ((string-match mf-image-regexp file)
         ;; 変数 wtag-force-load の状態は?
         (when (cond
-               ((or (and (null wtag-force-timer) (integerp wtag-force-load))
-                    (eq wtag-force-load 'query))
+               ((or (and (null wtag-force-timer) (integerp force))
+                    (eq force 'query))
                 (y-or-n-p "Writable Go?"))
-               ((or wtag-force-load wtag-force-timer)
+               ((or force wtag-force-timer)
                 t))
-          (and (integerp wtag-force-load)
+          (and (integerp force)
                (progn (when wtag-force-timer (cancel-timer wtag-force-timer)) t)
                (setq wtag-force-timer
-                     (run-at-time
-                      wtag-force-load nil #'(lambda () (setq wtag-force-timer nil)))))
+                     (run-at-time force nil #'(lambda () (setq wtag-force-timer nil)))))
           (with-current-buffer idx (wtag-writable-tag))
           (funcall func file)))
        ;; Music File か?
@@ -2297,7 +2360,7 @@ length は marker の 2バイト分を除いたセグメントの長さ.
   "ファイルまたはオブジェクトを画像バッファに表示する.
 バッファ名はカレントバッファを元に生成した名前になる.
 既に画像バッファがあるときは読み込んでいいか通常問い合わせをするが
-`wtag-load-without-query' が NON-NIL だと確認をしない.
+変数 `wtag-without-query' に `artwork-load' が在れば問い合わせしない. 
 NAME があればその名前そのものでバッファを作る.
 NO-DISP が NON-NIL なら load 後再表示を試みない.
 NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをクリアする."
@@ -2308,8 +2371,8 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
     (unless (or (null ext) (member (downcase ext) '("jpg" "jpeg" "png")))
       (error wtag-unknown file-or-object))
     (if (or (not (get-buffer buff))
-            wtag-load-without-query
-            (y-or-n-p "Change artwork?"))
+            no-modified
+            (wtag-y-or-n-p "Change artwork?" 'wtag-artwork-load))
         (progn
           (with-current-buffer (get-buffer-create buff)
             (kill-all-local-variables)
@@ -2366,7 +2429,8 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
                             (title . ,(wtag-get :base-name))
                             (minibuffer))))
     (select-frame (wtag-get :frame))
-    (set-window-buffer nil buff)))
+    (switch-to-buffer buff)
+    (image-transform-fit-to-window)))
 
 (defun wtag-reload-buffer ()
   (interactive)
@@ -2398,6 +2462,31 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
         (if image-transform-resize
             (funcall reset)
           (image-transform-fit-both))))))
+
+(defun wtag-add-image-suffix (str)
+  "STR に拡張子が無ければ適当な拡張子を追加した文字列を戻す."
+  (let ((suffix (cdr (assq image-type '((jpeg . "jpg") (png . "png"))))))
+    (if (string-match "\\.\\(?1:.*?\\)\\'" str)
+        str
+      (format "%s.%s" str suffix))))
+
+(defun wtag-make-artwork-name ()
+  (wtag-safe-keep-name
+   (wtag-add-image-suffix
+    (wtag-regular-file-name
+     (wtag-base-name (buffer-name (current-buffer)))))))
+
+(defun wtag-artwork-write (prefix)
+  (interactive "P")
+  (with-current-buffer (wtag-artwork-buffer-name)
+    (write-region (point-min) (point-max)
+                  (wtag-add-image-suffix
+                   (if prefix
+                       (read-string "File name: "
+                                    nil 'wtag-readline-history
+                                    (wtag-make-artwork-name))
+                     (or (wtag-get :image-filename)
+                         (eval wtag-artwork-write-file-name)))))))
 
 (defun wtag-quit ()
   (interactive)
@@ -2581,28 +2670,32 @@ PREFIX は整数で指定があればその行に移動してから実行され�
         (forward-line)))))
 
 (defun wtag-get-mark-titles (&optional char)
-  "mark があればマーク行の曲名とファイル名のコンスセルにした alist で返し、
-さもなくばポイント行の曲名とファイル名のコンスセルを list で括って返す."
+  "マーク行, マークが無ければポイント行の \(title . file) を alist で戻す.
+マークも無くトラック行でもなければ nil を戻す.
+CHAR には対象のマークキャラクタ, 省略すると `*' になる."
   (interactive)
   (let ((char (or char "*"))
         result)
-    (if (wtag-buffer-mark-p char)
-        (save-excursion
-          (goto-char (point-min))
-          (while (not (eobp))
-            (if (wtag-mark-p char)
-                (push
-                 (cons
-                  (wtag-get-property-value 'old-title)
-                  (propertize
-                   (wtag-get-property-value 'filename) 
-                   'sort (wtag-get-property-value 'sort)))
-                 result))
-            (forward-line)))
-      (setq result
-            (list (cons
-                   (wtag-get-property-value 'old-title)
-                   (wtag-get-property-value 'filename)))))
+    (cond
+     ((wtag-buffer-mark-p char)
+      (save-excursion
+        (goto-char (point-min))
+        (while (not (eobp))
+          (if (wtag-mark-p char)
+              (push
+               (cons
+                (wtag-get-property-value 'old-title)
+                (propertize
+                 (wtag-get-property-value 'filename) 
+                 'sort (wtag-get-property-value 'sort)))
+               result))
+          (forward-line))))
+     ((wtag-get-property-value 'old-title)
+      (push
+       (cons
+        (wtag-get-property-value 'old-title)
+        (wtag-get-property-value 'filename))
+       result)))
     (and result (reverse result))))
 
 (defvar-local wtag-mark-time nil)
@@ -2767,46 +2860,47 @@ SRT が non-nil なら sort tag をアペンドする."
 
 (defun wtag-copy-prompt (blist)
   (if blist
-      (cdr (assoc (completing-read "Copy to Wtag-Buff: " blist) blist))
+      (cdr (assoc (completing-read "Copy to Buffer Directory: " blist) blist))
     (read-directory-name "Copy to Directory: ")))
 
 (defun wtag-view-buffer-collection ()
-  "カレントを除外した `wtag-view-mode' であるバッファ名とそのバッファオブジェクトを
-コンスセルのペアにしてリストで返す."
+  "Buffer list から `wtag-view-mode' と `dired-mode' のバッファを集める.
+カレントバッファは除き \(NAME . OBJECT) のペアにしたリストで戻す."
   (let ((c (current-buffer)))
     (delq nil (mapcar
                #'(lambda(b)
-                   (with-current-buffer b
-                     (if (and (eq major-mode 'wtag-view-mode)
-                              (not (equal b c)))
-                         (cons (buffer-name b) b))))
+                   (if (and (not (equal b c))
+                            (not (string-match "\\` " (buffer-name b)))
+                            (with-current-buffer b
+                              (memq major-mode '(wtag-view-mode dired-mode))))
+                       (cons (buffer-name b) b)))
                (buffer-list)))))
 
+(defvar wtag-marked-buffer-name " *Marked Files*")
 (defun wtag-copy (prefix)
-  "`wtag-view-mode' で POINT かマークされている曲をコピーする.
-コピー先は指定したバッファの default-directory になる.
-コピー先も `wtag-view-mode' ならばタイトル等のタグをコピー先のものに書き換える.
-また PREFIX が指定されるか wtag-view-mode のバッファが存在しなければ
-単なるファイルコピーになる."
+  "マーク曲を指定バッファの `default-directory' にコピーする.
+コピー先バッファが `dired-mode' なら通常のコピーで
+`wtag-view-mode' ならアルバムタイトル等の共通タグをコピー先のものに書き換える.
+(但しアートワークは変更しない(see `wtag-music-file-copy-pty-get').
+PREFIX でディレクトリ指定の通常コピーになる."
   (interactive "P")
-  (let* ((alist  (wtag-get-mark-titles))
-         (titles (mapcar #'car alist))
-         (files  (mapcar #'cdr alist))
-         (blist  (if prefix nil (wtag-view-buffer-collection)))
-         (pos    (line-number-at-pos))
-         (bname  " *Marked Files*")
+  (let* ((marks  (wtag-get-mark-titles))
+         (colle  (if prefix nil (wtag-view-buffer-collection)))
+         (bname  wtag-marked-buffer-name)
          dired-no-confirm dst)
-    (if (and (null alist) (< pos 3))
+    (if (null marks)
         (error "Not Music File")
       (save-excursion
         (if (setq dst
                   (dired-mark-pop-up
-                   bname 'disp titles #'wtag-copy-prompt blist))
+                   bname 'disp (mapcar #'car marks) #'wtag-copy-prompt colle))
             (let ((i 0) (wins (current-window-configuration)))
-              (dolist (f files)
+              (dolist (f (mapcar #'cdr marks))
                 (wtag-music-file-copy f dst (get-text-property 0 'sort f))
                 (setq i (1+ i)))
-              (and  blist (wtag-init-buffer (wtag-buffer-directory dst) dst))
+              (and (get-buffer dst)
+                   (eq (with-current-buffer dst major-mode) 'wtag-view-mode)
+                   (wtag-init-buffer (wtag-buffer-directory dst) dst))
               (message "%d File(s) copy done." i)
               (and (get-buffer bname) (delete-window (get-buffer-window bname)))
               (set-window-configuration wins))
@@ -2821,19 +2915,16 @@ SRT が non-nil なら sort tag をアペンドする."
 
 (defun wtag-delete ()
   (interactive)
-  (let* ((alist  (wtag-get-mark-titles "D"))
-         (titles (mapcar #'car alist))
-         (files  (mapcar #'cdr alist))
-         (pos    (line-number-at-pos))
-         (bname  " *Marked Files*")
-         (dir
-          (wtag-alias-value
-           'directory (wtag-get-common-properties)))
+  (let* ((marks  (wtag-get-mark-titles "D"))
+         (files  (mapcar #'cdr marks))
+         (bname  wtag-marked-buffer-name)
+         (dir (wtag-alias-value 'directory (wtag-get-common-properties)))
          dired-no-confirm)
-    (if (and (null alist) (< pos 3))
+    (if (null marks)
         (error "Not Music File")
       (save-excursion
-        (if (dired-mark-pop-up bname 'disp titles #'wtag-file-delete-prompt files)
+        (if (dired-mark-pop-up
+             bname 'disp (mapcar #'car marks) #'wtag-file-delete-prompt files)
             (progn
               (dolist (f files)
                 (delete-file f 'trash)
@@ -2899,12 +2990,17 @@ SRT が non-nil なら sort tag をアペンドする."
 
 (require 'japan-util)
 (defconst wtag-regular-table
-  (append 
-   japanese-alpha-numeric-table
-   (delq nil
-         (mapcar
-          #'(lambda (a) (and (nth 1 a) (cons (car a) (nth 1 a))))
-          (reverse japanese-symbol-table)))))
+  (append
+   '((?　 . 32) (?！ . ?!) (?＂ . ?\") (?＃ . ?#) (?＄ . ?$)
+    (?％ . ?%) (?＆ . ?&) (?＇ . ?') (?（ . ?\() (?） . ?\))
+    (?＊ . ?*) (?＋ . ?+) (?， . ?,) (?－ . ?-) (?． . ?.) (?／ . ?/)
+    (?： . ?:) (?； . ?\;) (?＜ . ?<) (?＝ . ?=) (?＞ . ?>)
+    (?？ . ??) (?＠ . ?@)
+    ;; \\ は ￥ でも ＼ でもなくそのままのようだ.
+    (?［ . ?\[) (?\\ . ?\\) (?］ . ?\]) (?＾ . ?^) (?＿ . ?_)
+    (?｀ . ?`) (?｛ . ?{) (?｜ . ?|) (?｝ . ?}) (?～ . ?~))
+   japanese-alpha-numeric-table)
+  "Music Center2 compatible regular table.")
 
 (defun wtag-reverse-regular (str)
   "STR の ascii 文字を全角にして戻す."
@@ -2954,7 +3050,7 @@ winカカシが漢字ASCII混合の場合、
   "タグリスト ALST の各 CDR を \
 変数 `wtag-sort-filter' にセットされた関数でフィルタリングして戻す.
 変数 `wtag-sort-filter' が nil なら LST をそのまま戻す."
-  (if (and wtag-sort-filter alst)
+  (if (and wtag-kakashi wtag-sort-filter alst)
       (let ((ret (funcall wtag-sort-filter (mapcar #'cdr alst))))
         (cl-mapcar #'(lambda (a b) (cons (car a) b)) alst ret))
     alst))
@@ -3044,7 +3140,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "\C-x\C-t"      'wtag-transpose-lines)
     (define-key map [?\C-x C-up]    'wtag-transpose-lines2)
     (define-key map [?\C-x C-down]  'wtag-transpose-lines2-down)
-    (define-key map "\C-c\C-c"      'wtag-flush-tag-ask)
+    (define-key map "\C-c\C-c"      'wtag-flush-tag)
     (define-key map "\C-c\C-l"      'wtag-truncate-lines)
     (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
     (define-key map "\C-c\C-e"      'wtag-all-title-erase)
@@ -3058,6 +3154,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "\C-c\C-i"      'wtag-artwork-load)
     (define-key map "\C-c\C-o"      'wtag-open-frame)
     (define-key map "\C-c\C-f"      'wtag-fit-artwork-toggle)
+    (define-key map "\C-c\C-w"      'wtag-artwork-write)
     (define-key map [drag-n-drop]   'wtag-mouse-load)
     (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
     ;; (define-key menu-map [vis-read-only] '("Visualyse rad-only text" . vis-read-only))
@@ -3070,6 +3167,8 @@ winカカシが漢字ASCII混合の場合、
       '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
     (define-key menu-map [wtag-open-frame]
       '("Artwork On Other Frame" . wtag-open-frame))
+    (define-key menu-map [wtag-artwork-write]
+      '("Write Artwork" . wtag-artwork-write))
     (define-key menu-map [wtag-artwork-load]
       '("Artwork Image Load" . wtag-artwork-load))
     (define-key menu-map [dashes2] '("--"))
@@ -3083,8 +3182,8 @@ winカカシが漢字ASCII混合の場合、
       '("Track Number Adjust" . wtag-track-number-adjust))
     (define-key menu-map [wtag-artistname-copy-all]
       '("Album Artist Name Set All" . wtag-artistname-copy-all))
-    (define-key menu-map [wtag-flush-tag-ask]
-      '("Write And Quit" . wtag-flush-tag-ask))
+    (define-key menu-map [wtag-flush-tag]
+      '("Write And Quit" . wtag-flush-tag))
     (define-key menu-map [wtag-writable-tag-cancel]
       '(menu-item "Cancel" wtag-writable-tag-cancel :key-sequence "\C-x\C-q"))
     map)
@@ -3179,6 +3278,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "S"               'wtag-invisible-show-all)
     (define-key map "t"               'wtag-invisible-toggle)
     (define-key map [tab]             'wtag-invisible-toggle-and-next)
+    (define-key map "\C-c\C-w"        'wtag-artwork-write)
     (define-key map "q"               'wtag-quit)
     (define-key map "Q"               'wtag-exit)
     (define-key map "\C-c\C-v"        'wtag-version)
@@ -3215,7 +3315,11 @@ winカカシが漢字ASCII混合の場合、
     (define-key
      menu-map [wtag-reload-buffer] '("Reload Buffer" . wtag-reload-buffer))
     (define-key
-     menu-map [wtag-open-frame] '("Artwork On Other Frame" . wtag-open-frame))
+     menu-map [wtag-artwork-write] '("Write Artwork" . wtag-artwork-write))
+    (define-key
+     menu-map [wtag-open-frame] '("Popup Artwork Other Frame" . wtag-open-frame))
+    (define-key
+     menu-map [wtag-popup-artwark] '("Popup Artwork" . wtag-popup-artwark))
     (define-key
      menu-map [wtag-fit-artwork-toggle] '("Fit Artwork Toggle" . wtag-fit-artwork-toggle))
     (define-key menu-map [dashes5] '("--"))

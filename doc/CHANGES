@@ -1,10 +1,96 @@
-# -*- mode: outline -*-
+# -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Sep  7 07:31:17 2024
+** wtag.el : 3.3
+*** change: 問い合わせ系変数の名前を変更する仕様変更でメジャーバージョンを 3 にアップする
+ 問い合わせ系変数の変更や画像キープ設定をしている人は次項を参照してください. 
+
+*** change: 問い合わせ系カスタマイズ変数を `wtag-without-query' に統合
+ 以下の 4つの変数を廃止して対応関数を `wtag-without-query' にまとめて設定するように変更.
+ | 古い変数                               | 対応する関数             |                                                              |
+ |----------------------------------------+--------------------------+--------------------------------------------------------------|
+ | wtag-load-without-query                | wtag-artwork-load        | アートワークのロード                                         |
+ | wtag-artistname-copy-all-without-query | wtag-artistname-copy-all | アルバムアーティスト名を全トラックのアーティスト名にコピー   |
+ | wtag-all-title-erase-without-query     | wtag-all-title-erase     | すべてのトラック名を空にする(全タイトルコピペする前等に使う) |
+ | wtag-track-number-adjust-without-query | wtag-track-number-adjust | トラック番号を整える                                         |
+
+ 例えば wtag-artwork-load と wtag-track-number-adjust を実行時の問い合わせなしにしたい場合
+
+: (setq wtag-without-query '(wtag-artwork-load wtag-track-number-adjust))
+
+すべて問い合わせなしにしたい場合は t でも OK.
+
+: (setq wtag-without-query t)
+
+デフォルトは nil で, すべて問い合わせが入ります.
+
+*** 重要 change: ジャケ変更時元の画像を保存しておく keep 設定の変更
+ 専用変数 `wtag-artwork-keep' に変更.
+
+: (setq wtag-load-without-query 'keep) ;; <- 廃止された古い設定法
+: (setq wtag-artwork-keep t)           ;; <- 新しい設定法
+
+*** fix: `wtag-all-title-erase-without-query' 意味が反転しているのに気づき修正
+
+*** add: `wtag-variable-name-change' 変数変更ワーニング
+ 起動時に keep 設定の仕様変更を警告します. 不要な場合は以下のようにしてください. 
+
+: (setq wtag-variable-name-change nil)
+
+*** fix: 書き出した後のリロードで画像ロード問い合わせが入ってしまうバグを修正
+ ロード問い合わせありにしていると起きていました.
+
+*** change: `wtag-safe-keep-name'整理
+ キープ画像ファイル名がかぶらないように番号を振っているが,
+ 最後のものが番号なしになる仕様だったのを
+ 一番最初のものが番号なしで順次番号を振りインクリメントされていく
+ 一般的な仕様になりました.
+
+*** add: `wtag-artwork-write'
+ 表示されているアートワークを `wtag-artwork-write-file-name' で設定したファイルにセーブ.
+ これも先の連番仕様になっています.
+
+*** fix: `wtag-get-mark-titles' 目的プロパティが得られないとき nil を戻す
+ nil ではなく nil のリストを戻すバグがあった.
+
+*** change: `wtag-copy' コピー先に dired buffer を追加
+ また Directory チョイスは prefix 起動のときのみにする.
+
+*** change: `wtag-regular-table' Music Center2 と同一にする
+ MusicCenter2 と japan-util.el だと正規化ルールが多少違っていたことが判明したので.
+
+*** delete: 変数 `wtag-log-save'
+`wtag-log-file-name' の設定だけでログセーブする/しないの制御ができるため削除.
+
+*** change: `wtag-make-sort-string-function' -> `wtag-add-sort-tag'
+ 設定値が関数として使われていなかったので, 相応しい名前の bool 変数に変更.
+
+*** change: `wtag-sort-filter'
+ 変数 `wtag-kakashi' がセットされていなときは引数をそのまま戻すようにする.
+
+*** 重要 change: `wtag-startup-hook' と `wtag-writable-tag-hook' を廃止
+ 其々メジャーモード標準の `wtag-view-mode-hook' `wtag-writable-mode-hook' で済むので
+ 利用していた場合其々書換えてください.
+
+*** fix: `wtag-open-frame'
+ メニューから実行すると何故か表示画像が fit されないので強制的に fit するようにする.
+
+*** add: `wtag-view-mode-map' メニューに `wtag-popup-artwark' を追加
+
+*** delete: `wtag-flush-tag-ask'
+ ライタブルモード時 `C-c C-c' するときこの関数を経由し
+ バッファが read-only なら問い合わせが入るようになっていたが
+ 現在 `C-x C-q' はキャンセルがバインドされていて
+ ライタブルモード時にリードオンリーモードになることは基本的にはないので
+ この関数は外し `C-c C-c' はダイレクトに `wtag-flush-tag' を実行するようにする.
+
+*** マニュアル wtag.org を 1 から書き直した
+
 * Sat Jun 15 07:37:06 2024
 ** wtag.el: 2.27
 *** fix: `wtag-invisible-toggle-all' エンバグして動かなくなっていたのを修正.
 *** change: マーク face `wtag-mark' を font-lock-constant-face ベースに変更.
- ィスクナンバーと被っていてマークを使うと気になったので Dired のマークに揃える.
+ ディスクナンバーと被っていてマークを使うと気になったので Dired のマークに揃える.
 
 * Sat May  4 08:13:17 2024
 ** mf-tag-write.el: 1.88
