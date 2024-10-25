@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019, 2020, 2021, 2022, 2023, 2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 3.3 $$Name:  $
+;; Version: @(#)$Revision: 3.5 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -61,7 +61,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 3.3 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 3.5 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -700,6 +700,17 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
 (make-obsolete 'wtag-time-o-format 'wtag-time-option-format "1.236")
 (defvar wtag-time-o-format  " %B/%r" "%B BitSize / %c Channel / %r SamplingRate")
 
+(defvar wtag-total-track 0)
+(defvar-local wtag-prev-disk nil)
+(defvar-local wtag-artist-name-max nil)
+(put 'wtag-artist-name-max 'permanent-local t)
+(defvar-local wtag-current-mode nil)
+(put 'wtag-current-mode 'permanent-local t)
+
+(defvar-local wtag-comment-tag nil)
+(put 'wtag-comment-tag 'permanent-local t)
+(defvar wtag-comment-disable-file-regexp "\\.[ow]ma\\'")
+
 (defcustom wtag-artwork-buffer-suffix "*a"
   "*Cover buffer名サフィクス."
   :type  'string
@@ -949,7 +960,7 @@ string ならそのまま戻し、リストなら PREFIX でリストの中の�
 nil なら 0、 non-nil なら 1、数値ならそのままオフセットになる.
 但し list の長さが指定オフセットに満たないときはリスト末尾の値になる.
 list が pair ならフラットなリストにしてから処理する.
-タイプ別リストのときは `mf-current-mode' によりリストを決定した後
+タイプ別リストのときは `wtag-current-mode' によりリストを決定した後
 リスト内位置を上記のルールで決める."
   (let ((pt (cond ((numberp prefix) prefix) (prefix 1) (t 0))))
     (if (stringp form)
@@ -961,7 +972,7 @@ list が pair ならフラットなリストにしてから処理する.
              (t
               (or
                (assoc-default
-                (assoc-default mf-current-mode wtag-mode-links #'string-match)
+                (assoc-default wtag-current-mode wtag-mode-links #'string-match)
                 form)
                (cdar (last wtag-time-form))))))
       (setq form (flatten-tree form)
@@ -972,8 +983,6 @@ list が pair ならフラットなリストにしてから処理する.
   "A が Dot pair なら t さもなくば nil."
   (and (consp a) (cdr a) (atom (cdr a))))
 
-(defvar wtag-comment-tag nil)
-(defvar wtag-comment-disable-file-regexp "\\.[ow]ma\\'")
 (defun wtag-beginning-string (str file)
   "STR の改行か最後までの文字列を戻す.
 改行を含んでいる、またはコメントタグのない FILE なら
@@ -998,11 +1007,6 @@ list が pair ならフラットなリストにしてから処理する.
            (text-property-any 0 (length str) 'charset 'cp932-2-byte str))
       (or sjis-face mf-mp3-sjis-force)
     face))
-
-(defvar wtag-total-track 0)
-(defvar-local wtag-prev-disk nil)
-(defvar-local wtag-artist-name-max nil)
-(put 'wtag-artist-name-max 'permanent-local t)
 
 (defun wtag-insert-index (index dir)
   "Tag plist INDEX を取得した DIR."
@@ -1014,12 +1018,12 @@ list が pair ならフラットなリストにしてから処理する.
          (form (concat "%" (number-to-string max-width-track) "s"))
          (dtimes           (wtag-total-times index))
          (total            (apply #'+ (mapcar #'cdr dtimes)))
-         (mf-current-mode  (wtag-alias-value '*type (car index)))
          ;; (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
          (prefix (wtag-get :init-prefix))
          (old-comment (wtag-alias-value 'comment (car index)))
          title file ext mode modes cache comm dsk _str)
-    (setq comm (wtag-beginning-string
+    (setq wtag-current-mode  (wtag-alias-value '*type (car index))
+          comm (wtag-beginning-string
                 old-comment (wtag-alias-value 'filename (car index))))
     (insert ; Common part.
      (propertize " " 'directory dir
@@ -1068,8 +1072,8 @@ list が pair ならフラットなリストにしてから処理する.
                     (if (string-equal tmp wtag-not-available-string)
                         (format "%s(%s)" tmp (file-name-nondirectory file))
                       tmp))
-            mf-current-mode  (wtag-alias-value '*type a)
-            mode  (wtag-mode-string mf-current-mode ext)
+            wtag-current-mode  (wtag-alias-value '*type a)
+            mode  (wtag-mode-string wtag-current-mode ext)
             modes (or (member mode modes) (cons mode modes)))
       (and (wtag-get :init-prefix)
            (not (assq 'cache (wtag-get :init-prefix)))
@@ -1079,15 +1083,15 @@ list が pair ならフラットなリストにしてから処理する.
                   cache)))
       (unless (mf-wfunc
                (assoc-default (concat "." ext) (mf-function-list) #'string-match)
-               mf-current-mode)
+               wtag-current-mode)
         (wtag-set :write-notready
-                  (or (member mf-current-mode (wtag-get :write-notready))
-                      (cons mf-current-mode (wtag-get :write-notready)))))
+                  (or (member wtag-current-mode (wtag-get :write-notready))
+                      (cons wtag-current-mode (wtag-get :write-notready)))))
       (setq dsk (wtag-alias-value 'disk a))
       (insert
        ;; Disc number.
        (propertize " " 'old-disk dsk
-                   'mode mf-current-mode 'sort (wtag-include-sort-tag-p a)
+                   'mode wtag-current-mode 'sort (wtag-include-sort-tag-p a)
                    'stat (wtag-stat a))
        (prog1
            (apply #'propertize
@@ -1174,7 +1178,7 @@ list が pair ならフラットなリストにしてから処理する.
         (wtag-artist-name-truncate-mode -1)
         (wtag-invisible-show-all)
         (setq buffer-read-only nil)
-        (wtag-protect)
+        (wtag-protect wtag-current-mode wtag-comment-tag)
         (wtag-writable-mode)
         (and (bolp) (forward-char))
         (and wtag-cursor-intangible (cursor-intangible-mode 1))
@@ -1202,49 +1206,48 @@ list が pair ならフラットなリストにしてから処理する.
 ;;    ～ 以下タグ分を繰り返す.
 ;; - コメタグが在る場合
 ;;  改行を含んでいると `wtag-insert-index' でカットされているのでプロテクトしたままにする.
-(defvar wtag-common-area-tag-point
-  '(append '((a-artist . end-aartist)
-             (album    . end-album) skip
-             (genre    . end-genre) (year . end-year))
-           (if wtag-comment-tag
-               '((comment . end-comment) skip)
-             '(skip))))
+(defvar wtag-protect-common
+  '(((a-artist . end-aartist)
+     (album    . end-album) skip
+     (genre    . end-genre) (year . end-year)
+     (comment . end-comment) skip)
+    ((a-artist . end-aartist)
+     (album    . end-album) skip
+     (genre    . end-genre) (year . end-year) skip)))
 
-(defun wtag-common-area-tag-point ()
-  (eval wtag-common-area-tag-point))
+(defvar wtag-protect-track
+  '((disk      . end-disk) ; Not available at OMA.
+    (track     . end-track)
+    (performer . end-performer)
+    (title     . end-title)))
 
-(defun wtag-protect ()
-  "曲タイトル箇所以外を read-only にする."
-  (let (protect)
+(defun wtag-protect (mode comm)
+  "曲タイトル箇所以外を read-only にする.
+MODE にコーデックマジック COMM にコメント在りなし bool値 を指定."
+  (let ((comm (if comm 0 1))
+        protect)
     (save-excursion
       (goto-char (point-min))
       (add-text-properties (point) (1+ (point)) '(front-sticky t common t))
       (setq protect (point))
-      (dolist (p (wtag-common-area-tag-point))
-        (if (eq p 'skip)
+      (dolist (p (nth comm wtag-protect-common))
+        (if (atom p)
             (forward-line)
           (wtag-move-to-property (car p))
           (put-text-property (1- (point)) (point) 'rear-nonsticky t)
-          ;; (add-text-properties (1- (point)) (point) '(rear-nonsticky t beg-block t))
           (add-text-properties protect
                                (point) '(read-only t cursor-intangible t))
           (setq protect (wtag-move-to-end-property (car p)))
           (put-text-property (point) (1+ (point)) (cdr p) t))) ;; end of
-          ;; (add-text-properties (point) (1+ (point)) `(,(cdr p) t end-block t)))) ;; end of
       (put-text-property (1- (point)) (point) 'common-end t)
       (while (not (eobp))
-        (dolist (p '((disk      . end-disk)
-                     (track     . end-track)
-                     (performer . end-performer)
-                     (title     . end-title)))
+        (dolist (p (if (equal mode "ea3\3") (cdr wtag-protect-track) wtag-protect-track))
           (wtag-move-to-property (car p))
           (put-text-property (1- (point)) (point) 'rear-nonsticky t)
-          ;; (add-text-properties (1- (point)) (point) '(rear-nonsticky t beg-block t))
           (add-text-properties protect (point)
                                '(read-only t cursor-intangible t))
           (setq protect (wtag-move-to-end-property (car p)))
           (put-text-property (point) (1+ (point)) (cdr p) t))
-          ;; (add-text-properties (point) (1+ (point)) `(,(cdr p) t end-block t)))
         (forward-line))
       (put-text-property protect (point-max) 'read-only t)
       (set-buffer-modified-p nil))))
@@ -1565,7 +1568,8 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
         (when (or force (not (string-equal old-aartist new-aartist)))
           (push (wtag-cons 'a-artist new-aartist) tags))
         ;; Disk number.
-        (when (or force (not (string-equal old-disk new-disk)))
+        (when (and (not (member mode '("ea3\3")))
+                   (or force (not (string-equal old-disk new-disk))))
           (push (wtag-cons 'disk new-disk) tags))
         ;; Track number.
         (when (or force (not (string-equal old-track new-track)))
@@ -2106,23 +2110,23 @@ PREFIX をふたつ打つとリバースになる."
 (defun wtag-artistname-copy-all ()
   "バッファのアルバムアーティストをバッファのアーティストすべてにコピー.
 変数 `wtag-without-query' に `artistname-copy-all' が在れば問い合わせしない. "
-  (interactive)
+  (interactive
+   (unless (wtag-y-or-n-p "Album artis name copy all?" this-command)
+     (error "Cancel")))
   (let (beg end album-artist)
-    (when (wtag-y-or-n-p "Album artis name copy all?" this-command)
-      (save-excursion
-        (goto-char (point-min))
-        (setq album-artist
-              (buffer-substring-no-properties
-               (progn (wtag-move-to-end-property 'old-aartist) (point))
-               (progn (wtag-move-to-property     'end-aartist) (point))))
-        (forward-line 2)
-        (while (not (eobp))
-          (setq beg (wtag-move-to-end-property 'old-performer)
-                end (wtag-move-to-property     'end-performer))
-          (delete-region beg end)
-          (insert album-artist)
-          (forward-line))))
-    (message nil)))
+    (save-excursion
+      (goto-char (point-min))
+      (setq album-artist
+            (buffer-substring-no-properties
+             (progn (wtag-move-to-end-property 'old-aartist) (point))
+             (progn (wtag-move-to-property     'end-aartist) (point))))
+      (forward-line 2)
+      (while (not (eobp))
+        (setq beg (wtag-move-to-end-property 'old-performer)
+              end (wtag-move-to-property     'end-performer))
+        (delete-region beg end)
+        (insert album-artist)
+        (forward-line)))))
 
 (make-obsolete-variable 'wtag-all-title-erase-without-query 'wtag-without-query "2.34")
 (defvar wtag-all-title-erase-without-query nil)
@@ -2131,9 +2135,10 @@ PREFIX をふたつ打つとリバースになる."
   "すべての曲名を削除し1曲目のタイトル位置にポイントを移動する.
 位置はマークされる.
 変数 `wtag-without-query' に `all-title-erase' が在れば問い合わせしない. "
-  (interactive)
+  (interactive
+   (unless (wtag-y-or-n-p "Music name clear all?" this-command)
+     (error "Cancel")))
   (let (beg end pos)
-    (when (wtag-y-or-n-p "Music name clear all?" this-command)
       (goto-char (point-min))
       (forward-line 2)
       (while (not (eobp))
@@ -2142,8 +2147,7 @@ PREFIX をふたつ打つとリバースになる."
         (or pos (progn (setq pos beg) (push-mark)))
         (kill-region beg end)
         (forward-line))
-      (goto-char pos))
-    (message nil)))
+      (goto-char pos)))
 
 (make-obsolete-variable 'wtag-track-number-adjust-without-query 'wtag-without-query "2.34")
 (defvar wtag-track-number-adjust-without-query nil)
