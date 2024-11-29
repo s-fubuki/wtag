@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018-2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.39 $$Name:  $
+;; Version: $Revision: 2.40 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.39 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.40 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -993,7 +993,7 @@ LAME ならリストの中から設定値を得る(See `mf-mp3-lame-abr')."
          (frame  (mf-mp3-mpeg-frame-p pos))
          (lame   (mf-mp3-lame-abr pos)) ; lame header parameter 
          (xing   (mf-mp3-xing-p pos))   ; frame size
-         (time   (and xing (round (* xing (/ 1152.0 (nth 1 frame)))))) ; time second
+         (time   (and xing (floor (* xing (/ 1152.0 (nth 1 frame)))))) ; time second
          func br vr)
     (cond
      ((null frame) nil) ; (error "Unsupported format")
@@ -1014,7 +1014,7 @@ LAME ならリストの中から設定値を得る(See `mf-mp3-lame-abr')."
         (mf-mp3-vbr-bitrate pos frame prefix xing lame))
        (cdr frame))) ; sampling rate, channel,  mpegver
      (t
-      (cons (round (mf-mp3-time-exp size (car frame))) frame)))))
+      (cons (floor (mf-mp3-time-exp size (car frame))) frame)))))
 
 (defvar mf-oma-times
   '((48 . 7.96113) (64 . 7.9048) (96 . 7.96114) (128 . 7.98966)
