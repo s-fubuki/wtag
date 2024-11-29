@@ -1,5 +1,87 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Nov 30 07:51:29 2024
+** wtag.el: 3.23
+*** wtag-view-mode: マーク関係を dired の操作感や見た目に近づける
+
+| m   | mark               |            |
+| u   | unmark             |            |
+| U   | unmark all         |            |
+| M-{ | previous mark      |            |
+| M-} | next mark          |            |
+| t   | mark toggle        | T から変更 |
+| %m  | mark regexp        |            |
+| %t  | mark title regexp  |            |
+| %a  | mark artist regexp |            |
+| C   | copy               |            |
+| d   | delete mark        | D から変更 |
+| x   | execute delete     |            |
+
+ `wtag-mark-toggle' を `t' にバインドしたので `wtag-invisible-toggle' は `T' に移動.
+
+*** change: テキストプロパティ位置の変更
+ Filename Property を行頭, stat プロパティを行末,
+ 1行目行頭だった directory property は行末に移動.
+
+*** new: face `wtag-marked' Mark Title 用, `wtag-flagged' Delete Mark Title 用
+
+*** change: 変数 'wtag-name-push' 1-prefix の追加と一部対象の入れ替え
+ キルリングにタイトルなどをコピーする機能ですが、
+ 様式的配置だったのを実用的配置に変更(`C-u w' と `'C-u 0 w' の機能を入れ替え).
+
+| 実行する行 | w          | C-u w                       | C-u 0 w        | C-u 1 w        |
+|------------+------------+-----------------------------+----------------+----------------|
+| 1行目      | アルバム名 | アルバムアー名 - アルバム名 | アルバムアー名 | ディレクトリ名 |
+| 2行目      | 年         | ジャンル                    | コメント       |                |
+| 3行目以降  | 曲名       | アー名 - 曲名               | アー名         | ファイル名     |
+
+#+BEGIN_SRC emacs-lisp
+wtag-name-push^J
+((album (album " - " a-artist) a-artist directory)
+(year genre comment)
+(title (artist " - " title) artist filename))
+#+END_SRC
+
+*** new: `wtag-track-sort-function-select' 読み込みソート秩序を再設定しリロード
+ 変数をセットしなおして再起動しないといけなかったのをそのままできるようにする.
+ 暫定的に `M-s s' にバインド.
+ `C-c C-s' に充てようとしたが save と誤押ししそうなので避けた.
+ ソートするルールはそのリロードのときのみです.
+ デフォルトにしたい場合はカスタム変数 `wtag-sort-track' で設定する.
+
+*** fix: `wtag-renumber-tracks(C-c C-t)', `wtag-transpose-lines(C-x <up>/<down>)',`wtag-transpose-lines2(C-x C-t)'
+ oma だと動かなくなっていたのを修正.
+
+*** change: `wtag-directory-set' read message を分数表示
+
+*** fix: `wtag-get-mark-titles' マークなしのときソートフラグをセットしていなかった
+ マークなしでコピーするとソートタグが再調整されていなかった.
+
+*** fix: `wtag-copy' コピー先のリロードメッセージを抑止
+ コピー後にコピー元がリロードされたかのように勘違いしてしまうため.
+
+*** new: `wtag-view-mode' のとき Track Number の help-echo にファイル名(ファイルサイズ)を追加
+
+*** fix: `wtag-view-mode-map' "Quit" のバインドが `wtag-quit' に直し忘れていて
+ ウインドウが閇じるだけになっていた.
+
+*** change: 紐づいているアートワークバッファ名を得る方法の変更
+ ベース名から生成して探していたが、 バッファ・オブジェクトを保存しておき
+ そこから得るようにする.
+
+*** change: `wtag-add-image-suffix' 判別に webp 追加
+ webp なのに拡張子が jpg などのときアートワークに設定されてしまうのでその対策.
+
+*** change: `wtag-artwork-write' artwork buffer でも動くようにする
+
+*** fix: アートワークバッファで `wtag-quit (q)' するとインデックスバッファに移動するようにする
+ 但し何かの拍子でアートワーク・バッファのウィンドウのみになっていたときなどは
+ ウィンドウを閇じ別のバッファ(other-buffer)が開く.
+
+** mf-lib-mp3.el: 2.40
+*** 時間計算の丸め込みを round から floor に変更
+ 曲によっては Windows エクスプローラの表示と 1秒の誤差があったが一致するようになった.
+ 
 * Sat Oct 26 07:44:45 2024
 ** wtag.el : 3.5
 *** fix: 存在しないタグを変更するとエラーで止まってしまうのを修正.
