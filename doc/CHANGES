@@ -1,5 +1,56 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Dec 28 08:03:32 2024
+** mf-lib-mp3.el: 2.41
+*** コメント調整 `mf-mp3-lame-abr'
+ ABR 指定値の仕様の制限を忘れてしまうので加筆.
+
+*** fix: `mf-mp3-time-from-buffer' 丸めこみを round から floor に変更
+ 時間計算の整数への丸めこみを round から floor に変更.
+ Windows Explorer と 1秒誤差の出るデータがなくなる.
+
+** wtag.el: 3.30
+*** new: wtag-temporary-track-number-mode
+ wtag-view-mode 時全トラックに仮想の通しトラック番号を打つモード.
+ 本当のトラック番号は変更されない.
+ 同一トラック番号の混在するディレクトリでも
+ music play 等が正常に使えるようになる.
+ `#' にバインド.
+ この状態がアクティブなとき `q' はこのモードから抜ける動作になる.
+
+*** new: カスタム変数 `wtag-track-prefix-rename'
+ 整数を指定するとファイル名ベース部分をその長さに丸め込み
+ シンボル title を指定するとベース部をタイトルタグと同じにする.
+ この場合長さの指定などは `wtag-regular-file-name-re' と `wtag-regular-file-name' を見る.
+ 丸め込みに見た目を揃える truncate-string-to-width を使うので
+ マルチバイト文字の場合指定したバイト数になるとは限らない.
+ またリネームにエラーハンドラを追加.
+ 他のハンドラによって殺されてしまい無意味な可能性があるがまだ詳しくは未検証.
+
+*** change: 関数 `wtag-track-prefix-rename'
+ ファイル名のプレフィクスに追加されるトラック番号をタッチするとき
+ その前に(あるなら)ディスクナンバーもつけるようにする.
+
+*** chnage: `wtag-regular-file-name' 文字の切り詰めを
+ substring -> truncate-string-to-width に変更.
+
+*** change: すべての overlay priority の定数を変数化する.
+
+*** fix: `wtag-protect' 少し前の表示形式変更にループの覚書を合わせる.
+
+*** fix: `wtag-jump-list'
+ トラックナンバーが(マルチディスク)通し番号だと各ディスク頭で停止しなかった.
+
+*** change: `wtag-next-marked', `wtag-previous-marked'
+ 最終マッチまで行って戻るとき ding を鳴らす.
+
+*** change: `wtag-works' :trackmax に総トラック数をセット.
+
+*** change: `wtag-view-mode' バインド調整.
+ dired に無いので `wtag-mark-toggle-forward' は無くし
+ `t' を `wtag-mark-toggle-all' とし
+ `M-t' に逃がしてあった `wtag-invisible-toggle' を `T' にする.
+
 * Sat Nov 30 07:51:29 2024
 ** wtag.el: 3.23
 *** wtag-view-mode: マーク関係を dired の操作感や見た目に近づける
