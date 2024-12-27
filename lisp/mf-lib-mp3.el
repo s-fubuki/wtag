@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018-2024 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.40 $$Name:  $
+;; Version: $Revision: 2.41 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.40 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.41 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -943,7 +943,9 @@ BITRATE は 1/1000 で指定することを想定している."
 (defun mf-mp3-lame-abr (pos)
   "POS に 1st frame 先頭を指定し LAME ABR なら一部先頭データを list で戻す.
 さもなくば nil.
-リスト内訳は \(Magic Rev VBRmethod LPF Gain Flag Bitrate)."
+リスト内訳は \(Magic Rev VBRmethod LPF Gain Flag Bitrate).
+Bitrate は --abr で指定した値だが 255 までしか表現できない.
+320 等それ以上が指定されていてもすべて 255 になる."
   ;; http://gabriel.mp3-tech.org/mp3infotag.html
   (let* ((pos   (or pos (point)))
          (frame (mf-mp3-mpeg-frame-p pos))
