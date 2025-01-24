@@ -1,8 +1,8 @@
-;;; wtag.el -- Music file writable tags. -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2019, 2020, 2021, 2022, 2023, 2024 fubuki
+;;; wtag.el -- Music file writable tags.
+;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 3.30 $$Name:  $
+;; Version: @(#)$Revision: 3.32 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -67,7 +67,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 3.30 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 3.32 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -203,15 +203,14 @@ nil ならソートタグの追加はされない."
 
 (defcustom wtag-music-players
   `((,(rx "." (or "mp4" "m4a" "flac" "wav") eos)
-     ,(executable-find "wmplayer.exe") . ("/play" "/close"))
+     ,(executable-find "wmplayer.exe") "/play" "/close")
     (,(rx "." (or "mp3") eos)
      ,(executable-find "mpg123")))
-  "`wtag-music-play' の設定. ((拡張子 . (実行コマンド . 引数)) ...)"
+  "`wtag-music-play' の設定. ((拡張子 実行コマンド 引数 ...) ...)"
   :type '(repeat
-          (cons regexp
-                (cons
-                 (choice (file :must-match t) (const nil))
-                 (choice (repeat string) (const nil)))))
+          (list regexp
+                (file :tag "Player" :must-match t)
+                (repeat :inline t :tag "Option" string)))
   :group 'wtag)
 
 (defcustom wtag-process-break nil
@@ -555,6 +554,11 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
 (defface wtag-temporary-track-number
   '((t :inherit font-lock-type-face))
   "wtag-temporary-track-number."
+  :group 'wtag-faces)
+
+(defface wtag-hl-line
+  '((t :inherit unspecified :underline "Cyan" :extend t))
+  "wtag-hl-line."
   :group 'wtag-faces)
 
 (make-obsolete 'wtag-read-length-alist 'mf-read-size "1.280")
@@ -2789,8 +2793,7 @@ PREFIX は整数で指定があればその行に移動してから実行され�
          (cmds   (and file (assoc-default file wtag-music-players #'string-match))))
     (if (and file (file-exists-p file) cmds)
         (let* ((prog (car cmds))
-               (opts (cdr cmds))
-               (args (append opts (list file)))
+               (args (append (cdr cmds) (list file)))
                (proc wtag-process-name))
           (message
            "%s" (setq wtag-music-title (format " `%s - %s (%s)'" artist title time)))
@@ -3628,6 +3631,9 @@ winカカシが漢字ASCII混合の場合、
     (define-key map [mouse-1]         'wtag-music-play-mouse)
     (define-key map "\C-x\C-q"        'wtag-writable-tag)
     (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
+    (define-key-after
+      menu-map [hl-line-mode]
+      '(menu-item "Hl Line Mode" hl-line-mode :button (:toggle . hl-line-mode)))
     (define-key
      menu-map [wtag-artist-name-truncate]
      '(menu-item "Artist Name Truncate" wtag-artist-name-truncate-mode
@@ -3700,6 +3706,8 @@ winカカシが漢字ASCII混合の場合、
   (setq-local wtag-beginning-line-of-track 3)
   (wtag-mode-line-set wtag-view-mode-line)
   (and wtag-artist-name-truncate-mode (wtag-artist-name-truncate-mode))
+  (make-local-variable 'face-remapping-alist)
+  (add-to-list 'face-remapping-alist '(hl-line . wtag-hl-line))
   (setq buffer-display-table (make-display-table))
   (set-display-table-slot
    buffer-display-table 'selective-display

@@ -1,5 +1,20 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Jan 25 07:49:53 2025
+** wtag.el: 3.32
+*** new: hl-line-mode に対応.
+ face `wtag-hl-line'.
+ wtag-view-mode menu に hl-line-mode トグルを追加.
+
+*** change: カスタム変数 `wtag-music-players' :type 平滑リスト化.
+ 評価結果は同じだが設定が無意味に複雑だったのを改善.
+
+*** new: カスタム変数 `wtag-track-prefix-rename' に title を追加.
+ ベース名をトラックタグ文字列にする指定.
+
+*** chnage: `wtag-regular-file-name' 文字の切り詰め関数を
+ substring -> truncate-string-to-width に変更.
+
 * Sat Dec 28 08:03:32 2024
 ** mf-lib-mp3.el: 2.41
 *** コメント調整 `mf-mp3-lame-abr'
