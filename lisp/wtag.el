@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 3.32 $$Name:  $
+;; Version: @(#)$Revision: 3.39 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -55,6 +55,11 @@
 (defvar-local wtag-mode-line nil)
 (put 'wtag-mode-line 'risky-local-variable t)
 
+(defcustom wtag-mode-line-compact t
+  "for `mode-line-compact'."
+  :type  '(choice (const t) (const nil) (const long))
+  :group 'wtag)
+
 ;; Overlay priority
 (defvar wtag-priority-point-mark-file        0)
 (defvar wtag-priority-artist-name-truncate   10)
@@ -67,7 +72,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 3.32 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 3.39 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -569,9 +574,17 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
   :type  '(repeat (cons (string :tag "ext") (integer :tag "%  ")))
   :group 'wtag)
 
+;; (defcustom wtag-mode-name-alias
+;;   '(("ID3\1" . "ID3v1") ;; Dummy
+;;     ("ID3\2" . "ID3v2.2") ("ID3\3" . "ID3v2.3") ("ID3\4" . "ID3v2.4")
+;;     ("ea3\3" . "atrac") ("mp4\\|m4a" . "aac"))
+;;   "コーデックの表示文字列."
+;;   :type  '(repeat (cons (regexp :tag "Regexp") (string :tag "Letter")))
+;;   :group 'wtag)
+
 (defcustom wtag-mode-name-alias
-  '(("ID3\1" . "ID3v1") ;; Dummy
-    ("ID3\2" . "ID3v2.2") ("ID3\3" . "ID3v2.3") ("ID3\4" . "ID3v2.4")
+  '(("ID3\1" . "1") ;; Dummy
+    ("ID3\2" . "2.2") ("ID3\3" . "2.3") ("ID3\4" . "2.4")
     ("ea3\3" . "atrac") ("mp4\\|m4a" . "aac"))
   "コーデックの表示文字列."
   :type  '(repeat (cons (regexp :tag "Regexp") (string :tag "Letter")))
@@ -742,6 +755,11 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
 (put 'wtag-comment-tag 'permanent-local t)
 (defvar wtag-comment-disable-file-regexp "\\.[ow]ma\\'")
 
+(defcustom wtag-buffer-name 32
+  "Buffer name length."
+  :type  '(choice integer string (const nil))
+  :group 'wtag)
+
 (defcustom wtag-artwork-buffer-suffix "*a"
   "*Cover buffer名サフィクス."
   :type  'string
@@ -781,7 +799,8 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
   "カレントバッファが `wtag-view-mode' なら
 紐付けられたアートワークバッファを削除する."
   (when (and (eq major-mode 'wtag-view-mode)
-             (buffer-live-p (wtag-get :artwork-buffer)))
+             (wtag-get :artwork-buffer)
+             (buffer-live-p (get-buffer (wtag-get :artwork-buffer))))
     (kill-buffer (wtag-get :artwork-buffer)))
   (remove-hook 'kill-buffer-hook #'wtag-kill-artwork-buffer))
 
@@ -789,43 +808,51 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
   (or (wtag-get :artwork-buffer)
       (wtag-get :parent-buffer)))
 
-(defun wtag-base-name (name)
-  "NAME から wtag buffer name の装飾を取り除いた基本名を戻す.
-末尾が `wtag-artwork-buffer-suffix' に一致すれば
-`wtag-artwork-buffer-prefix' も削除し
-末尾が `wtag-index-buffer-suffix' に一致すればそれを削除し
-どちらも合致しなければ NAME がそのまま戻る."
-  (let ((idx (concat
-              "\\`\\(?1:.+?\\)"
-              (regexp-quote wtag-index-buffer-suffix) "\\'"))
-        (art (concat
-              "\\`" (regexp-quote wtag-artwork-buffer-prefix)
-              "\\(?1:.+?\\)"
-              (regexp-quote wtag-artwork-buffer-suffix) "\\'")))
-    (catch 'out
-      (dolist (re (list idx art) name)
-        (if (string-match re name)
-            (throw 'out (setq name (match-string 1 name))))))))
+(defun wtag-truncate-string-to-width (name)
+  (truncate-string-to-width
+   name wtag-buffer-name nil ?\s wtag-artist-name-ellipsis))
 
-(defun wtag-artwork-buffer-name (&optional base)
-  ":base-name もしくは BASE から artwork buffer name を作って戻す.
-上記からソースが得られず artwork buffer に居ればカレントバッファ名を戻す."
-  (let ((name (buffer-name (current-buffer)))
-        (base (or base (wtag-get :base-name))))
-    (cond
-     (base
-      (concat wtag-artwork-buffer-prefix base wtag-artwork-buffer-suffix))
-     ((eq major-mode 'wtag-image-mode)
-      name))))
+(defun wtag-buffer-name (name)
+  "NAME を利用可能な新規バッファ名にして戻す.
+`wtag-buffer-name' が整数なら NAME をその長さに丸め
+文字列ならその文字列を使い、 nil なら NAME をそのまま使い
+末尾に `wtag-index-buffer-suffix' をつけてから
+`generate-new-buffer-name' にかけ重複しない名前にして戻す."
+  (setq name
+        (cond
+         ((and (natnump wtag-buffer-name)
+               wtag-buffer-name
+               (< wtag-buffer-name (length name)))
+          (wtag-truncate-string-to-width name))
+         ((stringp wtag-buffer-name)
+          wtag-buffer-name)
+         (t
+          name)))
+  (generate-new-buffer-name (concat name wtag-index-buffer-suffix)))
 
-(defun wtag-index-buffer-name (&optional base)
-  (concat (or base (wtag-get :base-name)) wtag-index-buffer-suffix))
+(defun wtag-artwork-buffer-name (index-name)
+  "INDEX-NAME から artwork buffer name を生成する.
+INDEX-NAME は index buffer name."
+  (concat wtag-artwork-buffer-prefix
+          (replace-regexp-in-string
+           (regexp-quote wtag-index-buffer-suffix)
+           wtag-artwork-buffer-suffix
+           index-name)))
 
-(defun get-wtag-buffer (buff)
-  (and (get-buffer buff)
-       (with-current-buffer buff
-         (or (eq major-mode 'wtag-writable-mode)
-             (eq major-mode 'wtag-view-mode)))))
+(defun wtag-already-exists-buffer-kill (dir)
+  "起動元ディレクトリが DIR である wtag buffer があれば削除.
+そのバッファにアートワークバッファがあれば一緒に削除."
+  (let (result)
+    (dolist (buff (buffer-list))
+      (with-current-buffer buff
+        (when (and (or (eq major-mode 'wtag-view-mode)
+                       (eq major-mode 'wtag-writable-mode))
+                   (wtag-get :directory)
+                   (equal (wtag-get :directory) dir))
+          (and (wtag-get :artwork-buffer)
+               (push (get-buffer (wtag-get :artwork-buffer)) result))
+          (push (current-buffer) result))))
+    (and result (mapc #'kill-buffer result))))
 
 (defun wtag-directory-set (files)
   "FILES からタグを読み読み込みリストにして返す.
@@ -951,31 +978,18 @@ wtag-sort-file-name はファイル名でソートする."
 
 ;;;###autoload
 (defun dired-wtag (&optional prefix)
-  "`wtag' の Dired 用ラッパー.
-
-* wtag view mode
-\\{wtag-view-mode-map}
-* wtag writable mode
-\\{wtag-writable-mode-map}
-* wtag image mode
-\\{wtag-image-mode-map}"
+  "`wtag' の Dired 用ラッパー."
   (interactive "P")
   (let ((dir (dired-get-filename)))
     (wtag (file-name-as-directory dir) prefix)))
 
 ;;;###autoload
 (defun wtag (dir &optional prefix)
-  "DiR 内の `mf-lib-suffix-all' にある拡張子ファイルの\
-タイトル一覧をバッファに表示する.
-PREFIX があると mp3 で VBR のときビットレートに平均値を表示します.
-但し遅くなります.
-
-* wtag view mode
-\\{wtag-view-mode-map}
-* wtag writable mode
-\\{wtag-writable-mode-map}
-* wtag image mode
-\\{wtag-image-mode-map}"
+  "DiR 内の音楽ファイルのタイトル一覧を新規バッファに表示する.
+音楽ファイルは `mf-lib-suffix-all' で指定された拡張子のもの.
+mp3/VBR のとき PREFIX があるとビットレートを平均値で表示します.
+平均値を得るのにデータをすべて読み込むため起動が遅くなります.
+See: `wtag-view-mode', `wtag-writable-mode', `wtag-image-mode'."
   (interactive "DAlbum Directory: \nP")
   (let* ((wconf (current-window-configuration))
          (mf-mp3-vbr (or wtag-vbr (if (consp prefix) prefix)))
@@ -984,23 +998,24 @@ PREFIX があると mp3 で VBR のときビットレートに平均値を表示
          result buff art-buff obj base)
     (setq result (wtag-directory-files-list dir))
     (unless result (error "No music file"))
+    (wtag-already-exists-buffer-kill dir)
     (setq base (or (mf-alias-get 'album (car result)) "*NULL*")
-          buff     (wtag-index-buffer-name base)
-          art-buff (wtag-artwork-buffer-name base))
-    (and (get-wtag-buffer buff) (kill-buffer buff))
-    (and (get-buffer art-buff) (kill-buffer art-buff))
+          buff     (wtag-buffer-name base)
+          art-buff (wtag-artwork-buffer-name buff))
     (run-hooks 'wtag-startup-hook)
     (with-current-buffer (get-buffer-create buff)
       (wtag-set :window-configuration wconf)
       (wtag-set :base-name base)
+      (wtag-set :directory dir)
       (wtag-set :init-prefix
                 (if (and prefix (atom prefix))
                     (list prefix)
                   prefix))
       (wtag-set :trackmax (wtag-track-max result))
-      (and (setq obj (mf-alias-get 'cover (car result)))
-           (wtag-set :artwork-buffer
-                     (wtag-artwork-load obj art-buff 'no-disp t)))
+      (when (setq obj (assq 'cover (car result)))
+        (wtag-set :artwork-buffer
+                  (and (wtag-artwork-load (cddr obj) art-buff 'no-disp t) art-buff))
+        (wtag-set :include-file-name (get-text-property 0 :include-file-name (cadr obj))))
       (when (and wtag-artwork-buffer-prefix
                  (string-match "\\` " wtag-artwork-buffer-prefix))
         (make-local-variable 'kill-buffer-hook)
@@ -1626,15 +1641,23 @@ title のときは `wtag-regular-file-name-re' と `wtag-regular-file-name' の�
       (substring str 0 -1)
     str))
 
-(make-obsolete 'wtag-flush-tag-ask "Obsolete." "2.33")
-(defun wtag-flush-tag-ask (prefix)
-  ;; writable-mode では read-mode 解除されているのだからありえないのでは?
-  "フィニッシュ時バッファが read-only なら問合せる."
-  (interactive "P")
-  (when (or (not buffer-read-only)
-            (and buffer-read-only (y-or-n-p "Do you wanna write?")))
-    (wtag-flush-tag prefix))
-  (message nil))
+(defvar wtag-tmp-artwork nil)
+
+(defun wtag-image-type ()
+  (cdr (assq image-type '((jpg . "jpg") (jpeg . "jpg") (png . "png")))))
+
+(defun wtag-tmp-artwork ()
+  (let ((coding-system-for-write 'no-conversion))
+    (or wtag-tmp-artwork
+        (let ((tmp (expand-file-name
+                    (make-temp-name "wtag")
+                    temporary-file-directory)))
+          (with-current-buffer (wtag-get :artwork-buffer)
+            (write-region (point-min) (point-max)
+                          (setq tmp (format "%s.%s" tmp (wtag-image-type)))
+                          nil 'silent))
+          (setq mf-include-file-name (wtag-get :include-file-name) ; for `mf-tag-write.el'.
+                wtag-tmp-artwork tmp)))))
 
 (defun wtag-flush-tag (prefix)
   "フィニッシュ関数.
@@ -1642,7 +1665,8 @@ title のときは `wtag-regular-file-name-re' と `wtag-regular-file-name' の�
 PREFIX が在れば未変更でも強制的に表示データに書換る."
   (interactive "P")
   (let ((no-backup wtag-no-backup)
-        (modify-cover (buffer-modified-p (wtag-get :artwork-buffer)))
+        (modify-cover (and (wtag-get :artwork-buffer)
+                           (buffer-modified-p (get-buffer (wtag-get :artwork-buffer)))))
         keep-name new-disk new-aartist new-album new-genre new-year new-title new-comment
         old-disk old-aartist old-album old-genre old-year old-comment track directory tmp)
     (buffer-disable-undo)
@@ -1708,12 +1732,13 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
         (when (or force (not (string-equal new-genre old-genre)))
           (push (wtag-cons 'genre new-genre) tags))
         ;; Comment.
-        (when (or force (and (not (equal ext "oma"))
-                             (not (string-equal new-comment old-comment))))
+        (when (and (not (equal ext "oma"))
+                   (or force (not (string-equal new-comment old-comment))))
           (push (wtag-cons 'comment new-comment) tags))
         ;; Album cover artwork.
-        (when (wtag-image-filename-exist)
-          (push (wtag-cons 'cover (wtag-image-filename-exist)) tags))
+        (when (or (and force (wtag-get :artwork-buffer)) (wtag-image-filename-exist))
+          (let ((file (if force (wtag-tmp-artwork) (wtag-image-filename-exist))))
+            (push (wtag-cons 'cover file) tags)))
         ;; File re-write.
         (when tags
           (setq tags (mapcar
@@ -1726,7 +1751,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
           (wtag-message "wtag re-write tags: \"%s\" %s" filename tags)
           (condition-case err
               (progn
-                (run-hooks 'wtag-flush-tag-hook) ; Obsolete.
+                ;; (run-hooks 'wtag-flush-tag-hook) ; Obsolete.
                 (when wtag-flush-hook
                   (setq tags
                         (run-hook-with-args-until-success 'wtag-flush-hook tags)))
@@ -1736,7 +1761,10 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
                        (wtag-track-prefix-rename
                         filename new-disk new-track new-title))))
             (wtag-message "File error `%s'" filename)))
-         (forward-line)))
+        (forward-line)))
+    (when wtag-tmp-artwork
+      (and (file-exists-p wtag-tmp-artwork) (delete-file wtag-tmp-artwork))
+      (setq wtag-tmp-artwork nil mf-include-file-name nil))
     ;; Salvage old cover.
     (when (and wtag-artwork-keep modify-cover (wtag-get :old-cover))
       (let* ((coding-system-for-write 'no-conversion)
@@ -1746,7 +1774,8 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
         (write-region (wtag-get :old-cover) nil (wtag-safe-keep-name file))
         (wtag-set :old-content nil)
         (wtag-set :old-cover nil)))
-    (wtag-init-buffer directory (current-buffer))))
+    (wtag-init-buffer
+     directory (current-buffer) (not (equal new-album old-album)))))
 
 (defcustom wtag-log-buffer "*wtag log*"
   "*ログバッファ名."
@@ -2437,6 +2466,16 @@ length は marker の 2バイト分を除いたセグメントの長さ.
 
 (defvar wtag-unknown "Unknown file `%s'")
 
+(defun wtag-active-buffer ()
+  (or (and (eq major-mode 'wtag-image-mode)
+           (wtag-get :parent-buffer))
+      (catch 'out
+        (dolist (win (window-list))
+          (with-current-buffer (window-buffer win)
+            (if (or (eq major-mode 'wtag-view-mode)
+                    (eq major-mode 'wtag-writable-mode))
+                (throw 'out (current-buffer))))))))
+
 (defun wtag-mouse-load (event)
   "ファイルをマウス左ボタンで Emacs にドラッグ&ドロップ.
 * 画像ファイル:
@@ -2452,11 +2491,10 @@ length は marker の 2バイト分を除いたセグメントの長さ.
 尚 Windows でしか使えない機能のよう(?)."
   (interactive "e")
   (let* ((file (car (mf-third event)))
-         (idx  (wtag-index-buffer-name
-                (wtag-base-name (buffer-name (get-buffer (current-buffer))))))
+         (idx  (wtag-active-buffer))
          (force wtag-force-load)
          (func (assoc-default file wtag-mouse-funcs #'string-match)))
-    (unless (equal (buffer-name (current-buffer)) idx) (set-buffer idx))
+    (unless (eq (current-buffer) idx) (set-buffer idx))
     ;; D&D か?
     (when (eq (car event) 'drag-n-drop)
       (cond
@@ -2505,13 +2543,10 @@ NAME があればその名前そのものでバッファを作る.
 NO-DISP が NON-NIL なら load 後再表示を試みない.
 NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをクリアする."
   (interactive "fImage: ")
-  (let ((parent (or (and
-                     name
-                     (get-buffer (wtag-index-buffer-name (wtag-base-name name))))
-                    (current-buffer)))
-        (buff (or name (wtag-artwork-buffer-name)))
-        (image-auto-resize wtag-image-auto-resize)
-        (ext (wtag-filename-extention file-or-object)))
+  (let* ((parent (current-buffer))
+         (buff (or name (wtag-artwork-buffer-name (buffer-name parent))))
+         (image-auto-resize wtag-image-auto-resize)
+         (ext (wtag-filename-extention file-or-object)))
     (unless (or (null ext) (member (downcase ext) '("jpg" "jpeg" "png")))
       (error wtag-unknown file-or-object))
     (when (or (not (get-buffer buff))
@@ -2540,7 +2575,9 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
     ;; index directory から見ると artwork directory は存在しない場合もあるが
     ;; artwork directory から見ると index directory は絶対に存在するので
     ;; ここでセットしても必ず有効になる.
-    (with-current-buffer parent (wtag-set :artwork-buffer buff) buff)))
+    (with-current-buffer parent
+      (wtag-set :artwork-buffer (buffer-name buff))
+      (buffer-name buff))))
 
 (defun wtag-set-window (buff)
   (if (wtag-get :old-cover)
@@ -2626,10 +2663,14 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
       (format "%s.%s" str suffix))))
 
 (defun wtag-make-artwork-name ()
-  (wtag-safe-keep-name
-   (wtag-add-image-suffix
-    (wtag-regular-file-name
-     (wtag-base-name (buffer-name (current-buffer)))))))
+  (let ((tmp (if (wtag-get :base-name)
+                 (cons default-directory (wtag-get :base-name))
+               (with-current-buffer (wtag-get :parent-buffer)
+                 (cons default-directory (wtag-get :base-name))))))
+    (let ((default-directory (car tmp)))
+      (wtag-safe-keep-name
+       (wtag-add-image-suffix
+        (wtag-regular-file-name (cdr tmp)))))))
 
 (defun wtag-artwork-write (prefix)
   (interactive "P")
@@ -3069,17 +3110,18 @@ CHAR には対象のマークキャラクタ, 省略すると `*' になる."
        (with-current-buffer ,buff
          default-directory)
      ,buff))
-
-(defun wtag-init-buffer (&optional dir buff)
+
+(defun wtag-init-buffer (&optional dir buff ren)
   "DIR 内の音楽ファイルのタグを BUFF に展開し `wtag-view-mode' にする.
 BUFF が省略されるとカレントバッファが対象になり
 BUFF を指定すると BUFF をカレントバッファに変更する.
-DIR を省略するときは BUFF が `wtag-view-mode' として存在していなければならない."
+DIR を省略するときは BUFF が `wtag-view-mode' として存在していなければならない.
+REN が non-nil ならアルバム名を元にバッファ名を更新(リネーム)する."
   (let* ((buff  (or buff (current-buffer)))
          (dir   (or dir (wtag-buffer-directory buff)))
-         (abuff (or (wtag-get :artwork-buffer) (wtag-artwork-buffer-name)))
+         (abuff (wtag-get :artwork-buffer))
          ;; (mf-mp3-vbr (or wtag-vbr wtag-init-prefix))
-         result obj)
+         result obj album)
     (when (and (wtag-get :old-cover) (get-buffer abuff))
       (delete-window (get-buffer-window abuff)))
     (set-buffer buff)
@@ -3088,19 +3130,22 @@ DIR を省略するときは BUFF が `wtag-view-mode' として存在してい�
     (setq result (wtag-directory-files-list dir))
     (wtag-set :trackmax (wtag-track-max result))
     (wtag-insert-index result dir)
-    (wtag-set :base-name (wtag-get-common-property-value 'old-album))
-    (rename-buffer (wtag-index-buffer-name (wtag-get :base-name)) 'unique)
+    (wtag-set :base-name (setq album (wtag-get-common-property-value 'old-album)))
+    (when ren
+      (rename-buffer (wtag-buffer-name album) 'unique)
+      (and abuff (kill-buffer abuff)))
     (set-buffer-modified-p nil)
     (goto-char (point-min))
     (setq wtag-artist-name-truncate-mode wtag-artist-name-truncate-mode-save)
     (wtag-view-mode)
     (wtag-invisible-init)
-    (setq obj (wtag-alias-value 'cover (car result)))
-    (unless (string-equal obj wtag-not-available-string)
-      (wtag-set :artwork-buffer (wtag-artwork-load obj nil nil t)))
+    (setq obj (assq 'cover (car result)))
+    (when (and obj (not (string-equal (cddr obj) wtag-not-available-string)))
+      (wtag-set :artwork-buffer (wtag-artwork-load (cddr obj) nil nil t)))
+    (wtag-set :include-file-name
+              (and obj (get-text-property 0 :include-file-name (cadr obj))))
     (or (get-buffer-window buff)
         (pop-to-buffer buff wtag-pop-action 'norecord))))
-
 
 ;; COPY part.
 (defun wtag-make-directory (dir)
@@ -3683,20 +3728,29 @@ winカカシが漢字ASCII混合の場合、
     map)
   "`wtag-view-mode' 用キーマップ.")
 
+(defvar wtag-view-mode-name "Wtag")
+(defvar wtag-image-mode-name "Wtag-image")
+
 (defvar wtag-view-mode-line
   '(:propertize
-    ("<" (:eval (mapconcat #'identity (wtag-get :mode-name) " ")) "> ")
+    (":" (:eval (mapconcat #'identity (wtag-get :mode-name) " ")))
     face wtag-mode-name
     help-echo wtag-music-title))
 
 (defvar wtag-image-mode-line
   '(:propertize
-    ("*" (:eval (apply #'format "%s %dx%d"
-                       (or (wtag-image-size) '(unknown 0 0))))
-     "* ")
+    (:eval
+     (let ((tmp (wtag-image-size)))
+       (cond
+        ((null tmp)
+         ":unknown")
+        ((eq (nth 1 tmp) (nth 2 tmp))
+         (format ":%s:%dSQ" (nth 0 tmp) (nth 1 tmp)))
+        (t
+         (apply #'format ":%s:%dx%d" tmp)))))
     face wtag-image-size))
 
-(define-derived-mode wtag-view-mode text-mode "Wtag"
+(define-derived-mode wtag-view-mode text-mode wtag-view-mode-name
   "Music file tag view mode.
 \\{wtag-view-mode-map}"
   (setq buffer-read-only  t
@@ -3704,7 +3758,8 @@ winカカシが漢字ASCII混合の場合、
         default-directory (wtag-get-common-property-value 'directory))
   (setq-local truncate-lines wtag-truncate-lines)
   (setq-local wtag-beginning-line-of-track 3)
-  (wtag-mode-line-set wtag-view-mode-line)
+  (setq-local mode-name '("" wtag-view-mode-name (:eval wtag-view-mode-line)))
+  (setq-local mode-line-compact wtag-mode-line-compact)
   (and wtag-artist-name-truncate-mode (wtag-artist-name-truncate-mode))
   (make-local-variable 'face-remapping-alist)
   (add-to-list 'face-remapping-alist '(hl-line . wtag-hl-line))
@@ -3737,11 +3792,12 @@ winカカシが漢字ASCII混合の場合、
     map)
   "`wtag-image-mode' 用キーマップ.")
 
-(define-derived-mode wtag-image-mode image-mode "wtag-image"
+(define-derived-mode wtag-image-mode image-mode wtag-image-mode-name
   "Music file tag image mode.
 \\{wtag-image-mode-map}"
   (setq-local image-transform-resize wtag-image-auto-resize)
-  (wtag-mode-line-set wtag-image-mode-line))
+  (setq-local mode-name '("" wtag-image-mode-name (:eval wtag-image-mode-line)))
+  (setq-local mode-line-compact wtag-mode-line-compact))
 
 (provide 'wtag)
 ;; fin.

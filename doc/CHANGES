@@ -1,5 +1,66 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Mar 22 07:52:39 2025
+** wtag.el: 3.39
+*** change: 長いバッファ名を短縮化 & モードラインの再配置.
+ モードライン右端がなるべく見切れないよう長いバッファ名を短縮化.
+ カスタム変数 `wtag-buffer-name' が整数ならバッファ名がそれより長いときその長さに切り詰め、
+ nil なら切り詰めない. また文字列ならそれをバッファ名にする. デフォルトは 32. 
+ これにより右端が以前ほど見切れなくなったため
+ 左側に独自に設けてあった wtag-mode-line の内容を mode-name 末尾に付けるようにした.
+ その中で使う `wtag-mode-name-alias' の ID3 tag 関係も短かくし
+ `wtag-image-mode-line' 時もスクエア画像は片辺のみ表示で短縮化.
+
+ バッファ名は基本アルバム名なので、切れた先が知りたいときはアルバム名を見ればよい.
+
+*** new: カスタム変数 `wtag-mode-line-compact'.
+ `wtag-view-mode' と `wtag-image-mode' で
+ `mode-line-compact' にセットする値を設定するもの. デフォルト `t'.
+ モードラインの連続した余白がひとつに詰めらる.
+
+*** change: prefix を付けてタグを書き戻すとき Artwork も強制更新するようにする.
+ 今まで別のアルバムから曲を追加したとき等に強制フラッシュ(`wtag-flush-tag' prefix 実行)すると
+ アルバム名等共通部分のテキスト系タグが強制的に更新されたが、
+ アートワークは更新されなかった(アートワークが別の画像に更新されていればされた).
+ が、アートワークもアートワークバッファの内容で書き戻されるようになった.
+
+*** fix: `wtag-flush-tag' 強制フラッシュ時 oma file でのコメントタグの条件処理がおかしかった.
+
+*** fix: `wtag-make-artwork-name'
+ アートワークバッファから実行すると、
+ ひとつ上のディレクトリにファイルを作ってしまっていたバグを修正.
+
+*** new: face `wtag-hl-line'.
+
+** mf-tag-write.el: 1.89
+***  変数 `mf-include-file-name' が non-nil なら、その値を Image TAG のファイル名として埋め込む.
+
+** shuffle-all: 2.30
+*** new: 演奏経過時間の割合をモードラインにパーセント表示.
+ 此の上にマウスを置くと再生中のトラックのタイトルがバルーン表示され
+ 右クリックすると shuffle-all-minor-mode-menu が現れる.
+
+ カスタム変数 `shuffle-progress-interval' で進捗割合の更新間隔秒数を指定(デフォルト 5).
+ 負荷軽減目的でデフォルトでは同時にモードラインの更新はしないのですぐには反映されないが
+ カスタム変数  `shuffle-progress-timer-mode-line-update' が non-nil なら
+ モードラインも一緒に更新する.
+
+ カスタム変数 `shuffle-all-minor-mode-lighter-label'
+ 進捗表示のプレフィクス文字列でデフォルトは "▶".
+
+ カスタム変数 `shuffle-global-mode-string'
+ non-nil なら mode-line 右端グローバルエリアに `shuffle-title' を表示する(従来互換).
+
+*** fix: カレントバッファ(wtag-view-mode buffer)にいないと Single play mode が効かないバグを修正.
+
+*** fix: `shuffle-shade' face のエラーが出てしまうのを回避.
+*** change: `shuffle-all-minor-mode'
+ repeat-mode のメッセをメッセージログにも残さないようにする.
+
+*** change: ソースヘッダ部分の Installation: の説明変更.
+ `wtag-view-mode-hook' でセットすると Progress が出ないケースが在るので
+ 単純に `require' するよう設定例を変更.
+
 * Sat Jan 25 07:49:53 2025
 ** wtag.el: 3.32
 *** new: hl-line-mode に対応.

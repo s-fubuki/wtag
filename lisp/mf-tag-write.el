@@ -1,8 +1,8 @@
-;;; mf-tag-write.el -- Music file tag write.  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018-2024 fubuki
+;;; mf-tag-write.el -- Music file tag write.
+;; Copyright (C) 2018-2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.88 $
+;; Version: $Revision: 1.89 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.88 $")
+(defconst mf-tag-write-version "$Revision: 1.89 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -128,9 +128,14 @@ ALIAS は 実 tag を得るため."
     ("mp4\\|M4A\\|mp42"   "covr"  nil            nil                           (13 . 14))
     ( "fLaC"              "APIC"  nil            ("image/jpeg" . "image/png")  3)))
 
+(defvar mf-include-file-name nil)
+
 (defun mf-set-image-tag (mode file)
   "イメージ FILE(ファイルまたはオブジェクト)の plist を MODE により構成して返す."
-  (let* ((name (if (file-attributes file) (file-name-nondirectory file) ""))
+  (let* ((name (or mf-include-file-name
+                   (if (file-attributes file)
+                       (file-name-nondirectory file)
+                     "")))
          (data (if (file-attributes file)
                    (with-temp-buffer
                      (insert-file-contents-literally file)
@@ -222,7 +227,9 @@ OLDTAGS は plist で適合する alias list の選択のための手がかり�
     (setq mf-current-alias (mf-alias func plst mode))
     (dolist (a plst (reverse result))
       (let ((tag  (mf-get-tag-propety a))
+            (file (plist-get a :file))
             (data (plist-get a :data)))
+        (and file (setq tag (propertize tag :include-file-name file)))
         (setq result (cons (cons tag data) result))))))
 
 ;;;###autoload
