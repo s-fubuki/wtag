@@ -1,5 +1,22 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Apr 26 07:48:00 2025
+** wtag.el: 3.42
+*** fix: `wtag-next-tag', `wtag-previous-tag':
+ 編集モード時、文字数ゼロになったブロック位置に TAB で移動できなかった悲しい仕様の改善.
+ そんなときは UNDO で消した文字列を一時的に復活させて位置を探すなどしていた.
+ 加えて行き止まりで Ding(Beep) するようにもする.
+
+*** fix: `wtag-add-sort-tags':
+ 空文字タグでエラーが起こるのを修正. (通常することはない)
+
+*** change: `wtag-artist-name-truncate-mode'
+ minor mode として実装していたのを通常のファンクションにする(機能は同じ).
+ マイナーモードはデフォルト enable が非推奨で
+ カスタマイズで設定してもうまく動かないための変更.
+ `wtag-temporary-track-number-mode' は keymap も使い
+ デフォルト nil なのでマイナーモードのままにしておく.
+
 * Sat Mar 22 07:52:39 2025
 ** wtag.el: 3.39
 *** change: 長いバッファ名を短縮化 & モードラインの再配置.

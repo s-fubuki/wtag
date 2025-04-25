@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 3.39 $$Name:  $
+;; Version: @(#)$Revision: 3.42 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -72,7 +72,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 3.39 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 3.42 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -367,9 +367,8 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
   :group 'wtag)
 
 (defcustom wtag-artist-name-truncate-mode t
-  "Wtag artist name truncate minor mode."
+  "Wtag artist name truncate mode."
   :type  'boolean
-  :initialize 'custom-initialize-default
   :group 'wtag)
 
 (defcustom wtag-artist-name-truncate-length 24
@@ -1822,7 +1821,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
      (let ((ci cursor-intangible-mode))
        (when ci (cursor-intangible-mode -1))
        ,@body
-       (when ci (cursor-intangible-mode)))))
+       (when ci (cursor-intangible-mode 1)))))
 
 (defun wtag-stat-view ()
   (interactive)
@@ -1927,30 +1926,41 @@ ARG 等は `wtag-beginning-of-line' を参照."
 (defun wtag-next-tag (&optional arg)
   "次の編集ブロックへ移動."
   (interactive "p")
-  (unless (eq last-command 'wtag-next-tag) (push-mark))
-  (condition-case nil
-      (dotimes (i (or arg 1))
-        (goto-char (next-single-property-change (point) 'read-only))
-        (while (get-text-property (point) 'read-only) (forward-char)))
-    (error (progn
-             (goto-char (point-max))
-             (while (get-text-property (point) 'read-only)
-               (backward-char))))))
-           
+  (save-cursor-intangible-mode
+   (unless (eq last-command 'wtag-next-tag) (push-mark))
+   (condition-case nil
+       (dotimes (i (or arg 1))
+         (unless (get-text-property (point) 'rear-nonsticky)
+           (goto-char (next-single-property-change (point) 'rear-nonsticky)))
+         (forward-char))
+     (error (progn
+              (goto-char (1- (point-max)))
+              (while (get-text-property (point) 'read-only)
+                (backward-char))
+              (ding))))))
+
 (defun wtag-previous-tag (arg)
   "前の編集ブロックへ移動."
   (interactive "p")
-  (unless (eq last-command 'wtag-previous-tag) (push-mark))
-  (condition-case nil
-      (dotimes (i (or arg 1))
-        (while (not (get-text-property (point) 'read-only)) (backward-char))
-        (while (get-text-property (point) 'read-only) (backward-char))
-        (while (not (get-text-property (point) 'read-only)) (backward-char))
-        (forward-char))
-    (error (progn
-             (goto-char (point-min))
-             (while (get-text-property (point) 'read-only)
-               (forward-char))))))
+  (save-cursor-intangible-mode
+   (unless (eq last-command 'wtag-previous-tag) (push-mark))
+   (condition-case nil
+       (dotimes (i (or arg 1))
+         (cond
+          ((and (get-text-property (1- (point)) 'rear-nonsticky)
+                (get-text-property (- (point) 2) 'rear-nonsticky))
+           (backward-char))
+          ((get-text-property (1- (point)) 'rear-nonsticky)
+           (dotimes (i 2)
+             (goto-char (previous-single-property-change (point) 'rear-nonsticky))))
+          (t
+           (dotimes (i 3)
+             (goto-char (previous-single-property-change (point) 'rear-nonsticky))))))
+     (error (progn
+              (goto-char (point-min))
+              (while (get-text-property (point) 'read-only)
+                (forward-char))
+              (ding))))))
 
 (defun wtag-prop-range (pos prop)
   (let (beg end)
@@ -3375,22 +3385,22 @@ winカカシが漢字ASCII混合の場合、
     (append alist new)))
 
 ;;;###autoload
-(defun wtag-add-sort-tags (alist)
-  "タグリスト ALIST に sort tag を追加して返す.
+(defun wtag-add-sort-tags (alst)
+  "タグリスト ALST に sort tag を追加して返す.
 元から含まれている sort tag は、\
 対応するタグを元に新たに生成されたタグに置き換えられる.\n
 注: `mf-tag-read-alias' で得られるリストを使う場合は
-\(mapcar #\\='(lambda (a) (cons (car a) (cddr a))) ALIST) \
+\(mapcar #\\='(lambda (a) (cons (car a) (cddr a))) ALST) \
 等として CDR を組替え \(ALIAS . DATA) の\
-単純な alist にして渡さなければいけない."
+単純な alst にして渡さなければいけない."
   (let ((syms '(title artist album a-artist))
         ret)
     (dolist (a syms)
-      (let ((tmp (assq a alist)))
-        (and tmp
+      (let ((tmp (assq a alst)))
+        (and (cdr tmp)
              (setq ret (cons (cons (wtag-to-sort-symbol (car tmp)) (cdr tmp))
                              ret)))))
-    (wtag-new-append alist (wtag-sort-filter ret))))
+    (wtag-new-append alst (wtag-sort-filter ret))))
 
 ;;
 ;; Artist name truncate mode.
@@ -3427,12 +3437,19 @@ winカカシが漢字ASCII混合の場合、
             (overlay-put ov 'display short)
             (overlay-put ov 'help-echo org)))))))
 
-(define-minor-mode wtag-artist-name-truncate-mode
+(defun wtag-artist-name-truncate-mode (&optional arg)
   "Wtag artist name truncate mode."
-  :global  t
+  (interactive "P")
+  (setq wtag-artist-name-truncate-mode
+        (if (called-interactively-p 'interactive)
+            (not wtag-artist-name-truncate-mode)
+          (or (null arg) (and (integerp arg) (< 0 arg)))))
   (if wtag-artist-name-truncate-mode
       (wtag-artist-name-truncate)
-    (wtag-artist-name-truncate-clear)))
+    (wtag-artist-name-truncate-clear))
+  (and (called-interactively-p 'interactive)
+       (message "Artist name truncate %s"
+                (if wtag-artist-name-truncate-mode "Enable" "Disable"))))
 
 ;;
 ;; Temporary track number mode.
@@ -3760,7 +3777,7 @@ winカカシが漢字ASCII混合の場合、
   (setq-local wtag-beginning-line-of-track 3)
   (setq-local mode-name '("" wtag-view-mode-name (:eval wtag-view-mode-line)))
   (setq-local mode-line-compact wtag-mode-line-compact)
-  (and wtag-artist-name-truncate-mode (wtag-artist-name-truncate-mode))
+  (wtag-artist-name-truncate-mode (if wtag-artist-name-truncate-mode 1 0))
   (make-local-variable 'face-remapping-alist)
   (add-to-list 'face-remapping-alist '(hl-line . wtag-hl-line))
   (setq buffer-display-table (make-display-table))
