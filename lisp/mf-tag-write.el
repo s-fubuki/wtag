@@ -1,8 +1,8 @@
-;;; mf-tag-write.el -- Music file tag write.
+;;; mf-tag-write.el --- Music file tag write
 ;; Copyright (C) 2018-2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.89 $
+;; Version: $Revision: 1.92 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.89 $")
+(defconst mf-tag-write-version "$Revision: 1.92 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -217,20 +217,23 @@ OLDTAGS は plist で適合する alias list の選択のための手がかり�
             (t ;; mf-lib-mp4.el
              (list :tag tag :type (mp4-tag-type tag) :data data))))))
        result))))
+
+(defun mf-stdlist-to-alist (lst)
+  (mapcar
+   (lambda (lst)
+     (cons
+      (let ((tag (or (plist-get lst :dsc) (plist-get lst :tag))))
+        (if (plist-get lst :file)
+            (propertize tag :include-file-name (plist-get lst :file))
+          tag))
+      (plist-get lst :data)))
+   lst))
 
 (defun mf-tag-read-alist (file &optional len no-bin)
   "FILE のタグを \(TAG . DATA) または \(DSC . DATA) の alist にして返す."
-  (let* ((plst (mf-tag-read file len no-bin))
-         (func (mf-func-get file))
-         (mode (mf-get-mode plst))
-         result)
-    (setq mf-current-alias (mf-alias func plst mode))
-    (dolist (a plst (reverse result))
-      (let ((tag  (mf-get-tag-propety a))
-            (file (plist-get a :file))
-            (data (plist-get a :data)))
-        (and file (setq tag (propertize tag :include-file-name file)))
-        (setq result (cons (cons tag data) result))))))
+  (let* ((lst (mf-tag-read file len no-bin)))
+    (setq-local mf-current-alias (mf-get-alias-table file lst))
+    (mf-stdlist-to-alist lst)))
 
 ;;;###autoload
 (defun mf-tag-read-alias (file &optional len no-bin)
@@ -329,10 +332,6 @@ lst は\((alias tag . data) ...) という形式. 一致が無ければ  nil を
     (dolist (a new) (if (plist-get a :data) (push a new2)))
     (append org2 (reverse new2))))
 
-(defun mf-set-make-local-variables (vals)
-  (dolist (v vals)
-    (make-variable-buffer-local v)))
-
 (defvar mf-func-get-hook nil)
 
 ;; from mf-write-tag
@@ -375,6 +374,7 @@ mp3 のときはファイル名か ID3マジックを FILE-OR-MAGIC を指定す
   "FUNCLIST から Convert function を返す. 引数は list のみ."
   (nth 2 funclist))
 
+(make-obsolete 'mf-alias 'mf-get-alias-table "1.89")
 (defun mf-alias (funclist tags &optional mode)
   "FUNCLIST から mf-current-mode または MODE の alias 設定を得る.
 TAGS は alias table 選択の手がかりに使う現在得ているタグリスト.
@@ -390,6 +390,33 @@ atom なら第4の値をそのまま返す. いずれも eval して返す."
             (mf-get-mp3-alias tags)
           (eval (assoc-default mode alias)))
       (eval alias))))
+
+(defsubst mf-lamep (atags)
+  (assoc "ALBUMSORT" atags))
+
+(defun mf-get-alias-table (file &optional tags)
+  "FILE の実タグリスト TAGS に適合する Alias table を戻す(*).
+この関数を `mf-tag-write' と `mf-tag-read-alist' の中で呼び出し
+バッファ・ローカル変数 `mf-current-alias' に結果をセットしている.
+TAGS が指定されていればそのまま使い
+さもなくば `mf-tag-read' で FILE から読み込む.
+TAGS を指定してあってもファンクションテーブルを得るために FILE は必須.
+実タグを頼りに Alias table を得るための関数なので
+TAGS は実タグが含まれる `mf-tag-read' の戻値でなくてはならない.
+`mf-tag-read-alist' も実タグを含んでいるが、その内部でこの関数を呼び出していて
+既に Alias table を得ているので意味が無い.
+* LAME と MusicCenter2 で拡張してある MP3 のソートタグが違うのを選り分ける関数."
+  (let* ((tags (or tags (mf-tag-read file (mf-read-size file) t)))
+         (tags (if (symbolp (caar tags)) (mf-stdlist-to-alist tags) tags))
+         (funcs (nth 3 (mf-func-get file))))
+    (if (consp funcs)
+        (let* ((id (cdr (assoc mf-type-dummy tags)))
+               (alias (eval (cdr (assoc id funcs)))))
+          (append alias
+                  (if (mf-lamep tags)
+                      mf-id33-tag-lame-alias
+                    mf-id33-tag-musiccenter-alias)))
+      (eval funcs))))
 
 ;;;###autoload
 (defun mf-tag-write (file &optional tags no-backup stamp noerror)
@@ -408,12 +435,11 @@ NOERROR が non-nil なら適合するタグが存在しない場合でもエラ
     (unless func (error "Unknow file type `%s'" file))
     (unless wfunc (error "Write function not ready `.%s'" (file-name-extension file)))
     (with-temp-buffer
-      (mf-set-make-local-variables mf-current-values)
       (set-buffer-multibyte nil)
       (setq mf-current-func func
             org (mf--tag-read file)
             mf-current-mode (mf-get-mode org)
-            mf-current-alias (mf-alias func org mf-current-mode))
+            mf-current-alias (mf-get-alias-table file org))
       (if (stringp no-backup)
           (setq mf-current-file no-backup)
         (setq mf-current-file file))
@@ -425,21 +451,15 @@ NOERROR が non-nil なら適合するタグが存在しない場合でもエラ
 関数はファイルのタグ情報をプロパティリストにして返す関数.
 カレントバッファで実行したい場合もあるので分離してある.
 LENGTH は読み込む大きさ. NO-BINARY が非NIL だと返り値に画像タグを含まない."
-  (if mf-current-func
+  (setq mf-current-file file)
+  (if (setq mf-current-func (mf-func-get file))
       (funcall (mf-rfunc mf-current-func) file length no-binary)
     (error "Unknown music file: %s" file)))
 
 ;;;###autoload
 (defun mf-tag-read (file &optional length no-binary)
   "temp-buffer を開いて `mf--tag-read' を実行するラッパ."
-  (let (result)
-    (with-temp-buffer
-      (mf-set-make-local-variables mf-current-values)
-      (setq mf-current-file file
-            mf-current-func (mf-func-get file))
-      (prog1
-          (setq result (mf--tag-read file length no-binary))
-        (setq mf-current-mode (mf-get-mode result))))))
+  (with-temp-buffer (mf--tag-read file length no-binary)))
 
 (provide 'mf-tag-write)
 ;; fin.

@@ -1,8 +1,8 @@
-;;; wtag.el -- Music file writable tags.
+;;; wtag.el --- Music file writable tags.
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 3.42 $$Name:  $
+;; Version: @(#)$Revision: 3.47 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -72,7 +72,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 3.42 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 3.47 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -163,6 +163,13 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   :type  'function
   :group 'wtag)
 
+(defcustom wtag-safe-sort-code t
+  "t なら japanese-shift-jis にない文字をスペースに置換する.
+nil ならこの処理をしない.
+コーディングシステムで指定しても良い."
+  :type '(choice (const t) (const nil) coding-system)
+  :group 'wtag)
+
 (defcustom wtag-kakashi
   (let ((exe (executable-find "kakasi")))
     (if (and exe (string-match "cmd" shell-file-name))
@@ -185,7 +192,9 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
     (if (and dic (string-match "cmd" shell-file-name))
         (replace-regexp-in-string "/" "\\\\" dic)
       dic))
-  "kakasi を賢くするための辞書. nil なら辞書なしのデフォルト."
+  "kakasi を賢くするための辞書. nil なら辞書なしのデフォルト.
+辞書がユニコードだとカカシが受けつけないので注意.
+$ nkf -e \"~/.skk-jisyo\" > \"~/.euc-dic\""
   :type  '(choice
            (file :must-match t)
            (const nil))
@@ -202,8 +211,9 @@ nil ならソートタグの追加はされない."
   :group 'wtag)
 
 (defcustom wtag-add-sort-tag t
-  "non-nil ならソートタグを追加する."
-  :type  'boolean
+  "nil ならソートタグを追加しない.
+force なら元データにソートタグが含まれていなくても追加する."
+  :type  '(choice (const t) (const force) (const nil))
   :group 'wtag)
 
 (defcustom wtag-music-players
@@ -989,7 +999,9 @@ wtag-sort-file-name はファイル名でソートする."
 mp3/VBR のとき PREFIX があるとビットレートを平均値で表示します.
 平均値を得るのにデータをすべて読み込むため起動が遅くなります.
 See: `wtag-view-mode', `wtag-writable-mode', `wtag-image-mode'."
-  (interactive "DAlbum Directory: \nP")
+  (interactive
+   (list (read-file-name "Album Directory: " nil nil nil nil #'file-directory-p)
+         current-prefix-arg))
   (let* ((wconf (current-window-configuration))
          (mf-mp3-vbr (or wtag-vbr (if (consp prefix) prefix)))
          (kill-read-only-ok t)
@@ -1691,7 +1703,8 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
     
     (while (not (eobp))
       (let* ((mode          (wtag-get-property-value 'mode))
-             (sort          (wtag-get-property-value 'sort))
+             (sort          (or (eq wtag-add-sort-tag 'force)
+                                (wtag-get-property-value 'sort)))
              (old-disk      (wtag-get-property-value 'old-disk))
              (old-track     (wtag-get-property-value 'old-track))
              (old-performer (wtag-get-property-value 'old-performer))
@@ -3295,19 +3308,24 @@ PREFIX でディレクトリ指定の通常コピーになる."
 (defun wtag-to-sort-symbol (sym)
   (intern (concat "s-" (symbol-name sym))))
 
-(defvar wtag-safe-sort-code '(japanese-shift-jis undecided))
+(defun wtag-rep-spcae (str)
+  "STR 中の特定の文字を空白に置換して戻す.
+特定の文字とは変数 `wtag-safe-sort-code' で指定のコーディングにできない文字.
+変数の値が t なら japanese-shift-jis とし nil なら STR をそのまま戻す."
+  (let* ((coding (if (eq wtag-safe-sort-code t)
+                     'japanese-shift-jis
+                   wtag-safe-sort-code))
+         (bad (and
+               coding
+               (assoc-default
+                coding (check-coding-systems-region str nil (list coding)))))
+         (cpy (copy-sequence str)))
+    (dolist (i bad cpy) (aset cpy i ?\s))))
 
 (defun wtag-safe-sjis (lst)
-  "LST の中の sjis にできない文字列を \"\"(空文字) にしたリストを戻す."
-  (mapcar
-   #'(lambda (str)
-       (if (cl-member wtag-safe-sort-code
-                      (find-coding-systems-string str)
-                      :test #'(lambda (a b) (memq b a)))
-           str
-         (wtag-message "Can't convert `%s'" str)
-         ""))
-   lst))
+  "LST 中文字列の `wtag-safe-sort-code' にできない文字を SPACE に置換して戻す.
+unicode が扱えない kakasi 対策."
+  (if wtag-safe-sort-code (mapcar #'wtag-rep-spcae lst) lst))
 
 (require 'japan-util)
 (defconst wtag-regular-table
@@ -3750,7 +3768,7 @@ winカカシが漢字ASCII混合の場合、
 
 (defvar wtag-view-mode-line
   '(:propertize
-    (":" (:eval (mapconcat #'identity (wtag-get :mode-name) " ")))
+    (" " (:eval (mapconcat #'identity (wtag-get :mode-name) " ")))
     face wtag-mode-name
     help-echo wtag-music-title))
 
@@ -3760,11 +3778,11 @@ winカカシが漢字ASCII混合の場合、
      (let ((tmp (wtag-image-size)))
        (cond
         ((null tmp)
-         ":unknown")
+         " unknown")
         ((eq (nth 1 tmp) (nth 2 tmp))
-         (format ":%s:%dSQ" (nth 0 tmp) (nth 1 tmp)))
+         (format " %s:%dSQ" (nth 0 tmp) (nth 1 tmp)))
         (t
-         (apply #'format ":%s:%dx%d" tmp)))))
+         (apply #'format " %s:%dx%d" tmp)))))
     face wtag-image-size))
 
 (define-derived-mode wtag-view-mode text-mode wtag-view-mode-name

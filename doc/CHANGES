@@ -1,5 +1,63 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat May 31 07:37:25 2025
+表立った変更は殆ど無く、主にバグ取りやコードの整理がメインです.
+
+** mf-lib-mp3.el: 2.44
+*** fix: `mf-get-mp3-alias'
+ 引数の tag list がベーシックなプロパティリストでは無い場合
+ 正常に動作していなかったのを修正.
+
+*** obsolute: function `mf-get-mp3-alias'
+ 呼び出し元の mf-alias を書換、そちら(`mf-get-alias-table')に同機能を持たせ不要になったので
+ オブソルートしたが、呼び元のオブソルート関数 `mf-alias' がまだあるため
+ バイトコンパイルエラーになる.
+ それを避けるため make-obsolete 行はとりまコメアウト.
+
+*** change: `mf-get-mp3-alias': 戻値の変更
+ 元タグにソートタグが無いと nil を戻していたのを
+ `mf-id33-tag-default-alias' の値を戻すようにする.
+ この変数のデフォルトは `mf-id33-tag-musiccenter-alias'.
+ つまりデフォルトだと元タグにソートタグが無い場合は
+ ソートエイリアスは Music Center2 対応のものが使われる.
+ 設定できる有効な値は他に `mf-id33-tag-lame-alias' または nil.
+
+** mf-lib-var.el: 1.37
+*** chnage: バッファ・ローカル変数を宣言時にバッファ・ローカル変数として定義
+*** fix: `mf-indirect-car' 整数に丸めこんで戻す
+ ogg で時間表示が壊れていた.
+
+** mf-tag-write.el: 1.92
+*** add: `mf-include-file-name' が non-nil ならその値を image tag の :file に使う
+*** change: バッファ・ローカル変数のセット位置等の見直し
+
+** wtag.el: 3.47
+*** change: `wtag-view-mode-line', `wtag-image-mode-line'
+ mode-name 付随情報のジョイントをコロンから SPACE にする.
+
+***  change: `wtag-safe-sort-code' t なら(デフォルト)
+ プロセスに渡す前に sjis 化できない文字を SPACE に置換するようにする(カカシ対策).
+ 今までは sjis 化できない文字が混じっているタグは
+ プロセスに渡さず ""(空文字) を戻すようになっていた.
+  nil ならこの処理をしない、またコーディングシステムのシンボルなら
+ 不正文字の基準を sjis に代えそのコーディング・システムにする.
+
+*** add: `wtag-add-sort-tag'
+ t なら元になる MP3ファイルにソートタグがあればそのソートタグをつける nil ならつけない.
+ これは今までのままで、これに加えて
+ force なら元タグにソートタグが無くとも書き込み時にソートタグを追加する.
+ default は t (変更なし).
+ force のとき選ばれるソート用タグテーブルは
+ `mf-lib-mp3.el' で定義されている `mf-id33-tag-default-alias' の値.
+ 値として `mf-id33-tag-musiccenter-alias' か `mf-id33-tag-lame-alias' が指定でき
+ デフォルトは `mf-id33-tag-musiccenter-alias' で Walkman が認識するソート用タグになる.
+
+*** change: `wtag' interative "D" で末尾スラッシュの影響が無いよう変更
+ `interative' でのコードレター引数 "D" や `read-directory-name' から
+ 入力したディレクトリ名の末尾にスラッシュがあると
+ 戻値が `default-directory'(バッファのカレント・ディレクトリ) になってしまうので(なぜ?)
+ スラッシュがあってもなくても入力されたディレクトリが戻るようにする.
+
 * Sat Apr 26 07:48:00 2025
 ** wtag.el: 3.42
 *** fix: `wtag-next-tag', `wtag-previous-tag':

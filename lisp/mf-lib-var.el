@@ -1,9 +1,9 @@
-;;; mf-lib-var-20200418.el
+;;; mf-lib-var.el ---
 
-;; Copyright (C) 2020, 2021, 2022, 2023, 2024 fubuki
+;; Copyright (C) 2020-2025 fubuki
 
-;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.36 $$Name:  $
+;; Author:  fubuki at frill.org
+;; Version: $Revision: 1.37 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,17 +27,18 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.36 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 1.37 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
 
-(defvar mf-current-file  nil "for buffer local variable.")
-(defvar mf-current-mode  nil "for buffer local variable.")
-(defvar mf-current-func  nil "for buffer local variable.")
-(defvar mf-current-alias nil "for buffer local variable.")
-(defvar mf-current-case  nil "for buffer local variable.")
+(defvar-local mf-current-file  nil "for buffer local variable.")
+(defvar-local mf-current-mode  nil "for buffer local variable.")
+(defvar-local mf-current-func  nil "for buffer local variable.")
+(defvar-local mf-current-alias nil "for buffer local variable.")
+(defvar-local mf-current-case  nil "for buffer local variable.")
 
+(make-obsolete-variable 'mf-current-values nil "1.36")
 (defvar mf-current-values
   '(mf-current-file mf-current-mode mf-current-func mf-current-alias mf-current-case))
 

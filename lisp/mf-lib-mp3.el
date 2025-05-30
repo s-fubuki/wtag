@@ -1,8 +1,8 @@
-;;; mf-lib-mp3.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018-2024 fubuki
+;;; mf-lib-mp3.el --- This library for mf-tag-write.el
+;; Copyright (C) 2018-2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.41 $$Name:  $
+;; Version: $Revision: 2.44 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.41 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 2.44 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -193,6 +193,12 @@ If face, display that face on `wtag'."
   '((s-album . "ALBUMSORT") (s-a-artist . "ALBUMARTISTSORT")
     (s-title . "TITLESORT") (s-artist . "ARTISTSORT")))
 
+(defvar mf-id33-tag-default-alias mf-id33-tag-musiccenter-alias
+  "`mf-get-mp3-alias' で元データに手がかりとなるソートタグがなかったときに追加する
+デフォルトソートタグエイリアス.
+`mf-id33-tag-musiccenter-alias' か `mf-id33-tag-lame-alias' であるべきだが.
+nil にすることによって追加しないようにもできる.")
+
 (defcustom mf-id32-tag-alias
   '((title . "TT2") (artist . "TP1") (album . "TAL") (genre . "TCO") (composer . "TCM") (artist3 . "TP3") (track . "TRK") (disk . "TPA") (year . "TYE") (a-artist . "TP2") (comment . "COM") (copy . "TCR") (cover . "PIC") (artwork . "PIC") (lyric . "ULT") (enc . "TEN") (group . "GP1") (bpm . "TBP"))
   "mp3 id32 tag alias."
@@ -309,14 +315,25 @@ FUN が non-nil ならサイズを Syncsafe Integer として読み込む(for ID
                 str)))
     (detect-coding-string str 'hi)))
 
+;; (make-obsolete 'mf-get-mp3-alias nil "2.42")
 (defun mf-get-mp3-alias (tags)
-  "TAGS を調べ適合する mp3 ID3/3 の alias aliast を戻す."
-  (let ((mc   mf-id33-tag-musiccenter-alias)
+  "TAGS を調べ適合する mp3 ID3/3 の alias aliast を戻す.
+手掛りにするソートタグが含まれないときは
+`mf-id33-tag-default-alias' にセットされたソートタグリストがアペンドされる.
+TAGS は `mf-tag-read' が戻すプレーンな形式であるべきだが
+`mf-tag-read-alist', `mf-tag-read-alias' が戻すリストの場合も一応考慮している.
+実タグを見て判別するので実タグが含まれていない
+`mf-tag-read-alis-alist', `mf-tag-read-plist' 等では動作しない."
+  (let ((mc mf-id33-tag-musiccenter-alias)
         (lame mf-id33-tag-lame-alias))
     (append mf-id33-tag-alias
             (catch 'out
-              (dolist (tag tags)
-                (let ((tag (or (plist-get tag :dsc) (plist-get tag :tag) (car tag))))
+              (dolist (tag tags mf-id33-tag-default-alias)
+                (let ((tag (or
+                            (plist-get tag :dsc) (plist-get tag :tag)
+                            (if (stringp (car tag))
+                                (car tag)
+                              (cadr tag)))))
                   (cond
                    ((rassoc tag mc)
                     (throw 'out mc))
