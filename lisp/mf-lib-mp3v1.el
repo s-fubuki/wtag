@@ -1,8 +1,8 @@
-;;; mf-lib-mp3v1.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2020-2024 fubuki
+;;; mf-lib-mp3v1.el --- This library for mf-tag-write.el -*- lexical-binding:nil -*-
+;; Copyright (C) 2020-2025 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: $Revision: 1.27 $$Nmae$
+;; Author: fubuki at frill.org
+;; Version: $Revision: 2.1 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -50,7 +50,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3v1-version "$Revision: 1.27 $$Nmae$")
+(defconst mf-lib-mp3v1-version "$Revision: 2.1 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
@@ -120,12 +120,15 @@ Entity is alias for `ID3v2.3'."
   (setq mf-function-list nil))
 (add-to-list 'mf-function-list 'mf-mp31-function-list)
 
-;; 拡張子だけでは MP3 の種類まで判別できないので ".mp3" なら中身も見る為の仕掛.
-(add-hook 'mf-func-get-hook #'mf-id31-file-set)
+;; 拡張子だけでは MP3 の種類まで判別できないので ".mp3" なら中身で調べる為の仕掛.
+(if (boundp 'mf-func-get-function)
+    (setq mf-func-get-function #'mf-func-get-ex)) ;; mf-tag-write
 
-(with-no-warnings
-  (defun mf-id31-file-set ()
-    (setq file (mf-id31-add-suffix file))))
+(defun mf-func-get-ex (file)
+  (let ((file (if (string-match-p "\\.mp3\\'" file)
+                  (mf-id31-add-suffix file)
+                file)))
+    (assoc-default file (mf-function-list) 'string-match)))
 
 (defcustom mf-mp3-id31-1st nil
   "non-nil なら ID31 を優先."
@@ -158,11 +161,10 @@ MF-ID31-1ST が non-nil なら ID31 を優先する."
 
 (defun mf-id32p (file)
   "FILE が MP3 ID3v2.2 ID3v2.3 ID3v2.4 のいずれかなら NON-NIL."
-  (let (str)
-    (with-temp-buffer
-      (insert-file-contents-literally file nil 0 16)
-      (set-buffer-multibyte nil)
-      (id32-buffer-p))))
+  (with-temp-buffer
+    (insert-file-contents-literally file nil 0 16)
+    (set-buffer-multibyte nil)
+    (id32-buffer-p)))
 
 (defun id32-buffer-p (&optional buffer)
   "BUFFER が MP3 ID3v2.[234] なら NON-NIL.
@@ -196,7 +198,7 @@ BUFFER が省略されればカレントバッファになる."
                      str (detect-coding-string str 'car)))))))
            lst)))
 
-(defun id31-get-tags (beg end &optional ver)
+(defun id31-get-tags (beg end)
   "ID31 Footer block をリスト分解して戻す."
   (let* ((ver (if (zerop (char-after (- end 3)))
                   id31-tbl-ex id31-tbl))
@@ -346,7 +348,7 @@ FILE に該当個所が無いとエラーになる."
       (setq result (cons str result)))
     result))
 
-(defun mf-id31-tag-read (file &optional dummy1 dummy2)
+(defun mf-id31-tag-read (file &optional _dummy1 _dummy2)
   "for `mf-tag-write'."
   (let ((mf-current-mode "ID3/3")
         (mf-current-alias mf-id31-alias)

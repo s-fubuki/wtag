@@ -1,8 +1,8 @@
-;;; wtag.el --- Music file writable tags.
+;;; wtag.el --- Music file writable tags. -*- lexical-binding:t -*-
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 3.47 $$Name:  $
+;; Version: @(#)$Revision: 4.1 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -72,7 +72,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 3.47 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 4.1 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -359,7 +359,7 @@ VBR なら フレーム 1 のもの. Prefix 起動で 全データ読み込ま�
   "`image-auto-resize' を override."
   :type '(choice (const :tag "No resizing" nil)
                  (const :tag "Fit to window" fit-window)
-                 (other :tag "Scale down to fit window" t)
+                 (const :tag "Scale down to fit window" t)
                  (number :tag "Scale factor" 1))
   :group 'wtag)
 
@@ -1103,9 +1103,10 @@ list が pair ならフラットなリストにしてから処理する.
   (let* ((str (reverse (number-to-string value)))
          (len (length str))
          result)
-    (dotimes (i len result)
+    (dotimes (i len)
       (setq result (concat (string (aref str i)) result))
-      (and (< i (1- len)) (zerop (mod (1+ i) 3)) (setq result (concat "," result))))))
+      (and (< i (1- len)) (zerop (mod (1+ i) 3)) (setq result (concat "," result))))
+    result))
 
 (defun wtag-number-to-string-with-comma* (val)
   (let ((str (reverse (number-to-string val)))
@@ -1118,7 +1119,7 @@ list が pair ならフラットなリストにしてから処理する.
 (defun wtag-insert-index (index dir)
   "Tag plist INDEX を取得した DIR."
   (let* ((max-width-artist (setq wtag-artist-name-max (wtag-max-width index 'artist)))
-         (max-width-title  (wtag-max-width index 'title))
+         ;; (max-width-title  (wtag-max-width index 'title))
          (max-width-disk   (wtag-max-width index 'disk))
          (formd (concat "%" (number-to-string max-width-disk) "s"))
          (max-width-track  (wtag-max-width index 'track))
@@ -1128,19 +1129,19 @@ list が pair ならフラットなリストにしてから処理する.
          ;; (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
          (prefix (wtag-get :init-prefix))
          (old-comment (wtag-alias-value 'comment (car index)))
-         title file ext mode modes cache comm dsk _str)
+         title file ext mode modes cache comm dsk str*)
     (setq wtag-current-mode  (wtag-alias-value '*type (car index))
           comm (wtag-beginning-string
                 old-comment (wtag-alias-value 'filename (car index))))
     (insert ; Common part.
-     (propertize " " 'old-aartist (setq _str (wtag-alias-value 'a-artist (car index))))
-     (propertize _str 'a-artist t 'mouse-face 'highlight
-                 'face (wtag-choice-face _str 'wtag-album-artist)
+     (propertize " " 'old-aartist (setq str* (wtag-alias-value 'a-artist (car index))))
+     (propertize str* 'a-artist t 'mouse-face 'highlight
+                 'face (wtag-choice-face str* 'wtag-album-artist)
                  'help-echo (wtag-alias-value 's-a-artist (car index)))
 
-     (propertize " " 'old-album (setq _str (wtag-alias-value 'album (car index))))
-     (propertize _str 'album t 'mouse-face 'highlight
-                 'face (wtag-choice-face _str 'wtag-album-name)
+     (propertize " " 'old-album (setq str* (wtag-alias-value 'album (car index))))
+     (propertize str* 'album t 'mouse-face 'highlight
+                 'face (wtag-choice-face str* 'wtag-album-name)
                  'help-echo (wtag-alias-value 's-album (car index)))
      " "
      (propertize
@@ -1154,12 +1155,12 @@ list が pair ならフラットなリストにしてから処理する.
      (propertize
       ;; (make-string (+ max-width-track 2) 32)
       "  "
-      'old-genre (setq _str (wtag-alias-value 'genre (car index))))
-     (propertize _str 'genre t 'mouse-face 'highlight
-                 'face (wtag-choice-face _str 'wtag-genre-name)
+      'old-genre (setq str* (wtag-alias-value 'genre (car index))))
+     (propertize str* 'genre t 'mouse-face 'highlight
+                 'face (wtag-choice-face str* 'wtag-genre-name)
                  'help-echo "genre")
-     (propertize " " 'old-year (setq _str (wtag-alias-value 'year (car index))))
-     (propertize _str
+     (propertize " " 'old-year (setq str* (wtag-alias-value 'year (car index))))
+     (propertize str*
                  'year t 'mouse-face 'highlight
                  'face 'wtag-release-year
                  'help-echo "year")
@@ -1236,11 +1237,11 @@ list が pair ならフラットなリストにしてから処理する.
                        'help-echo (wtag-format (wtag-form-select wtag-time-form 2) times)
                        'mouse-face 'highlight
                        'face (if (consp (car times)) 'wtag-time-other 'wtag-time))))
-       (propertize " " 'old-performer (setq _str (wtag-alias-value 'artist a)))
+       (propertize " " 'old-performer (setq str* (wtag-alias-value 'artist a)))
        ;; Performer.
-       (propertize _str
+       (propertize str*
                    'performer t 'mouse-face 'highlight
-                   'face (wtag-choice-face _str 'wtag-artist-name)
+                   'face (wtag-choice-face str* 'wtag-artist-name)
                    'help-echo (wtag-alias-value 's-artist a))
        (wtag-padding-string (wtag-alias-value 'artist a) max-width-artist)
        (propertize " " 'old-title title)
@@ -1484,8 +1485,7 @@ PREFIX があれば逆方向に向っていく."
 ;;       limit)))
 
 (defun wtag-edit-end-limit ()
-  (let* ((beg (line-beginning-position))
-         (limit (line-end-position)))
+  (let* ((limit (line-end-position)))
     (if (get-text-property (1- limit) 'margin)
         (1- (previous-single-property-change (1- limit) 'margin))
       limit)))
@@ -1678,13 +1678,12 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
   (let ((no-backup wtag-no-backup)
         (modify-cover (and (wtag-get :artwork-buffer)
                            (buffer-modified-p (get-buffer (wtag-get :artwork-buffer)))))
-        keep-name new-disk new-aartist new-album new-genre new-year new-title new-comment
-        old-disk old-aartist old-album old-genre old-year old-comment track directory tmp)
+        keep-name new-aartist new-album new-genre new-year new-comment
+        old-aartist old-album old-genre old-year old-comment directory tmp)
     (buffer-disable-undo)
     (when wtag-cursor-intangible (cursor-intangible-mode -1))
     (goto-char (point-min))
-    (setq new-disk    (wtag-get-name 'old-disk    'end-disk)
-          new-aartist (wtag-get-name 'old-aartist 'end-aartist)
+    (setq new-aartist (wtag-get-name 'old-aartist 'end-aartist)
           new-album   (wtag-get-name 'old-album   'end-album)
           keep-name   (wtag-regular-file-name new-album))
     (forward-line)
@@ -1772,7 +1771,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
                   (and wtag-track-prefix-rename (assq 'track tags)
                        (wtag-track-prefix-rename
                         filename new-disk new-track new-title))))
-            (wtag-message "File error `%s'" filename)))
+            (wtag-message "%s: `%s'" (error-message-string err) filename)))
         (forward-line)))
     (when wtag-tmp-artwork
       (and (file-exists-p wtag-tmp-artwork) (delete-file wtag-tmp-artwork))
@@ -1869,7 +1868,7 @@ ARG はリピート数."
      (unless (eq last-command 'wtag-next-line) (push-mark))
      (unless (and lmv (eq last-command 'wtag-next-line))
        (setq temporary-goal-column cc))
-     (dotimes (i (if arg arg 1))
+     (dotimes (_ arg)
        (if (setq mode (cdr (wtag-2nd-area)))
            (progn
              (forward-line)
@@ -1936,13 +1935,13 @@ ARG 等は `wtag-beginning-of-line' を参照."
 ;;   (let ((limit (line-end-position)))
 ;;     (goto-char (next-single-property-change (point) 'end-block nil limit))))
 
-(defun wtag-next-tag (&optional arg)
+(defun wtag-next-tag (arg)
   "次の編集ブロックへ移動."
   (interactive "p")
   (save-cursor-intangible-mode
    (unless (eq last-command 'wtag-next-tag) (push-mark))
    (condition-case nil
-       (dotimes (i (or arg 1))
+       (dotimes (_ arg)
          (unless (get-text-property (point) 'rear-nonsticky)
            (goto-char (next-single-property-change (point) 'rear-nonsticky)))
          (forward-char))
@@ -1958,16 +1957,16 @@ ARG 等は `wtag-beginning-of-line' を参照."
   (save-cursor-intangible-mode
    (unless (eq last-command 'wtag-previous-tag) (push-mark))
    (condition-case nil
-       (dotimes (i (or arg 1))
+       (dotimes (_ arg)
          (cond
           ((and (get-text-property (1- (point)) 'rear-nonsticky)
                 (get-text-property (- (point) 2) 'rear-nonsticky))
            (backward-char))
           ((get-text-property (1- (point)) 'rear-nonsticky)
-           (dotimes (i 2)
+           (dotimes (_ 2)
              (goto-char (previous-single-property-change (point) 'rear-nonsticky))))
           (t
-           (dotimes (i 3)
+           (dotimes (_ 3)
              (goto-char (previous-single-property-change (point) 'rear-nonsticky))))))
      (error (progn
               (goto-char (point-min))
@@ -2005,7 +2004,7 @@ ARG 等は `wtag-beginning-of-line' を参照."
 (defun wtag-get-property-point (prop val)
   "カレントバッファから 値が VAL の PROP の全位置をリストで戻す."
   (let ((pos (point-min))
-        tmp result)
+        result)
     (while (setq pos (next-single-property-change pos prop))
       (if (eq val (get-text-property pos prop))
           (push pos result)))
@@ -2402,9 +2401,7 @@ list 要素内の文字列はそのまま連結される."
 NO-PREFIX, PREFIX, 0 PREFIX または 1 PREFIX で
 `wtag-name-push' の中の参照位置が変わる."
   (interactive "p")
-  (let* ((prefix (and current-prefix-arg
-                      (prefix-numeric-value current-prefix-arg)))
-         (ln (line-number-at-pos))
+  (let* ((ln (line-number-at-pos))
          tag result str mark dir)
     (save-excursion
       (cond
@@ -3119,7 +3116,7 @@ CHAR には対象のマークキャラクタ, 省略すると `*' になる."
       (goto-char (point-max))
       (wtag-previous-marked))))
 
-(defun wtag-music-file-copy-pty-get (pty &optional oma)
+(defun wtag-music-file-copy-pty-get (pty)
   (list
    (cons 'album    (wtag-alias-value 'old-album   pty))
    (cons 'a-artist (wtag-alias-value 'old-aartist pty))
@@ -3191,7 +3188,7 @@ SRT が non-nil なら sort tag をアペンドする."
               (wtag-make-directory dst)
             (error "Cancel")))
       (copy-file src dst 0))
-    (setq args (wtag-music-file-copy-pty-get pty (string-match "\\.oma\\'" src))
+    (setq args (wtag-music-file-copy-pty-get pty)
           args (if srt (wtag-add-sort-tags args) args))
     (mf-tag-write src args (concat dst (file-name-nondirectory src)))))
 
@@ -3344,11 +3341,12 @@ unicode が扱えない kakasi 対策."
 (defun wtag-reverse-regular (str)
   "STR の ascii 文字を全角にして戻す."
   (let (elt tmp result)
-    (dotimes (i (length str) (apply #'string (reverse result)))
+    (dotimes (i (length str))
       (setq elt (aref str i))
       (if (setq tmp (rassoc elt wtag-regular-table))
           (push (car tmp) result)
-        (push elt result)))))
+        (push elt result)))
+    (apply #'string (reverse result))))
 
 (defun wtag-kakashi-filter (lst)
   "文字列 LST のエレメンツを `wtag-kakashi' の標準入力に通しその結果を戻す.
@@ -3375,8 +3373,7 @@ winカカシが漢字ASCII混合の場合、
   (let* ((exe wtag-kakashi)
          (dic (or wtag-kakashi-usrdic ""))
          (args (list "-JK" "-HK" "-aE" dic))
-         (lst (mapcar #'wtag-make-sort-string lst))
-         tmp)
+         (lst (mapcar #'wtag-make-sort-string lst)))
     (with-temp-buffer
       (insert (mapconcat #'identity (wtag-safe-sjis lst) "\n"))
       (apply #'call-process-region
@@ -3396,7 +3393,7 @@ winカカシが漢字ASCII混合の場合、
 
 (defun wtag-new-append (alist new)
   "ALIST から car が NEW とかぶる要素を取り除いた後 NEW を append して返す."
-  (let (result tmp)
+  (let (tmp)
     (dolist (a new)
       (setq tmp (assq (car a) alist))
       (and tmp (setq alist (delq tmp alist))))
@@ -3446,7 +3443,6 @@ winカカシが漢字ASCII混合の場合、
                             (text-property-search-forward 'old-title))
                         (1- (point))))
                  (org (prop-match-value prop))
-                 (org-len (string-width org))
                  (short (truncate-string-to-width org len nil pad ellipsis))
                  (ov (make-overlay beg end)))
             (or pad (setq pad 32))

@@ -1,8 +1,8 @@
-;;; mf-lib-wma.el -- Tag read lib for wma. -*- coding: utf-8-unix -*-
-;; Copyright (C) 2022, 2023 fubuki
+;;; mf-lib-wma.el --- Tag read lib for wma -*- lexical-binding:t -*-
+;; Copyright (C) 2022-2025 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.7 $
+;; Author: fubuki at frill.org
+;; Version: @(#)$Revision: 2.1 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -293,7 +293,7 @@ mf-tag-read 形式のプロパティリストとして戻す.
     (push (list :tag "extended:number" :data number) result)
     (goto-char (+ (point) 10))
     ;; Ext part
-    (dotimes (i number)
+    (dotimes (_ number)
       (setq end (+ (point) 2 (mf-buffer-read-word-le)))
       (setq tag (mf-wma-chop-decode-coding-string
                  (buffer-substring (+ (point) 2) end)))

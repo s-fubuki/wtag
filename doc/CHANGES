@@ -1,7 +1,29 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Jun 28 07:38:18 2025
+** mf-lib-aiff.el: 2.1
+** mf-lib-flac.el: 2.1
+** mf-lib-mp3.el:  3.1
+** mf-lib-mp3v1.el: 2.1
+** mf-lib-mp4.el: 3.1
+** mf-lib-ogg.el: 2.1
+** mf-lib-utility.el: 2.1
+** mf-lib-var.el: 2.1
+** mf-lib-wav.el: 2.1
+** mf-lib-wma.el: 2.1
+** mf-tag-write.el: 2.1
+** wtag.el: 4.1
+** shuffle-all.el: 3.1
+ Emacs 30.1 で lexical-binding 指定しないとバイト・コンパイルで警告されるようになったため、
+ すべてのファイルを lexical-binding:t で警告が出ないよう調整し、
+ メジャーバージョンをひとつ上げました.
+
+ 実際にダイナミック・スコープを利用していてレキシカル対応にコードを書き換えたのは
+ mf-lib-mp3v1.el, mf-tag-write.el, shuffle-all.el の 3本のみで、
+ 他のものはループカウント変数名の変更などの調整です.
+
 * Sat May 31 07:37:25 2025
-表立った変更は殆ど無く、主にバグ取りやコードの整理がメインです.
+ 表立った変更は殆ど無く、主にバグ取りやコードの整理がメインです.
 
 ** mf-lib-mp3.el: 2.44
 *** fix: `mf-get-mp3-alias'

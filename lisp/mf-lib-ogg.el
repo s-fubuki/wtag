@@ -1,8 +1,8 @@
-;;; mf-lib-ogg.el
-;; Copyright (C) 2022, 2023 fubuki
+;;; mf-lib-ogg.el --- -*- lexical-binding:t -*-
+;; Copyright (C) 2022-2025 fubuki
 
-;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.7 $$Name:  $
+;; Author:  fubuki at frill.org
+;; Version: $Revision: 2.1 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -23,7 +23,7 @@
 ;; for `mf-tag-write' ogg music file tag READ(!write) library.
 
 ;;; Code:
-(defconst mf-lib-ogg-version "@(#)$Revision: 1.7 $$Nmae$")
+(defconst mf-lib-ogg-version "@(#)$Revision: 2.1 $$Nmae$")
 
 (require 'mf-lib-var)
 (require 'mf-lib-flac)
@@ -125,8 +125,7 @@ OGG コンテナでなければエラーになる.
 (defun ogg-tag-split (str no-binary)
   "STR を \"=\" で分割し :tag と :data のプロパティリストにする.
 NO-BINARY が non-nil ならカバーアートタグの :data を nil にする."
-  (let* ((len  (length str))
-         (p    (string-match "=" str))
+  (let* ((p    (string-match "=" str))
          (tag  (substring str 0 p))
          (data (substring str (1+ p))))
     (if (string-match "METADATA_BLOCK_PICTURE\\|COVERART" tag)
@@ -153,7 +152,7 @@ NO-BINARY が non-nil ならカバーアートタグの :data を nil にする.
                           :data (buffer-substring (+ (point) 4) (+ (point) len 4)))
                     result))
       (forward-char (+ 4 len))
-      (dotimes (i (prog1 (mf-buffer-read-long-word-le) (forward-char 4)))
+      (dotimes (_ (prog1 (mf-buffer-read-long-word-le) (forward-char 4)))
         (setq len (mf-buffer-read-long-word-le)
               result (cons
                       (ogg-tag-split
@@ -189,7 +188,7 @@ type は bitrate 3種の値が同一なら cbr, 違えば vbr というシンボ
 
 (defun ogg-data-beg (lst)
   "コンテナ plist LST data-range のデータ開始位置(CAR)を返す.
-ヘッダコンテナなら(data 一文字目が \0 でないなら) マジック分(7bytes)進めた値になる."
+ヘッダコンテナなら(data 一文字目が \\0 でないなら) マジック分(7bytes)進めた値になる."
   (let ((pos (cadr (assq 'data-range lst))))
     (if (not (zerop (char-after pos))) ; Header コンテナなら 1 か 3 もしくは 5.
         (+ pos (length ogg-vorbis-magic) 1)
@@ -213,12 +212,12 @@ type は bitrate 3種の値が同一なら cbr, 違えば vbr というシンボ
   (let ((pair (cdr (assq 'data-range lst))))
     (buffer-substring (car pair) (cdr pair))))
 
-(defun mf-ogg-tag-read (file &optional len no-binary)
+(defun mf-ogg-tag-read (file &optional _len no-binary)
   "`mf-tag-write' 用 ogg file リーダユニット.
 今の処読み込んだ時点では ogg/vorbis としての正当性のチェックはしていない.
 違えば解析時にエラーになる.
 ogg はすべて読まないと演奏時間が得られないので,
-LEN はダミーで必ずすべて読み込む.
+_LEN はダミーで必ずすべて読み込む.
 NO-BINARY が non-nil ならカバーアートタグの :data を nil にする."
   (let (result granule ident comstr times)
     (insert-file-contents-literally file)

@@ -1,8 +1,8 @@
-;;; mf-lib-flac.el -- This library for mf-tag-write.el  -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2020, 2021, 2022, 2023 fubuki
+;;; mf-lib-flac.el --- This library for mf-tag-write.el -*- lexical-binding:t -*-
+;; Copyright (C) 2020-2025 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: @(#)$Revision: 1.63 $$Nmae$
+;; Author: fubuki at frill.org
+;; Version: @(#)$Revision: 2.1 $$Nmae$
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-flac-version "@(#)$Revision: 1.63 $$Nmae$")
+(defconst mf-lib-flac-version "@(#)$Revision: 2.1 $$Nmae$")
 
 (require 'mf-lib-var)
 
@@ -185,12 +185,13 @@ flac の tag は case insensitive らしいので注意.
       (forward-char (+ 4 len))
       (setq count (mf-buffer-read-long-word-le))
       (forward-char 4)
-      (dotimes (i count (reverse result))
+      (dotimes (_ count)
         (setq len (mf-buffer-read-long-word-le)
               str (decode-coding-string
                    (buffer-substring (+ 4 (point)) (+ 4 (point) len)) 'utf-8)
               result (cons (mf-to-property-list str) result))
-        (forward-char (+ 4 len))))))
+        (forward-char (+ 4 len)))
+      (reverse result))))
 
 (defun mf-split-picture-header (point)
   "`mf-flac-picture-analyze' の下位."
@@ -348,12 +349,13 @@ POS が省略されると現在のポイントが使われる.
                  (plist-get a :data))
         (throw 'break t)))))
 
-(defun mf-nodelete-last (meta del pictag)
+(make-obsolete 'mf-nodelete-last nil "1.63")
+(defun mf-nodelete-last (meta _del pictag)
   "META の最後尾の要素を返す.
 但し DEL に含まれる場合はスキップされその次のものになる.
 tag で PICTURE を追加させる場合も PICTAG non-nil になり例外処理." ; 判りにく!
-  (let ((meta (mapcar #'car meta))
-        (del  (mapcar #'car del)))
+  (let ((meta (mapcar #'car meta)))
+        ;; (del  (mapcar #'car del)))
     (mapc #'(lambda (c) (setq meta (remq c meta)))
           (list 'VORBIS_COMMENT (and pictag 'PICTURE) nil))
     (car (reverse meta))))
@@ -407,6 +409,7 @@ NO-BACKUP が 非NIL なら元ファイイルを残さない."
          ;; 書き戻し時点での最終ブロックを算出.
          (last   (car (reverse (mf-now-blocks tmp del packs))))
          (text-quoting-style 'grave)
+         (mf-flac-write-safe-pad (or mf-flac-write-safe-pad safe-pad))
          offset)
 
     (run-hooks 'mf-flac-write-hook)

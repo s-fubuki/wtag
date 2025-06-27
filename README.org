@@ -1,5 +1,5 @@
 * 概要
-  Emacs 30.0.50 用 音楽ファイルのタグ修正 lisp 関数集です.
+  Emacs 30.1.90 用 音楽ファイルのタグ修正 lisp 関数集です.
   対応コーデックは m4a(mp4), oma(atrac3plus), flac, mp3(ID3.2v2, ID3.2v3, ID3.1), 
   Vorbis(ogg). aiff そして wav です.
   利用配布規定は [[https://www.gnu.org/licenses/gpl-3.0.txt][GPL3]] に準じます.
@@ -7,7 +7,7 @@
 - [[https://gpl.mhatta.org/gpl.ja.md][GPL3 和訳]]
   
 * このセットのバージョン
-  番号で管理する能力がないので [May 31 2025] 版とします.
+  番号で管理する能力がないので [Jun 28 2025] 版とします.
 
 * 基本ライブラリ(必須)
 1. mf-tag-write.el   - タグの書き換えバックエンド関数

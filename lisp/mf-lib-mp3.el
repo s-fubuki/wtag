@@ -1,8 +1,8 @@
-;;; mf-lib-mp3.el --- This library for mf-tag-write.el
+;;; mf-lib-mp3.el --- This library for mf-tag-write.el -*- lexical-binding:t -*-
 ;; Copyright (C) 2018-2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.44 $$Name:  $
+;; Version: $Revision: 3.1 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp3-version "$Revision: 2.44 $$Name:  $")
+(defconst mf-lib-mp3-version "$Revision: 3.1 $$Name:  $")
 
 (require 'mf-lib-var)
 
@@ -229,7 +229,7 @@ nil にすることによって追加しないようにもできる.")
 
 (defun mf-asciiz-string (coding &optional limit)
   "現在のポイントから asciiZ string を CODING でデコードし ascii string にして返す.
-ポイントは末尾の \"\0\" または \"\0\0\" の先まで進めるが、
+ポイントは末尾の \"\\0\" または \"\\0\\0\" の先まで進めるが、
 string にはそれらは含まれない.
 LIMIT が non-nil ならその長さまでとする."
   (let ((beg (point)) end str)
@@ -609,7 +609,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
   "IMAGE バイナリのフレームデータ生成(ヘッダなし)."
   (let* ((tag  (plist-get plist :tag))
          (mime (mf-stringz (mf-get-mime (plist-get plist :mime) 'id32)))
-         (type (or (plist-get plist :type) 0))
+         ;; (type (or (plist-get plist :type) 0))
          (file (mf-stringz (or (plist-get plist :file) (plist-get plist :dsc) "")))
          (obj  (plist-get plist :data))
          (code 0))
@@ -754,8 +754,7 @@ TABLE は置換テーブルの alist で, 省略すると `mp3-tag-table' から
 \".oma file\" の場合 ASCII 文字列でも UTF-16BE にする."
   (let* ((tag  (plist-get plist :tag))
          (data (mf-stringz (or (plist-get plist :data) "")))
-         (mode mf-current-mode)
-         code)
+         (mode mf-current-mode))
     (mf-byte-frame-33
      tag
      (apply #'format
@@ -1013,7 +1012,7 @@ LAME ならリストの中から設定値を得る(See `mf-mp3-lame-abr')."
          (lame   (mf-mp3-lame-abr pos)) ; lame header parameter 
          (xing   (mf-mp3-xing-p pos))   ; frame size
          (time   (and xing (floor (* xing (/ 1152.0 (nth 1 frame)))))) ; time second
-         func br vr)
+         br vr)
     (cond
      ((null frame) nil) ; (error "Unsupported format")
      ((and lame (null prefix))

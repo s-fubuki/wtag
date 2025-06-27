@@ -1,9 +1,9 @@
-;;; mf-lib-var.el ---
+;;; mf-lib-var.el --- -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2020-2025 fubuki
 
 ;; Author:  fubuki at frill.org
-;; Version: $Revision: 1.37 $$Name:  $
+;; Version: $Revision: 2.1 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 1.37 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 2.1 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -148,14 +148,25 @@
   "小文字が LITTLE / 大文字が BIG エンディアン. 末尾数値は進めるポインタ.
 lisp なので t は別の特別な意味もあるので注意.")
 
+(defmacro mf-repeat (repeat &rest body)
+  "REPEAT times on BODY."
+  (declare (indent 1))
+  (let ((var (make-symbol "inc"))
+        (tmp (make-symbol "lim")))
+    `(let ((,var 0)
+           (,tmp ,repeat))
+       (while (< ,var ,tmp)
+         ,@body
+         (setq ,var (1+ ,var))))))
+
 (defun mf-buffer-substring (start end)
   (ignore-errors (buffer-substring start end)))
 
-(defun mf-char-after (&optional pos opt)
+(defun mf-char-after (&optional pos _opt)
   (let ((pos (or pos (point))))
     (char-after pos)))
 
-(defun mf-buffer-read-word (&optional pos opt)
+(defun mf-buffer-read-word (&optional pos _opt)
   "POS から 2バイト読んで 16bit整数として返す.
 POS を省略するとカレント point になる."
   (let ((pos (or pos (point)))
@@ -184,7 +195,7 @@ WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした�
                    (logand (ash low -16)  65535) (logand low 65535))
            (+ (* high (expt 2 32)) low)))))
 
-(defun mf-buffer-read-3-bytes (&optional pos opt)
+(defun mf-buffer-read-3-bytes (&optional pos _opt)
   (let (a b c)
     (or pos (setq pos (point)))
     (setq a (char-after pos)
@@ -192,7 +203,7 @@ WLST が non-nil なら 64bit を 16bit ごとに分割したリストにした�
           c (char-after (+ pos 2)))
     (and a b c (+ (* a 65536) (* b 256) c))))
 
-(defun mf-buffer-read-word-le (&optional pos opt)
+(defun mf-buffer-read-word-le (&optional pos _opt)
   "POS から word 長を little endian で返す.
 POS を省略するとカレント point になる."
   (let ((pos (or pos (point)))
@@ -201,7 +212,7 @@ POS を省略するとカレント point になる."
           low  (char-after (+ pos 1)))
     (and high low (+ (* low 256) high))))
 
-(defun mf-buffer-read-long-word-le (&optional pos opt)
+(defun mf-buffer-read-long-word-le (&optional pos _opt)
   "POS から 4バイトを little endian として読んで整数として返す.
 POS が範囲外なら NIL を返す."
   (let (high low a b c d)
@@ -231,9 +242,9 @@ WLST が non-nil ならバイトに分解し Big Endian の並びにしたリス
 
 (defun mf-buffer-read-word-le-fd ()
   "point から word 長を little endian で返し、その分 point を進める."
-    (prog1
-        (mf-buffer-read-word-le)
-      (forward-char 2)))
+  (prog1
+      (mf-buffer-read-word-le)
+    (forward-char 2)))
 
 (defun mf-buffer-read-long-word-le-fd ()
   "point から long word 長を little endian で返し、その分 point を進める."
@@ -258,8 +269,8 @@ WLST が non-nil ならバイトに分解し Big Endian の並びにしたリス
    'iso-8859-1))
 
 (defun mf-asciiz-move-end (code)
-  "現在のポイントより後にある \0 または \0\0 の次のポイントを返す.
-CODE が 0 か 3 なら \"\0\", それ以外なら \"\0\0\" を探す."
+  "現在のポイントより後にある \\0 または \\0\\0 の次のポイントを返す.
+CODE が 0 か 3 なら \"\\0\", それ以外なら \"\\0\\0\" を探す."
   (cond
    ((or (eq 0 code) (eq 3 code))
     (search-forward "\0")
@@ -272,7 +283,7 @@ CODE が 0 か 3 なら \"\0\", それ以外なら \"\0\0\" を探す."
 
 ;; "z"
 (defun mf-buffer-read-asciiz (&optional pos)
-  "POS から末尾 \"\0\" を含めた ascii string を返す."
+  "POS から末尾 \"\\0\" を含めた ascii string を返す."
   (or pos (setq pos (point)))
   (save-restriction
     (goto-char pos)
@@ -283,7 +294,7 @@ CODE が 0 か 3 なら \"\0\", それ以外なら \"\0\0\" を探す."
 
 ;; "Z"
 (defun mf-buffer-read-asciiz-coding (&optional pos)
-  "POS から末尾 \"\0\" (または \"\0\0\") を含めた ascii string を返す.
+  "POS から末尾 \"\\0\" (または \"\\0\\0\") を含めた ascii string を返す.
 Buffer local variable `mf-buffer-read-asciiz-coding' にセットされた
 MP3 のコーディング番号の文字コーディングとしてスキャンするので
 呼び出す前にこの変数をセットしておく. しなければ iso-latin-1 となる."
@@ -381,6 +392,6 @@ once ならバックアップがあればバックアップしない."
   (let ((per (assoc-default file mf-read-size 'string-match))
         (len (file-attribute-size (file-attributes file))))
     (if per (round (* (/ len 100.0) per)) len)))
-      
+
 (provide 'mf-lib-var)
 ;;; mf-lib-var.el ends here

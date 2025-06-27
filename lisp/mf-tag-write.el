@@ -1,8 +1,8 @@
-;;; mf-tag-write.el --- Music file tag write
+;;; mf-tag-write.el --- Music file tag write -*- lexical-binding:t -*-
 ;; Copyright (C) 2018-2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 1.92 $
+;; Version: $Revision: 2.1 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 1.92 $")
+(defconst mf-tag-write-version "$Revision: 2.1 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -97,7 +97,7 @@
 (defun mf-set-file-tag (mode pair alias)
   "PAIR のセルが画像かテキストかで振り分ける.
 MODE はタグのモード ALIAS は alias テーブル."
-  (let* ((tag  (car pair))
+  (let* (;;(tag  (car pair))
          (data (cdr pair))
          (file (file-attributes data)))
     (cond
@@ -190,6 +190,7 @@ OLDTAGS は plist で適合する alias list の選択のための手がかり�
   (let* ((mode  mf-current-mode)
          (alias mf-current-alias)
          result)
+    (or oldtags) ;; コンパイルエラー封じ
     (dolist (a alst (remove nil (reverse result)))
       (push
        (cond
@@ -240,7 +241,7 @@ OLDTAGS は plist で適合する alias list の選択のための手がかり�
   "FILE のタグを \(ALIAS TAG . DATA) または \(ALIAS DSC . DATA) の list にして返す."
   (let* ((alist (mf-tag-read-alist file len no-bin))
          (case  (string-match "\\.\\(flac\\|ogg\\)\\'" file))
-         (mode  (cdr (assoc mf-type-dummy alist)))
+         ;; (mode  (cdr (assoc mf-type-dummy alist)))
          (alias (cons
                  (cons mf-time-dummy-symbol mf-time-dummy)
                  (cons (cons mf-type-dummy-symbol mf-type-dummy)
@@ -281,28 +282,28 @@ CASE が non-nil(FLAC or OGG)のときだけ、戻されるとき TAG が upper 
   "FILE のタグを ALIAS と DATA を交互に並べた plist にして返す."
   (let* ((alist (mf-tag-read-alist file len no-bin))
          (case  (string-match "\\.\\(flac\\|ogg\\)\\'" file))
-         (mlist (mf-func-get file))
-         (mode  (cdr (assoc mf-type-dummy alist)))
+         ;; (mlist (funcall mf-func-get-function file))
+         ;; (mode  (cdr (assoc mf-type-dummy alist)))
          (alias (cons
                  (cons mf-time-dummy-symbol mf-time-dummy)
                  (cons (cons mf-type-dummy-symbol mf-type-dummy)
                        mf-current-alias))))
     (mf-alist-to-plist alist alias case)))
 
-(defun mf-alist-to-plist (alist alias case)
+(defun mf-alist-to-plist (alst alias case)
   "`mf-alist-add-tag' の plist 版.
 違いは結果が Property listt であることと
 TAG は捨てられるので書き戻すときに各 aliss から復元しなければいけないことと
 同じタグから複数の異なるエイリアスのデータを生成しないこと."
-  (let ((alist
+  (let ((alst
          (if case
-             (mapcar #'(lambda (a) (cons (upcase (car a)) (cdr a))) alist)
-           alist))
+             (mapcar #'(lambda (a) (cons (upcase (car a)) (cdr a))) alst)
+           alst))
         result)
     (dolist (a alias result)
       (let* ((tag (if case (upcase (cdr a)) (cdr a)))
-             (tmp (assoc tag alist))
-             (alist (delete tmp alist))) ;; 重複生成しないように更新. つまり先着優先.
+             (tmp (assoc tag alst)))
+        (setq alst (remove tmp alst)) ;; 重複生成しないように更新. つまり先着優先.
         (and tmp (setq result (append result (list (car a) (cdr tmp)))))))))
 
 ;;;###autoload
@@ -332,7 +333,9 @@ lst は\((alias tag . data) ...) という形式. 一致が無ければ  nil を
     (dolist (a new) (if (plist-get a :data) (push a new2)))
     (append org2 (reverse new2))))
 
+(make-obsolete-variable 'mf-func-get-hook 'mf-func-get "1.92")
 (defvar mf-func-get-hook nil)
+(defvar mf-func-get-function #'mf-func-get)
 
 ;; from mf-write-tag
 (defun mf-func-get (file)
@@ -408,7 +411,7 @@ TAGS は実タグが含まれる `mf-tag-read' の戻値でなくてはならな
 * LAME と MusicCenter2 で拡張してある MP3 のソートタグが違うのを選り分ける関数."
   (let* ((tags (or tags (mf-tag-read file (mf-read-size file) t)))
          (tags (if (symbolp (caar tags)) (mf-stdlist-to-alist tags) tags))
-         (funcs (nth 3 (mf-func-get file))))
+         (funcs (nth 3 (funcall mf-func-get-function file))))
     (if (consp funcs)
         (let* ((id (cdr (assoc mf-type-dummy tags)))
                (alias (eval (cdr (assoc id funcs)))))
@@ -427,7 +430,7 @@ STAMP が非NIL ならタイムスタンプを継承する.
 NOERROR が non-nil なら適合するタグが存在しない場合でもエラーにならずスキップされる."
   (interactive "fFile: \nxTags: ")
   (let* ((stamp (and stamp (mf-sixth (file-attributes file))))
-         (func   (mf-func-get file))
+         (func   (funcall mf-func-get-function file))
          (wfunc  (mf-wfunc func file))
          (cvfunc (mf-cvfunc func))
          (mf-tag-write-noerror noerror)
@@ -452,7 +455,7 @@ NOERROR が non-nil なら適合するタグが存在しない場合でもエラ
 カレントバッファで実行したい場合もあるので分離してある.
 LENGTH は読み込む大きさ. NO-BINARY が非NIL だと返り値に画像タグを含まない."
   (setq mf-current-file file)
-  (if (setq mf-current-func (mf-func-get file))
+  (if (setq mf-current-func (funcall mf-func-get-function file))
       (funcall (mf-rfunc mf-current-func) file length no-binary)
     (error "Unknown music file: %s" file)))
 

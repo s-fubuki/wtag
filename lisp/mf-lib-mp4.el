@@ -1,8 +1,8 @@
-;;; mf-lib-mp4.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2018, 2019, 2020, 2021, 2022, 2023 fubuki
+;;; mf-lib-mp4.el --- This library for mf-tag-write.el -*- lexical-binding:t -*-
+;; Copyright (C) 2018-2025 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: $Revision: 2.6 $$Name:  $
+;; Author: fubuki at frill.org
+;; Version: $Revision: 3.1 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 2.6 $$Name:  $")
+(defconst mf-lib-mp4-version "$Revision: 3.1 $$Name:  $")
 
 (require 'mf-lib-var)
 (require 'cl-lib)
@@ -159,7 +159,7 @@ beg もデータ先頭ではなくアトム自体の先頭であることに注�
 (defun mf-mp4-tag-analyze (ilst &optional no-binary)
   "MP4-ATOMS の iTunes のタグやアドレス情報を展開し plist にして返す.
 MP4-ATOMS の存在するバッファがカレントでなくてならない."
-  (let (frame tag mean dsc str type result)
+  (let (tag mean dsc str type result)
     (setq mf-mp4-sort-order nil)
     (dolist (frame (cdr ilst))
       (cond
@@ -441,7 +441,7 @@ TARGET は主に \"moov\", \"free\" \"mdat\" で \"udat\" と \"meta\" はスキ
 
 (defun mp4-stsz-sample-size (atoms)
   (goto-char (nth 1 (car (mp4-get-list "stsz" atoms))))
-  (cl-multiple-value-bind (len type ver flag size ent)
+  (cl-multiple-value-bind (_len _type _ver _flag size _ent)
       (mf-buffer-read-unpack '(L 4 C M L L))
     size))
 
@@ -463,7 +463,7 @@ TARGET は主に \"moov\", \"free\" \"mdat\" で \"udat\" と \"meta\" はスキ
     ;;  0:Version(S) 1:Revision-level(S) 2:Vendor(L)
     ;;  3:Number-of-channels(S) 4:Sample-size(bits)(S)
     ;;  5:Compression-ID(S) 6:Packet-size(S) 7:Sample-rate(L)
-    (cl-multiple-value-bind (ver rev ven ch ssize id psize srate)
+    (cl-multiple-value-bind (_ver _rev _ven ch ssize _id _psize srate)
         (mf-buffer-read-unpack '(S S L S S S S L) pnt)
       (list time brate (/ srate 65536.0) ch ssize))))
 

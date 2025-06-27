@@ -1,8 +1,8 @@
-;;; mf-lib-aiff.el
-;; Copyright (C) 2022, 2023 fubuki
+;;; mf-lib-aiff.el --- -*- lexical-binding:t -*-
+;; Copyright (C) 2022-2025 fubuki
 
-;; Author:  <fubuki@frill.org>
-;; Version: $Revision: 1.4 $$Name:  $
+;; Author:  fubuki at frill.org
+;; Version: $Revision: 2.1 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -23,7 +23,7 @@
 ;; for `mf-tag-write' aiff music file tag READ(!write) library.
 
 ;;; Code:
-(defconst mf-lib-aiff-version "@(#)$Revision: 1.4 $$Nmae$")
+(defconst mf-lib-aiff-version "@(#)$Revision: 2.1 $$Nmae$")
 (require 'mf-lib-var)
 (require 'mf-lib-mp3)
 (require 'wtag)
@@ -73,15 +73,15 @@ RATE-F は Sample Rate 仮数部, FRAMES は Total Frames."
          (brate (* (/ srate 1000) depth ch)))
     (list (ceiling sec) (round brate) srate ch depth frames)))
 
-(defun mf-aiff-tag-read (file dummy no-binary)
+(defun mf-aiff-tag-read (file _dummy no-binary)
   "aiff FILE のタグリストを得る. NO-BINARY が non-nil なら画像TAGは含めない.
 タグがお尻にひっついていてほぼ全部読まないと得られないので
 通常読み込みサイズを指定する ふたつめの引数はダミーです."
-  (let (result tmp pos len sec srate)
+  (let (result tmp pos len sec)
     (insert-file-contents-literally file)
     (set-buffer-multibyte nil)
     (cl-multiple-value-bind
-        (form len-all aiff comm size ch frames bitd rate-e rate-f)
+        (form _len-all aiff _comm _size ch frames bitd rate-e rate-f)
         (mf-buffer-read-unpack '(4 L 4 4 L S L S S Q) (point) 'move)
       (unless (or (equal form "FORM") (equal aiff "AIFF")) (error "Not aiff"))
       (while (not (eobp)) ;; Block Collection

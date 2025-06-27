@@ -1,8 +1,8 @@
-;;; mf-lib-wav.el -- This library for mf-tag-write.el -*- coding: utf-8-emacs -*-
-;; Copyright (C) 2021, 2022, 2023 fubuki
+;;; mf-lib-wav.el --- This library for mf-tag-write.el -*- lexical-binding:t -*-
+;; Copyright (C) 2021-2025 fubuki
 
-;; Author: fubuki@frill.org
-;; Version: $Revision: 1.16 $$Name:  $
+;; Author: fubuki at frill.org
+;; Version: $Revision: 2.1 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-wav-version "$Revision: 1.16 $$Name:  $")
+(defconst mf-lib-wav-version "$Revision: 2.1 $$Name:  $")
 (require 'mf-lib-var)
 ;; (require 'mf-tag-write)
 
@@ -223,11 +223,11 @@ LENGTH が非NIL ならその整数分だけ読み込む.
 それがタグを走査するに足りなければできる分だけ読み直すが
 0 や 10 等意味のない少なすぎる数値かどうかの検証はしていない.
 NO-BINARY が非NIL ならイメージタグは含めない."
-  (let (riff chunks lst id3 tags org sec)
+  (let (chunks lst id3 tags org sec)
     (setq length (cadr (insert-file-contents-literally file nil 0 length)))
     (set-buffer-multibyte nil)
     (goto-char (point-min))
-    (unless (mf-riff-p (setq riff (mf-riff-get))) (error "No wave file"))
+    (unless (mf-riff-p (mf-riff-get)) (error "No wave file"))
     (let* ((ch (or (assoc "id3 " (mf-get-chunks length))
                    (assoc "LIST" (mf-get-chunks length))
                    (list nil 0 (file-attribute-size (file-attributes file)))))
