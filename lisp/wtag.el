@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 4.1 $$Name:  $
+;; Version: @(#)$Revision: 4.4 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -72,7 +72,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 4.1 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 4.4 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -999,9 +999,7 @@ wtag-sort-file-name はファイル名でソートする."
 mp3/VBR のとき PREFIX があるとビットレートを平均値で表示します.
 平均値を得るのにデータをすべて読み込むため起動が遅くなります.
 See: `wtag-view-mode', `wtag-writable-mode', `wtag-image-mode'."
-  (interactive
-   (list (read-file-name "Album Directory: " nil nil nil nil #'file-directory-p)
-         current-prefix-arg))
+  (interactive "DAlbum Directory: \nP")
   (let* ((wconf (current-window-configuration))
          (mf-mp3-vbr (or wtag-vbr (if (consp prefix) prefix)))
          (kill-read-only-ok t)
@@ -2401,7 +2399,8 @@ list 要素内の文字列はそのまま連結される."
 NO-PREFIX, PREFIX, 0 PREFIX または 1 PREFIX で
 `wtag-name-push' の中の参照位置が変わる."
   (interactive "p")
-  (let* ((ln (line-number-at-pos))
+  (let* ((prefix (and current-prefix-arg (prefix-numeric-value prefix)))
+         (ln (line-number-at-pos))
          tag result str mark dir)
     (save-excursion
       (cond
@@ -3166,6 +3165,19 @@ REN が non-nil ならアルバム名を元にバッファ名を更新(リネー
               (and obj (get-text-property 0 :include-file-name (cadr obj))))
     (or (get-buffer-window buff)
         (pop-to-buffer buff wtag-pop-action 'norecord))))
+
+(defun wtag-not-available-to-number (prefix)
+  "`wtag-not-available-string' であるディスクナンバーすべてを PREFIX の値にする.
+デフォルトは 1.
+BUG: 単純にマッチ置換しているだけなので
+3行目以降でディスクナンバー以外にもその文字列があれば置換してしまう."
+  (interactive "p")
+  (or (wtag-no-disc-tag-p wtag-current-mode)
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line 2)
+        (while (search-forward wtag-not-available-string nil t)
+          (replace-match (number-to-string prefix))))))
 
 ;; COPY part.
 (defun wtag-make-directory (dir)
@@ -3537,6 +3549,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
     (define-key map "\C-c\C-e"      'wtag-all-title-erase)
     (define-key map "\C-c\C-t"      'wtag-track-number-adjust)
+    (define-key map "\C-c\C-d"      'wtag-not-available-to-number)
     (define-key map "\C-c\C-s"      'wtag-sort-tracks)
     (define-key map "\C-c="         'wtag-point-file-name)
     (define-key map "\C-x\C-q"      'wtag-writable-tag-cancel)
@@ -3570,6 +3583,9 @@ winカカシが漢字ASCII混合の場合、
       '("Transpose Title Line" . wtag-transpose-lines2))
     (define-key menu-map [wtag-sort-tracks]
       '("Album Name Sort" . wtag-sort-tracks))
+    (define-key menu-map [wtag-not-available-to-number]
+                '(menu-item "Disc Number Assign" wtag-not-available-to-number
+                            :enable (null (wtag-no-disc-tag-p wtag-current-mode))))
     (define-key menu-map [wtag-track-number-adjust]
       '("Track Number Adjust" . wtag-track-number-adjust))
     (define-key menu-map [wtag-artistname-copy-all]

@@ -1,5 +1,18 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Aug 30 07:49:23 2025
+** wtag.el: 4.4
+***  change: `wtag': interactive をコードレターに戻す.
+ スラッシュ末尾だと default-directory になってしまったのは一時的に不安定だったせいぽい?
+
+*** fix: `wtag-name-push' no prefix で正常動作していなかったのを修正.
+
+*** new: `wtag-not-available-to-number'
+ 変数 `wtag-not-available-string' であるディスクナンバーすべてを PREFIX の値にする.
+ デフォルトは 1.  ライタブルモード C-c C-d にバインド.
+ BUG: 単純にマッチ置換しているだけなので
+ 3行目以降でディスクナンバー以外にも対象文字列があれば置換してしまう.
+
 * Sat Jun 28 07:38:18 2025
 ** mf-lib-aiff.el: 2.1
 ** mf-lib-flac.el: 2.1
