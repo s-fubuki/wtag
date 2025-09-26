@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 4.4 $$Name:  $
+;; Version: @(#)$Revision: 4.12 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -38,6 +38,7 @@
 ;; (require 'make-atrac-index)
 (require 'cursor-sensor)
 (require 'keymap)
+(require 'seq)
 
 (defgroup wtag nil
   "Writable music file tag."
@@ -72,7 +73,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 4.4 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 4.12 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -153,6 +154,17 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
 数値ならベースネームをその長さに丸めこみ
 シンボル title なら title tag 文字列を使う."
   :type  '(choice boolean integer (const :tag "title tag string" title))
+  :group 'wtag)
+
+(defcustom wtag-renumber-tracks nil
+  "non-nil なら function `wtag-renumber-tracks' で統一表記.
+nil    : 元の記法を引き継ぐ
+normal : トラックならトラック番号のみ
+expand : トータル数を分母につける"
+  :type '(choice (const :tag "Take Over" nil)
+                 ;; (const t)
+                 (const :tag "Onlyl That" normal)
+                 (const :tag "With Total" expand))
   :group 'wtag)
 
 (defcustom wtag-sort-filter
@@ -1613,36 +1625,41 @@ DISK が nil または `:trackmax' を見て 1枚ものならディスク番号�
 (defun wtag-track-prefix-rename (file disk track &optional tracktag)
   "FILE のプレフィクスが数値とハイフンでできていれば
 数値部分を DISK と TRACK をハイフンで繋げた文字列にリネームする.
+トラック番号プレフィクスが無い FILE のときは
+DISK と TRACK を元にして新たにプレフィクスを追加する.
 :trackmax の情報を使いそれぞれ適切な値でゼロパディングして桁を揃える.
 DISK が nil のときは DISK 部分は付かない.
 カスタム変数 `wtag-track-prefix-rename' が数値ならベース部分をその長さに丸めこみ
-シンボル title なら title tag 文字列 TRACKTAG にする.
+シンボル title なら名前部分を title tag 文字列 TRACKTAG にする.
 title のときは `wtag-regular-file-name-re' と `wtag-regular-file-name' の影響を受ける.
 ディスク番号がつき元の名前よりも長くなることで
 場合によってはリネームに失敗してエラーを起こすことがあるので
 この変数を適切な値にしておくことでエラーを回避できることがあります."
-  (let* ((dir    (file-name-directory file))
-         (node   (file-name-nondirectory file))
-         (prefix (wtag-digit-width disk track)))
-    (save-match-data
-      (when (string-match "\\`\\(?1:[0-9]+\\)\\(?2:-[0-9]+\\)? ?- ?\\(?3:.+\\)\\'" node)
-        (let* ((name (match-string 3 node))
-               (base (file-name-base name))
-               (ext  (file-name-extension name))
-               new)
-          (cond
-           ((and (integerp wtag-track-prefix-rename)
-                 (> (string-width base) wtag-track-prefix-rename))
-            ;; (setq base (substring base 0 wtag-track-prefix-rename))
-            (setq base (truncate-string-to-width base wtag-track-prefix-rename)))
-           ((and tracktag (eq wtag-track-prefix-rename 'title))
-            (setq base (wtag-regular-file-name tracktag))))
-          (setq new (format "%s-%s.%s"  prefix base ext))
-          (condition-case err
-              (progn
-                (rename-file file (expand-file-name new dir))
-                (wtag-message "Renmae file: \"%s\" -> \"%s\"" file new))
-            (error (message "`%s' %s" file (error-message-string err)))))))))
+  (save-match-data
+    (let* ((dir    (file-name-directory file))
+           (node   (file-name-nondirectory file))
+           (prefix (wtag-digit-width disk track))
+           (name
+            (if (string-match
+                 "\\`\\(?1:[0-9]+\\)\\(?2:-[0-9]+\\)? ?- ?\\(?3:.+\\)\\'" node)
+                (match-string 3 node)
+              node))
+           (base (file-name-base name))
+           (ext  (file-name-extension name))
+           new)
+      (cond
+       ((and (integerp wtag-track-prefix-rename)
+             (> (string-width base) wtag-track-prefix-rename))
+        ;; (setq base (substring base 0 wtag-track-prefix-rename))
+        (setq base (truncate-string-to-width base wtag-track-prefix-rename)))
+       ((and tracktag (eq wtag-track-prefix-rename 'title))
+        (setq base (wtag-regular-file-name tracktag))))
+      (setq new (format "%s-%s.%s"  prefix base ext))
+      (condition-case err
+          (progn
+            (rename-file file (expand-file-name new dir))
+            (wtag-message "Renmae file: \"%s\" -> \"%s\"" file new))
+        (error (message "`%s' %s" file (error-message-string err)))))))
 
 (defun wtag-if-asciiz (str)
   "STR が asciiZ なら Z を除去して戻す."
@@ -2114,9 +2131,10 @@ BACK が non-nil ならリストを逆方向にたどって移動する."
     (reverse result)))
 
 (defun wtag-renumber-tracks (&optional prefix)
-  "バッファのトラックナンバーを書き換え昇順にリナンバーする.
-トラック番号、アルバム番号は分数表記になる.
-PREFIX ありだとトラック番号が全曲数の通し番号になる.
+  "バッファのトラックナンバーを書き換えて昇順にリナンバーする.
+カスタム変数 `wtag-renumber-tracks' が nil なら元の表記法を引き継ぎ(Default)
+expand ならトータル付の分数表記に normal ならそのものの番号のみになる.
+また PREFIX が non-nil ならトラック番号が全曲数の通し番号になる.
 アルバム番号のリナンバーは行なわない."
   (let* ((trax (wtag-count-tracks))
          (albummax (length trax))
@@ -2137,7 +2155,8 @@ PREFIX ありだとトラック番号が全曲数の通し番号になる.
                   end   (wtag-move-to-property 'end-disk)
                   slash (string-match "[[:digit:]]/[[:digit:]]"
                                       (delete-and-extract-region beg end)))
-            (if slash
+            (if  (or (eq wtag-renumber-tracks 'expand)
+                     (and (null wtag-renumber-tracks) slash))
                 (insert (format "%d/%d" (car a) albummax))
               (insert (format "%d" (car a)))))
           (setq beg   (1+ (wtag-move-to-property 'old-track))
@@ -2145,7 +2164,8 @@ PREFIX ありだとトラック番号が全曲数の通し番号になる.
                 slash (string-match "[[:digit:]]/[[:digit:]]" 
                                     (delete-and-extract-region beg end)))
           (insert
-           (if slash
+           (if (or (eq wtag-renumber-tracks 'expand)
+                   (and (null wtag-renumber-tracks) slash))
                (apply #'format (concat width "/" width0)
                       (if prefix
                           (list tnum tracktotal)
@@ -3166,18 +3186,37 @@ REN が non-nil ならアルバム名を元にバッファ名を更新(リネー
     (or (get-buffer-window buff)
         (pop-to-buffer buff wtag-pop-action 'norecord))))
 
-(defun wtag-not-available-to-number (prefix)
-  "`wtag-not-available-string' であるディスクナンバーすべてを PREFIX の値にする.
-デフォルトは 1.
-BUG: 単純にマッチ置換しているだけなので
-3行目以降でディスクナンバー以外にもその文字列があれば置換してしまう."
+(defun wtag-disc-area-map ()
+  "Disc Number Area の位置を alist にして戻す.
+利用する都合上リストは逆順のまま戻す."
+  (let ((pos (point-min))
+        result)
+    (save-excursion
+      (save-cursor-intangible-mode
+       (while (setq pos (next-single-property-change pos 'old-disk))
+         (let ((beg (next-single-property-change pos 'old-disk))
+               (end (next-single-property-change pos 'end-disk)))
+           (push (cons beg end) result)
+           (setq pos end)))))
+    result))
+
+(defun wtag-change-disc-number (prefix)
+  "リージョン(無ければ全域)のディスクナンバーを PREFIX の値にする.
+デフォルトの値は 1."
   (interactive "p")
-  (or (wtag-no-disc-tag-p wtag-current-mode)
+  (let ((beg (if (use-region-p) (region-beginning) (point-min)))
+        (end (if (use-region-p) (region-end) (point-max)))
+        map)
+    (unless (wtag-no-disc-tag-p wtag-current-mode)
+      (setq map (seq-filter
+                 (lambda (a) (and (<= beg (car a)) (>= end (cdr a))))
+                 (wtag-disc-area-map)))
       (save-excursion
-        (goto-char (point-min))
-        (forward-line 2)
-        (while (search-forward wtag-not-available-string nil t)
-          (replace-match (number-to-string prefix))))))
+        ;; del & ins により map が狂ってくるので影響を受けないよう下から上に回す.
+        (dolist (m map)
+          (goto-char (car m))
+          (delete-region (car m) (cdr m))
+          (insert (number-to-string prefix)))))))
 
 ;; COPY part.
 (defun wtag-make-directory (dir)
@@ -3523,6 +3562,37 @@ winカカシが漢字ASCII混合の場合、
     (wtag-temporary-track-number-clear)
     (remove-hook 'wtag-writable-mode-hook #'wtag-temporary-track-number-clear))))
 
+(defun wtag-radio-menu (label variable table)
+  (let ((map (make-sparse-keymap label)))
+    (dolist (a table map)
+      (define-key
+       map (vector (nth 1 a))
+       `(menu-item ,(nth 2 a)
+                   (lambda ()
+                     (interactive)
+                     (setq ,variable ,(nth 0 a)))
+                   :button (:radio . (eq ,variable ,(nth 0 a)))
+                   :help ,(or (nth 3 a) (nth 2 a)))))))
+
+(defvar wtag-renumber-radio-menu-table
+  '(('normal wtag-renumber-normal "Basic Number Only" "基数のみ")
+    ('expand wtag-renumber-expand "With Total" "トータル数をつける")
+    (nil wtag-renumber-take "Take Over" "元の表記法に合わせる")))
+
+(defvar wtag-renumber-radio-menu
+  (wtag-radio-menu "Renumber" 'wtag-renumber-tracks wtag-renumber-radio-menu-table))
+
+(defvar wtag-prefix-rename-radio-menu-table
+  '((t wtag-prefix-rename-sync
+           "Sync" "ファイル名プレフィクスをトラック番号に合わせて変更")
+    ('title wtag-prefix-rename-body
+            "With Body" "ファイル名ボディもタグでリネーム")
+    (nil wtag-prefix-rename-disable "Disable" "ファイル名を変更しない")))
+
+(defvar wtag-prefix-rename-radio-menu
+  (wtag-radio-menu
+   "Prefix rename" 'wtag-track-prefix-rename wtag-prefix-rename-radio-menu-table))
+
 (defvar wtag-writable-mode-map
   (let ((map (make-sparse-keymap))
         (menu-map (make-sparse-keymap "wtag")))
@@ -3549,7 +3619,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "\C-c\C-a"      'wtag-artistname-copy-all)
     (define-key map "\C-c\C-e"      'wtag-all-title-erase)
     (define-key map "\C-c\C-t"      'wtag-track-number-adjust)
-    (define-key map "\C-c\C-d"      'wtag-not-available-to-number)
+    (define-key map "\C-c\C-d"      'wtag-change-disc-number)
     (define-key map "\C-c\C-s"      'wtag-sort-tracks)
     (define-key map "\C-c="         'wtag-point-file-name)
     (define-key map "\C-x\C-q"      'wtag-writable-tag-cancel)
@@ -3583,15 +3653,21 @@ winカカシが漢字ASCII混合の場合、
       '("Transpose Title Line" . wtag-transpose-lines2))
     (define-key menu-map [wtag-sort-tracks]
       '("Album Name Sort" . wtag-sort-tracks))
-    (define-key menu-map [wtag-not-available-to-number]
-                '(menu-item "Disc Number Assign" wtag-not-available-to-number
-                            :enable (null (wtag-no-disc-tag-p wtag-current-mode))))
+    (define-key menu-map [wtag-change-disc-number]
+      '(menu-item "Disc Number Assign" wtag-change-disc-number
+        :enable (null (wtag-no-disc-tag-p wtag-current-mode))))
+    (define-key menu-map [wtag-renumber-radio-menu]
+      `(menu-item "Track Number Adjust Option" ,wtag-renumber-radio-menu))
     (define-key menu-map [wtag-track-number-adjust]
       '("Track Number Adjust" . wtag-track-number-adjust))
     (define-key menu-map [wtag-artistname-copy-all]
       '("Album Artist Name Set All" . wtag-artistname-copy-all))
+    (define-key menu-map [dashes3] '("--"))
+    (define-key menu-map [wtag-prefix-rename]
+      `(menu-item "Prefix Rename Sync Option" ,wtag-prefix-rename-radio-menu))
     (define-key menu-map [wtag-flush-tag]
       '("Write And Quit" . wtag-flush-tag))
+    (define-key menu-map [dashes4] '("--"))
     (define-key menu-map [wtag-writable-tag-cancel]
       '(menu-item "Cancel" wtag-writable-tag-cancel :key-sequence "\C-x\C-q"))
     map)

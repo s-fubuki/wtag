@@ -1,5 +1,50 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Sep 27 07:36:36 2025
+** mf-lib-wav.el: 2.2
+*** fix: `mf-get-chunks'
+ 192kHz/24bit など巨大なもので終端チェックがうまくいかなかったため
+ SIZE nil の場合 point-max でサイズ計算をしてループ終端チェックとする.
+
+** wtag.el: 4.12
+*** `wtag-writable-mode' 時の
+ 'C-c C-d' (ディスクナンバーのセット) と `C-c C-t' (リナンバー・トラック)の調整
+
+**** `wtag-change-disc-number' ('C-c C-d')
+ 単純置換だった `wtag-not-available-to-number' を
+ リージョンを任意のディスク番号にできるように書換えて関数名も変わる.
+ Prefix で与えた番号が新たなディスク番号になる. Prefix がない場合は 1 になる.
+
+ Prefix からは整数しか指定できないので
+ 以下の `wtag-renumber-tracks'(`C-c C-t') 側の分数表記化の機能を調整した.
+
+**** `wtag-renumber-tracks' (`C-c C-t')
+ カスタム変数 `wtag-renumber-tracks' で挙動を選べるようにする.
+
+ 1. nil    : 元の表記法を引き継ぐ(従来形式)   "Take Over" (default)
+ 1. expand : 総数を分母にした分数表記にする   "With Total"
+ 1. normal : トラック(ディスク)番号のみにする "Basic Number Only"
+
+ 一時的に(その Emacs セッション)メニュー "Track Number Adjust Option"
+ から選ぶこともできるようにした
+
+**** メニューにはついでに "Prefix Sync Option" も追加.
+ 書き出ししたときのファイル名のリネームに関するカスタム変数
+ `wtag-track-prefix-rename' の一時的な設定ができる(変数自体は元からある).
+ 
+ デフォルトは t ("Sync")で「プレフィクスのトラック番号をトラックタグに合わせてリネーム」
+ title ("With Body")なら「ファイル名ボディもタイトルタグに変更」.
+
+ この変数には整数(リネーム時のファイル名の長さ)も指定できるが
+ それはメニューでは対応していない.
+ 書き出し時にファイル名に触れたくないときは nil ("Disable") にしておく.
+
+ - change: この変数が non-nil のとき
+  ファイル名にトラック番号プレフィクスが無いときは何もしなかったが
+  DISK と TRACK のタグを元にして新たにプレフィクスを追加するようにした.
+
+: "foo(1).mp3" -> "01-foo(1).mp3"
+
 * Sat Aug 30 07:49:23 2025
 ** wtag.el: 4.4
 ***  change: `wtag': interactive をコードレターに戻す.

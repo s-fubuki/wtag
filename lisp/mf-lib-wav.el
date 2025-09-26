@@ -2,7 +2,7 @@
 ;; Copyright (C) 2021-2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.1 $$Name:  $
+;; Version: $Revision: 2.2 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-wav-version "$Revision: 2.1 $$Name:  $")
+(defconst mf-lib-wav-version "$Revision: 2.2 $$Name:  $")
 (require 'mf-lib-var)
 ;; (require 'mf-tag-write)
 
@@ -80,13 +80,12 @@ LEN は チャンクデータ部の大きさ
 チャンクの形式が TAG(long) SIZE(long) DATA... なので
 データのポイント範囲は (+ BEG 8) から (+ BEG 8 LEN) までになる.
 SIZE があればその長さまでしか走査しない."
-  (let (result)
+  (let ((size (or size (1- (point-max))))
+        result)
     (save-excursion
       (goto-char (point-min))
       (re-search-forward "WAVE")
-      (while (if size
-                 (and (not (eobp)) (< (point) (- size 8)))
-               (not (eobp)))
+      (while (and (not (eobp)) (< (point) (- size 8)))
         (let ((tag (buffer-substring (point) (+ (point) 4)))
               (beg (point))
               (len (mf-buffer-read-long-word-le (+ (point) 4))))
