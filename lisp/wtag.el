@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 4.12 $$Name:  $
+;; Version: @(#)$Revision: 4.14 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -73,7 +73,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 4.12 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 4.14 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -150,9 +150,12 @@ backup file を作らなくても元のファイルは(今の Emacs であれば
   :group 'wtag)
 
 (defcustom wtag-track-prefix-rename t
-  "Track tag が変更されていればファイル名プレフィクスの数値もそれに合わせ変更する.
-数値ならベースネームをその長さに丸めこみ
-シンボル title なら title tag 文字列を使う."
+  "t ならファイル名プレフィクスの数値を Track TAG に合わせて変更する.
+nil なら何もしない.
+また数値ならそれに加えベースネームをその長さに丸めこみ
+シンボル title ならベースネームを title tag 文字列にする.
+文字列は `wtag-regular-file-name-re' と
+`wtag-regular-file-name' の値で正規化する."
   :type  '(choice boolean integer (const :tag "title tag string" title))
   :group 'wtag)
 
@@ -175,11 +178,10 @@ expand : トータル数を分母につける"
   :type  'function
   :group 'wtag)
 
-(defcustom wtag-safe-sort-code t
-  "t なら japanese-shift-jis にない文字をスペースに置換する.
-nil ならこの処理をしない.
-コーディングシステムで指定しても良い."
-  :type '(choice (const t) (const nil) coding-system)
+(defcustom wtag-safe-sort-code '(japanese-shift-jis cp932)
+  "関数 `wtag-rep-spcae' がこのリストにあるコーディングの文字をスペースに置換する.
+nil ならこの処理をしない."
+  :type '(choice (repeat coding-system) (const t) (const nil) coding-system)
   :group 'wtag)
 
 (defcustom wtag-kakashi
@@ -1777,16 +1779,13 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
           (wtag-message "wtag re-write tags: \"%s\" %s" filename tags)
           (condition-case err
               (progn
-                ;; (run-hooks 'wtag-flush-tag-hook) ; Obsolete.
                 (when wtag-flush-hook
-                  (setq tags
-                        (run-hook-with-args-until-success 'wtag-flush-hook tags)))
-                (unless wtag-test
-                  (mf-tag-write filename tags no-backup)
-                  (and wtag-track-prefix-rename (assq 'track tags)
-                       (wtag-track-prefix-rename
-                        filename new-disk new-track new-title))))
+                  (setq tags (run-hook-with-args-until-success 'wtag-flush-hook tags)))
+                (or wtag-test (mf-tag-write filename tags no-backup)))
             (wtag-message "%s: `%s'" (error-message-string err) filename)))
+        (when (and (null wtag-test) tags wtag-track-prefix-rename
+                   (or (assq 'track tags) (assq 'title tags)))
+          (wtag-track-prefix-rename filename new-disk new-track new-title))
         (forward-line)))
     (when wtag-tmp-artwork
       (and (file-exists-p wtag-tmp-artwork) (delete-file wtag-tmp-artwork))
@@ -3356,17 +3355,22 @@ PREFIX でディレクトリ指定の通常コピーになる."
 (defun wtag-to-sort-symbol (sym)
   (intern (concat "s-" (symbol-name sym))))
 
+(defun wtag-safe-sort-code (str)
+  "STR を 変数 `wtag-safe-sort-code' で `check-coding-systems-region'."
+  (let ((code
+         (cond
+          ((eq wtag-safe-sort-code t)
+           '(japanese-shift-jis cp932))
+          ((symbolp wtag-safe-sort-code)
+           (list wtag-safe-sort-code))
+          ((consp wtag-safe-sort-code)
+           wtag-safe-sort-code))))
+    (and code (check-coding-systems-region str nil code))))
+
 (defun wtag-rep-spcae (str)
   "STR 中の特定の文字を空白に置換して戻す.
-特定の文字とは変数 `wtag-safe-sort-code' で指定のコーディングにできない文字.
-変数の値が t なら japanese-shift-jis とし nil なら STR をそのまま戻す."
-  (let* ((coding (if (eq wtag-safe-sort-code t)
-                     'japanese-shift-jis
-                   wtag-safe-sort-code))
-         (bad (and
-               coding
-               (assoc-default
-                coding (check-coding-systems-region str nil (list coding)))))
+特定の文字とは変数 `wtag-safe-sort-code' で指定されたコーディングにできない文字."
+  (let* ((bad (flatten-tree (mapcar #'cdr (wtag-safe-sort-code str))))
          (cpy (copy-sequence str)))
     (dolist (i bad cpy) (aset cpy i ?\s))))
 
@@ -3408,6 +3412,11 @@ winカカシが漢字ASCII混合の場合、
          (dic (or wtag-kakashi-usrdic ""))
          (args (list "-JK" "-HK" dic))
          (lst (mapcar #'wtag-make-sort-string lst))
+         (default-directory  ;; for `call-process-region' Windows11 NOT UTF-8 Environment.
+          (if (and (eq system-type 'windows-nt)
+                   (wtag-safe-sort-code default-directory))
+              "/"
+            default-directory))
          tmp)
     (with-temp-buffer
       (insert (wtag-reverse-regular ;; カスタマイズされていたときの対策で自前化

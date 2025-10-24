@@ -1,5 +1,24 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Oct 25 07:42:51 2025
+** wtag.el: 4.14
+*** fix `wtag-kakashi-filter':
+ カスタム変数 `wtag-safe-sort-code' の初期値を、リスト (japanese-shift-jis cp932) に変更.
+ カカシに文字列を渡すとき SJIS にできない文字があればその文字をスペースに置き換えているが、
+ 他に cp932 にできない文字も対象にするようにする(Winではこちらが正解のよう).
+
+ カカシの起動で call-process-region が実行されるとき
+ カレントディレクトリ名に当該コードに当たる文字が使われているとエラーになるので
+ `system-type' が windows-nt なら一時的にカレントディレクトリをルートにすることにより回避.
+
+*** chnage: `wtag-flush-tag'
+ `wtag-track-prefix-rename' が non-nil なら(deafult は t)
+ `track' or `title' tag が変更されていれば rename 実行するようにする.
+
+ それに限らず全ファイルをタグと同名にリネームしたい場合は
+ 強制フラッシュすることによりリネームされる(C-u C-c C-c).
+ 今まではタグの変更があっても強制フラッシュしないとリネームされなかった.
+
 * Sat Sep 27 07:36:36 2025
 ** mf-lib-wav.el: 2.2
 *** fix: `mf-get-chunks'
