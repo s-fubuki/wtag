@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018-2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 2.1 $
+;; Version: $Revision: 2.2 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -53,7 +53,7 @@
   :version "26.3"
   :prefix "mf-")
 
-(defconst mf-tag-write-version "$Revision: 2.1 $")
+(defconst mf-tag-write-version "$Revision: 2.2 $")
 
 (require 'cl-lib)
 (require 'mf-lib-var)
@@ -86,13 +86,17 @@
         (throw 'break (plist-get a :data))))))
 
 (defun mf-image-type (obj)
-  "バイナリ OBJ のタイプを jpeg or png で返す."
+  "バイナリ OBJ のタイプをシンボルで返す."
   (assoc-default (substring obj 0 (if (> 16 (length obj)) (length obj) 16))
                  '(("\\`\xff\xd8"                . jpeg)
-                   ("\\`\x89PNG\x0d\x0a\x1a\x0a" . png))
-                 ;; ("\\`GIF8[79]a"               . gif)
-                 ;; ("\\`RIFF....WEBP"            . webp)
+                   ("\\`\x89PNG\x0d\x0a\x1a\x0a" . png)
+                   ("\\`GIF8[79]a"               . gif)
+                   ("\\`RIFF....WEBP"            . webp))
                  #'string-match))
+
+(defun mf-jpg-or-png-p (obj)
+  "OBJ が jpeg or png なら non-nil."
+  (memq (mf-image-type obj) '(jpeg png)))
 
 (defun mf-set-file-tag (mode pair alias)
   "PAIR のセルが画像かテキストかで振り分ける.
@@ -101,7 +105,7 @@ MODE はタグのモード ALIAS は alias テーブル."
          (data (cdr pair))
          (file (file-attributes data)))
     (cond
-     ((or (and file (string-match mf-image-regexp data)) (mf-image-type data))
+     ((or (and file (string-match mf-image-regexp data)) (mf-jpg-or-png-p data))
       (mf-set-image-tag mode data))
      ((and file (string-match mf-text-regexp data))
       (mf-set-text-tag data alias))

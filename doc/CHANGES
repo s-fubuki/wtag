@@ -1,5 +1,60 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Nov 29 08:19:46 2025
+** mf-tag-write.el: head: 2.2
+*** change: 別途入用になったため 関数 `mf-image-type'の
+ コメントアウトしてあった webp, gif のチェックを生かし
+ 影響ある呼び元はクッション関数 `mf-jpg-or-png-p' から呼ぶ.
+
+** wtag.el: 4.15
+*** new: アートワーク等が Track 1 のものと違うとき曲名末尾にインジケータを表示
+ 曲ファイルのアートワーク、アルバムタイトル、ジャンル、年、コメントが
+ 表示されているもの(Track 1 とは)違う場合
+ 曲名末尾に "cagym" などと表示するようにする.
+ face は `wtag-different-alert'(デフォルトは暗いグレー).
+ 曲名との区切りは `wtag-different-alert-separator'(デフォルト " ; ").
+
+各文字の意味は以下の通り.
+| c | `C'over art    |
+| a | `A'lbum name   |
+| g | `G'enre        |
+| y | release `Y'ear |
+| m | co`M'ment      |
+
+ 各文字をマウスで左クリックすると
+ エコーエリアに内容を表示する(マウスを乗せると出るツールチップにも表示される).
+ `c' のみ一時バッファを開きアートワークを縮小表示する.
+ その際そのバッファがカレントになり `q' か mouse-1 (左クリック)で閉じることができる.
+
+関連カスタム変数
+| wtag-different-cover-height         | 縮小する高さをピクセル値で設定(Default 270)               |
+| wtag-different-cover-display-action | 一時アートワーク・バッファの開き方(Default下から迫り出す) |
+| wtag-different-cover-map            | "c" のキーマップ (Default mouse-1)                        |
+| wtag-different-other-map            | "a", "g", "y", "m" のキーマップ (Default mouse-1)         |
+
+*** change:  wtag-sort-track
+ ファイル読み込みのときの順列を決めるカスタム変数 `wtag-sort-track' のデフォルトを
+ アルバム名/ディスク番号/トラック番号でソートする `wtag-sort-track-w/ad' に変更.
+
+ これによりいくつかのアルバムの曲が混ざったディレクトリで wtag を起動しても
+ それらが混ってしまうことが無く期待通りの並びになる.
+ 以前はディスクとトラックの番号のみしか見なかったので期待した通りにならなかった.
+
+その他にいくつかのソート関数を追加、判りやすい名前に変更など
+| wtag-sort-track-w/ad              | アルバム名、ディスク番号を見てトラックでソート |
+| wtag-sort-track-w/d               | ディスク番号を見てトラックでソート             |
+| wtag-sort-file-name               | ファイル名でソート                             |
+| wtag-sort-file-name-prefix-number | ファイル名先頭の数字を数値としてソート         |
+| wtag-sort-artist-name             | アーティスト名でソート                         |
+
+*** chnage: `wtag-stat-view' (C-c =)
+ 視認性を向上させるためにエイリアス・シンボルを着色 face `wtag-stat-alias'.
+ 更に prefix で単独表示できるようにする.
+
+*** fix: フラッシュ時 One window 化してしまっているなど
+ ペアになるアートワークバッファが見えていなくても
+ エラーを起こさないようにする.
+
 * Sat Oct 25 07:42:51 2025
 ** wtag.el: 4.14
 *** fix `wtag-kakashi-filter':

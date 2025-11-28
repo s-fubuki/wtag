@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 4.14 $$Name:  $
+;; Version: @(#)$Revision: 4.15 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -73,7 +73,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 4.14 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 4.15 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -436,6 +436,11 @@ C-x C-t t t t... で済む."
   :type '(choice string sexp)
   :group 'wtag)
 
+(defcustom wtag-different-alert-separator " ; "
+  "Different alert separator."
+  :type  'string
+  :group 'wtag)
+
 (defvar wtag-readline-history nil)
 
 (make-obsolete-variable 'wtag-startup-hook 'wtag-view-mode-hook "2.30" 'set)
@@ -587,6 +592,18 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
 (defface wtag-hl-line
   '((t :inherit unspecified :underline "Cyan" :extend t))
   "wtag-hl-line."
+  :group 'wtag-faces)
+
+(defface wtag-stat-alias
+  '((t :inherit font-lock-function-name-face))
+  "wtag-stat-alias."
+  :group 'wtag-faces)
+
+(defface wtag-different-alert
+  '((((background dark))
+     (:foreground "Grey20"))
+    (t (:foreground "Grey80")))
+  "wtag-different-alert."
   :group 'wtag-faces)
 
 (make-obsolete 'wtag-read-length-alist 'mf-read-size "1.280")
@@ -825,6 +842,8 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
              (wtag-get :artwork-buffer)
              (buffer-live-p (get-buffer (wtag-get :artwork-buffer))))
     (kill-buffer (wtag-get :artwork-buffer)))
+  (and (get-buffer wtag-different-buffer-name)
+       (kill-buffer wtag-different-buffer-name))
   (remove-hook 'kill-buffer-hook #'wtag-kill-artwork-buffer))
 
 (defun wtag-link-buffer ()
@@ -898,22 +917,28 @@ INDEX-NAME は index buffer name."
                       (message "%s `%s'" (error-message-string err) f)))))
         (and tags (push (cons (cons 'filename (cons nil f)) tags) result))))))
 
-(defcustom wtag-sort-track nil
-  "起動時読み込みでのソート秩序を決めるカスタム.
-2つの引数を比較して真偽値を戻す比較関数をセットする.
-引数はタグのエイリアスリストで \(mf-alias-get \='disk a) などとして値を参照する.
-nil なら wtag-sort-track で、トラックナンバータグの値で数値ソートされ
-ディスクナンバーがあればそれも考慮する.
-wtag-sort-track-2 はファイル名先頭の数字を数値としてソート.
-wtag-sort-file-name はファイル名でソートする."
+(defcustom wtag-sort-track #'wtag-sort-track-w/ad
+  "起動時のソート秩序を決めるカスタム.
+2つの引数を比較して真偽値を戻す関数をセットする.
+引数の参照は  \(mf-alias-get \='disk a) などのようにする.
+デフォルトは `wtag-sort-track-w/ad' で
+アルバム名/ディスクナンバー/トラックナンバーの優先順でソートし
+`wtag-sort-track-w/d' ならディスクナンバー/トラックナンバーでソートする.
+`wtag-sort-file-name-prefix-number' はファイル名先頭の数字を数値としてソート,
+`wtag-sort-file-name' はファイル名 `wtag-sort-artist-name' は
+アーティスト名優先でソートする.
+実際は最初に拡張子でファイルを集めるときにもファイル名でソートされ
+その順序を保ちつつ更めてここで設定したソートが適用される."
   :type '(choice
-          (const :tag "Track Tag Number Order" nil)
-          ;; (const :tag "Track Tag Number" #'wtag-sort-track)
+          (const :tag "Track Number Order with Album Name & Disc Number" wtag-sort-track-w/ad)
+          (const :tag "Track Number Order with Disc Number" wtag-sort-track-w/d)
           (const :tag "File Name Order" wtag-sort-file-name)
-          (const :tag "File name starts with numbers" wtag-sort-track-2)
+          (const :tag "File Name Prefix Number" wtag-sort-file-name-prefix-number)
+          (const :tag "Artist Nmae Order" wtag-sort-artist-name)
           function)
   :group 'wtag)
 
+(defalias 'wtag-sort-track-w/d #'wtag-sort-track)
 (defun wtag-sort-track (a b)
   "ソート秩序. Trk num に加えて Disk num も鑑みる."
   (setq a (+ (* (string-to-number (or (mf-alias-get 'disk a) "1")) 100)
@@ -922,18 +947,28 @@ wtag-sort-file-name はファイル名でソートする."
              (string-to-number (or (mf-alias-get 'track b) "1"))))
   (< a b))
 
-(defun wtag-sort-track-2 (a b)
+(make-obsolete 'wtag-sort-track-2 'wtag-sort-file-name-prefix-number "4.15")
+(defun wtag-sort-file-name-prefix-number (a b)
   "ファイル名先頭のトラック番号を数値としてソート.
 ゼロパディングされていない場合に効果."
   (string-version-lessp (mf-alias-get 'filename a)
                         (mf-alias-get 'filename b)))
 
 (defun wtag-sort-file-name (a b)
+  "ファイル名でソート."
   (string< (mf-alias-get 'filename a) (mf-alias-get 'filename b)))
 
-(defun wtag-sort-album (a b)
-  "sort プリディケイド for album."
+(defun wtag-sort-album-name (a b)
+  "アルバム名でソート."
   (string-collate-lessp (wtag-alias-value 'album a) (wtag-alias-value 'album b)))
+
+(defun wtag-sort-artist-name (a b)
+  "アー名でソート."
+  (string-collate-lessp (wtag-alias-value 'artist a) (wtag-alias-value 'artist b)))
+
+(defun wtag-sort-track-w/ad (a b)
+  "アルバム名優先のディスク & トラック・ソート."
+  (or (wtag-sort-album-name a b) (wtag-sort-track a b)))
 
 (defun wtag-nrenumber-track-order (lst)
   "\\='track の値を LST の順列順に破壊的に打ち直す."
@@ -945,16 +980,21 @@ wtag-sort-file-name はファイル名でソートする."
 
 (defun wtag-directory-files-list (dir)
   "DIRECTORY の中のファイルのタグリストを返す."
-  (let ((cmp (or wtag-sort-track #'wtag-sort-track))
+  (let ((cmp (or wtag-sort-track #'wtag-sort-track-w/ad))
         (suffixs (mf-re-suffix mf-lib-suffix-all)))
     (sort (wtag-directory-set (directory-files dir t suffixs)) cmp)))
 
 (defun wtag-initial-sort-function (func)
-  "test"
+  "Track sort function select."
   (interactive
    (list
     (completing-read "Track sort function: "
-                     '(wtag-sort-track wtag-sort-file-name wtag-sort-track-2))))
+                     '(wtag-sort-track-w/ad
+                       wtag-sort-track-w/d
+                       wtag-sort-artist-name
+                       wtag-sort-file-name
+                       wtag-sort-album-name
+                       wtag-sort-file-name-prefix-number))))
   (let ((wtag-sort-track (intern func)))
     (wtag-init-buffer default-directory (current-buffer))))
 
@@ -1127,11 +1167,16 @@ list が pair ならフラットなリストにしてから処理する.
       (push (reverse (substring str 0 (and (< 3 (length str)) 3))) result)
       (setq str (and (< 3 (length str)) (substring str 3))))
     (mapconcat #'identity result ",")))
+
+(defun wtag-common-list (tags)
+  "TAGS から1,2行目の共通タグにするタグ情報を抜いたリストを戻す."
+  (list (assq 'cover tags) (assq 'album tags)
+        (assq 'genre tags) (assq 'year tags) (assq 'comment tags)))
 
 (defun wtag-insert-index (index dir)
   "Tag plist INDEX を取得した DIR."
   (let* ((max-width-artist (setq wtag-artist-name-max (wtag-max-width index 'artist)))
-         ;; (max-width-title  (wtag-max-width index 'title))
+         (max-width-title  (wtag-max-width index 'title))
          (max-width-disk   (wtag-max-width index 'disk))
          (formd (concat "%" (number-to-string max-width-disk) "s"))
          (max-width-track  (wtag-max-width index 'track))
@@ -1140,7 +1185,8 @@ list が pair ならフラットなリストにしてから処理する.
          (total            (apply #'+ (mapcar #'cdr dtimes)))
          ;; (wtag-time-form (wtag-time-form-set wtag-time-form wtag-init-prefix))
          (prefix (wtag-get :init-prefix))
-         (old-comment (wtag-alias-value 'comment (car index)))
+         (common (wtag-common-list (car index)))
+         (old-comment (wtag-alias-value 'comment common))
          title file ext mode modes cache comm dsk str*)
     (setq wtag-current-mode  (wtag-alias-value '*type (car index))
           comm (wtag-beginning-string
@@ -1262,6 +1308,8 @@ list が pair ならフラットなリストにしてから処理する.
                    'face (wtag-choice-face title 'wtag-title)
                    'help-echo (wtag-alias-value 's-title a))
        ;; (wtag-padding-string (wtag-alias-value 'title a) max-width-title)
+
+       (wtag-different-alert common a (- max-width-title (string-width title)))
        
        (propertize "\n" 'stat (wtag-stat a)))
       (setq wtag-total-track (1+ wtag-total-track)))
@@ -1269,6 +1317,106 @@ list が pair ならフラットなリストにしてから処理する.
     (and (wtag-get :init-prefix)
          (not (assq 'cache (wtag-get :init-prefix)))
          (wtag-set :init-prefix (cons (cons 'cache cache) (wtag-get :init-prefix))))))
+
+(defvar wtag-different-cover-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mouse-1] #'wtag-different-cover)
+    map))
+
+(defvar wtag-different-other-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mouse-1] #'wtag-different-info)
+    map))
+
+(defun wtag-different-alert (common current pad)
+  "CURRENT のカバーアート等が COMMON とは違うときのインジケータ文字列を戻す.
+1, 2行目に表示されている情報がコモン情報.
+例えばアルバム名が違えば \"a\" と曲名の後に表示される.
+カバー以外はマウスポインタを当てるとその違った文字列が help-echo で表示される.
+ c -> Cover art
+ a -> Album name
+ g -> Genre
+ y -> release Year
+ m -> coMment"
+  (let (result)
+    (when (and (assq 'cover current)
+               (not (string-equal
+                     (wtag-alias-value 'cover common) (wtag-alias-value 'cover current))))
+      (push (propertize "c" 'face 'wtag-different-alert
+                        'mouse-face 'highlight
+                        'help-echo (apply #'format "%s %d x %d"
+                                          (wtag-image-size-obj
+                                           (wtag-alias-value 'cover current)))
+                        ;; 'pointer    'hand
+                        'data       (wtag-alias-value 'cover current)
+                        'keymap     wtag-different-cover-map)
+            result))
+    (dolist (a '((album . "a") (genre . "g") (year . "y") (comment . "m")))
+      (unless (string-equal
+               (wtag-alias-value (car a) common) (wtag-alias-value (car a) current))
+        (push (propertize (cdr a) 'face 'wtag-different-alert
+                          'mouse-face 'highlight
+                          'help-echo  (wtag-alias-value (car a) current)
+                          'keymap     wtag-different-other-map)
+              result)))
+    (if result
+        (concat (make-string pad ?\s)
+                (propertize wtag-different-alert-separator 'face 'wtag-different-alert)
+                (mapconcat #'identity (reverse result)))
+      "")))
+
+(defvar wtag-different-cover-display-action
+  '((display-buffer-at-bottom display-buffer-below-selected)
+    (window-height . fit-window-to-buffer)))
+
+(defvar wtag-different-cover-height 270)
+(defvar wtag-different-buffer-name " *different cover*")
+
+(defun wtag-different-cover ()
+  (interactive)
+  (let* ((display-buffer-base-action wtag-different-cover-display-action)
+         (buff wtag-different-buffer-name)
+         (lighter (concat " [" (get-text-property (point) 'help-echo) "]"))
+         (data (get-text-property (point) 'data))
+         (img (create-image data nil t :height wtag-different-cover-height))
+         text)
+    (put-text-property 0 1 'display img (setq text " "))
+    (and (get-buffer buff) (window-live-p (get-buffer-window buff))
+         (delete-window (get-buffer-window buff)))
+    (and (get-buffer buff) (kill-buffer buff))
+    (setq buff (or (get-buffer buff) (get-buffer-create buff)))
+    (with-current-buffer buff
+      (erase-buffer)
+      ;; (wtag-image-mode)
+      (wtag-different-cover-mode 1)
+      (setq wtag-different-cover-mode-lighter lighter)
+      (insert text)
+      (set-buffer-modified-p nil)
+      (setq buffer-read-only t)
+      (setq-local cursor-type nil)
+      (pop-to-buffer (current-buffer)))))
+
+(defun wtag-different-info ()
+  (interactive)
+  (let ((data (get-text-property (point) 'help-echo)))
+    (message "%s" data)))
+  
+(defun wtag-different-cover-mode-quit ()
+  (interactive)
+  (let ((buff (current-buffer)))
+    (delete-window)
+    (kill-buffer buff)))
+
+(defvar wtag-different-cover-mode-lighter nil)
+  
+(define-minor-mode wtag-different-cover-mode
+  "wtag different alert cover mode."
+  :lighter (:eval wtag-different-cover-mode-lighter)
+  :init    nil
+  :keymap  '(("q"       . wtag-different-cover-mode-quit)
+            ([mouse-1] . wtag-different-cover-mode-quit)))
+;;
+;;
 
 (defun wtag-mode-name-alias (mode)
   (or (assoc-default mode wtag-mode-name-alias #'string-match-p) mode))
@@ -1697,6 +1845,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
                            (buffer-modified-p (get-buffer (wtag-get :artwork-buffer)))))
         keep-name new-aartist new-album new-genre new-year new-comment
         old-aartist old-album old-genre old-year old-comment directory tmp)
+    (wtag-popup-artwark)
     (buffer-disable-undo)
     (when wtag-cursor-intangible (cursor-intangible-mode -1))
     (goto-char (point-min))
@@ -1849,9 +1998,20 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
        ,@body
        (when ci (cursor-intangible-mode 1)))))
 
-(defun wtag-stat-view ()
-  (interactive)
-  (message "%s" (get-text-property (line-end-position) 'stat)))
+(defun wtag-stat-view (prefix)
+  (interactive "P")
+  (let* ((tags (get-text-property (line-end-position) 'stat))
+         (lst (mapcar #'car tags))
+         (str (if prefix
+                  (assq (intern (completing-read ": " lst)) tags)
+                (with-temp-buffer
+                  (insert (format "%s" tags))
+                  (goto-char (point-min))
+                  (while (re-search-forward "(\\([a-z*-]+\\) " nil t)
+                    (put-text-property (match-beginning 1)
+                                       (match-end 1) 'face 'wtag-stat-alias))
+                  (buffer-string)))))
+    (message "%s" str)))
 
 (defun wtag-2nd-area ()
   "先頭エリアを 1 とし、そこから数えて 2番目のエリアにポイントがあれば
@@ -2481,6 +2641,12 @@ length は marker の 2バイト分を除いたセグメントの長さ.
       (setq pnt (+ pnt len 2)))
     (reverse res)))
 
+(defun wtag-image-size-obj (obj)
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert obj)
+    (wtag-image-size)))
+
 (defun wtag-image-size ()
   "buffer に読み込まれた jpeg/png のヨコ/タテのサイズを type width heght のリストで返す."
   (let (pnt)
@@ -2672,7 +2838,7 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
   (interactive)
   (let ((buff  (current-buffer))
         (abuff (wtag-get :artwork-buffer)))
-    (and (get-buffer abuff)
+    (and abuff (get-buffer abuff)
          (not (window-live-p (get-buffer-window abuff)))
          (switch-to-buffer abuff)
          (pop-to-buffer buff wtag-pop-action))))
