@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2025 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 4.15 $$Name:  $
+;; Version: @(#)$Revision: 4.16 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -73,14 +73,14 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 4.15 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 4.16 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
   "non-nil なら実行時の問い合わせのあるコマンドの問い合わせを無くす.
 リストなら指定したコマンドが問い合わせ無しになる.
 指定可能関数は `wtag-artwork-load',  `wtag-artistname-copy-all',
-`wtag-all-title-erase', `wtag-track-number-adjust' の4つ."
+`wtag-all-title-erase', `wtag-track-number-adjust' の 4つ."
   :type '(choice
           (const :tag "All nil" nil)
           (const :tag "All t" t)
@@ -89,7 +89,9 @@
                    (const wtag-artistname-copy-all)
                    (const wtag-all-title-erase)
                    (const wtag-track-number-adjust)
-                   (const wtag-artwork-load))))
+                   (const wtag-artwork-load)
+                   (const wtag-different-info)
+                   (const wtag-different-cover))))
   :group 'wtag)
 
 (defcustom wtag-artwork-keep nil
@@ -436,10 +438,23 @@ C-x C-t t t t... で済む."
   :type '(choice string sexp)
   :group 'wtag)
 
-(defcustom wtag-different-alert-separator " ; "
+(defvar wtag-different-buffer-name " *different cover*")
+(defvar wtag-different-cover-mode-lighter nil "Work.")
+
+(defcustom wtag-different-alert-separator " "
   "Different alert separator."
   :type  'string
   :group 'wtag)
+
+(make-obsolete-variable 'wtag-different-cover-height nil "4.16")
+(defcustom wtag-different-cover-height 270
+  "Different cover buffer pixel height."
+  :type  'integer
+  :group 'wtag)
+
+(defvar wtag-different-cover-display-action
+  '((display-buffer-at-bottom display-buffer-below-selected)
+    (window-height . fit-window-to-buffer)))
 
 (defvar wtag-readline-history nil)
 
@@ -601,8 +616,8 @@ For custom variable `mf-lib-mp3.el:mf-mp3-sjis-force'."
 
 (defface wtag-different-alert
   '((((background dark))
-     (:foreground "Grey20"))
-    (t (:foreground "Grey80")))
+     (:foreground "Grey20" :inverse-video t))
+    (t (:foreground "Grey80" :inverse-video t)))
   "wtag-different-alert."
   :group 'wtag-faces)
 
@@ -1317,7 +1332,10 @@ list が pair ならフラットなリストにしてから処理する.
     (and (wtag-get :init-prefix)
          (not (assq 'cache (wtag-get :init-prefix)))
          (wtag-set :init-prefix (cons (cons 'cache cache) (wtag-get :init-prefix))))))
-
+
+;;
+;; Different Alert
+;;
 (defvar wtag-different-cover-map
   (let ((map (make-sparse-keymap)))
     (define-key map [mouse-1] #'wtag-different-cover)
@@ -1330,9 +1348,13 @@ list が pair ならフラットなリストにしてから処理する.
 
 (defun wtag-different-alert (common current pad)
   "CURRENT のカバーアート等が COMMON とは違うときのインジケータ文字列を戻す.
+PAD は表示位置合わせのパディング整数.
 1, 2行目に表示されている情報がコモン情報.
 例えばアルバム名が違えば \"a\" と曲名の後に表示される.
-カバー以外はマウスポインタを当てるとその違った文字列が help-echo で表示される.
+それぞれマウスで左クリックすると
+wtag-view-mode のときはカバーなら一時バッファにそのアートワークを
+カバー以外ならエコーエリアにその文字列を表示する.
+wtag-writable-mode のときはその情報に置き換えるか問い合わせをする.
  c -> Cover art
  a -> Album name
  g -> Genre
@@ -1347,7 +1369,8 @@ list が pair ならフラットなリストにしてから処理する.
                         'help-echo (apply #'format "%s %d x %d"
                                           (wtag-image-size-obj
                                            (wtag-alias-value 'cover current)))
-                        ;; 'pointer    'hand
+                        'album      (or (mf-alias-get 'album current)
+                                        (mf-alias-get 'title current))
                         'data       (wtag-alias-value 'cover current)
                         'keymap     wtag-different-cover-map)
             result))
@@ -1361,63 +1384,117 @@ list が pair ならフラットなリストにしてから処理する.
               result)))
     (if result
         (concat (make-string pad ?\s)
-                (propertize wtag-different-alert-separator 'face 'wtag-different-alert)
+                wtag-different-alert-separator
                 (mapconcat #'identity (reverse result)))
       "")))
 
-(defvar wtag-different-cover-display-action
-  '((display-buffer-at-bottom display-buffer-below-selected)
-    (window-height . fit-window-to-buffer)))
-
-(defvar wtag-different-cover-height 270)
-(defvar wtag-different-buffer-name " *different cover*")
-
-(defun wtag-different-cover ()
-  (interactive)
+(defun wtag-different-cover (event)
+  (interactive "e")
   (let* ((display-buffer-base-action wtag-different-cover-display-action)
+         (pos (nth 1 (cadr event)))
          (buff wtag-different-buffer-name)
-         (lighter (concat " [" (get-text-property (point) 'help-echo) "]"))
-         (data (get-text-property (point) 'data))
-         (img (create-image data nil t :height wtag-different-cover-height))
-         text)
-    (put-text-property 0 1 'display img (setq text " "))
+         ;; (lighter (concat " [" (get-text-property pos 'help-echo) "]"))
+         (img (get-text-property pos 'data))
+         (album (get-text-property pos 'album))
+         (parent (current-buffer))
+         (mode major-mode))
     (and (get-buffer buff) (window-live-p (get-buffer-window buff))
          (delete-window (get-buffer-window buff)))
     (and (get-buffer buff) (kill-buffer buff))
     (setq buff (or (get-buffer buff) (get-buffer-create buff)))
     (with-current-buffer buff
       (erase-buffer)
-      ;; (wtag-image-mode)
-      (wtag-different-cover-mode 1)
-      (setq wtag-different-cover-mode-lighter lighter)
-      (insert text)
+      (insert img)
+      (set-buffer-multibyte nil)
       (set-buffer-modified-p nil)
+      (wtag-set :parent-buffer parent)
+      (wtag-set :base-name album)
       (setq buffer-read-only t)
-      (setq-local cursor-type nil)
-      (pop-to-buffer (current-buffer)))))
+      (wtag-image-mode)
+      (wtag-different-cover-mode 1)
+      ;; (setq wtag-different-cover-mode-lighter lighter)
+      (pop-to-buffer (current-buffer))
+      (and (eq mode 'wtag-writable-mode)
+           (if (wtag-y-or-n-p "Copy to Common?" this-command)
+               (wtag-different-cover-copy-to-coomon)
+             (wtag-different-cover-mode-quit))))))
 
-(defun wtag-different-info ()
+(defun wtag-different-cover-copy-to-coomon ()
+  (let ((obj (image-property (get-text-property (point-min) 'display) :data)))
+    (with-current-buffer (wtag-get :parent-buffer)
+      (wtag-artwork-load obj))
+    (wtag-different-cover-mode-quit)))
+
+(defun wtag-different-cover-go-writable ()
   (interactive)
-  (let ((data (get-text-property (point) 'help-echo)))
-    (message "%s" data)))
-  
+  (let ((obj (image-property (get-text-property (point-min) 'display) :data)))
+    (with-current-buffer (wtag-get :parent-buffer)
+      (wtag-writable-tag)
+      (wtag-artwork-load obj))
+    (wtag-different-cover-mode-quit)))
+
+(defun wtag-different-info (event)
+  (interactive "e")
+  (let* ((mode major-mode)
+         (pos (nth 1 (cadr event)))
+         (ev (char-after pos))
+         (data (get-text-property pos 'help-echo)))
+    (if (eq mode 'wtag-view-mode)
+        (message "%s" data)
+      (when (wtag-y-or-n-p (format "Copy to Common? `%s'" data) this-command)
+        (let ((range (cdr (assq ev '((?a old-album   . end-album)
+                                     (?g old-genre   . end-genre)
+                                     (?y old-year    . end-year)
+                                     (?m old-comment . end-comment)))))
+              beg end)
+          (and cursor-intangible-mode (cursor-intangible-mode -1))
+          (setq beg (let* ((pos (next-single-property-change (point-min) (car range))))
+                      (next-single-property-change pos (car range)))
+                end (next-single-property-change beg (cdr range)))
+          (goto-char beg)
+          (kill-region beg end)
+          (insert data)
+          (and wtag-cursor-intangible (cursor-intangible-mode 1)))))))
+
 (defun wtag-different-cover-mode-quit ()
   (interactive)
-  (let ((buff (current-buffer)))
-    (delete-window)
-    (kill-buffer buff)))
+  (let ((buff (current-buffer))
+        (frame (wtag-get :frame)))
+    (if frame
+        (progn
+          (delete-frame frame)
+          (wtag-set :frame nil)
+          (image-transform-fit-to-window))
+      (delete-window)
+      (kill-buffer buff)
+      (with-current-buffer (wtag-get :artwork-buffer)
+        (image-transform-fit-to-window)))))
 
-(defvar wtag-different-cover-mode-lighter nil)
-  
+(defvar wtag-different-cover-mode-map
+  (let ((map (make-sparse-keymap))
+        (menu (make-sparse-keymap "-df")))
+    (define-key map "q"        #'wtag-different-cover-mode-quit)
+    (define-key map [mouse-1]  #'wtag-different-cover-mode-quit)
+    (define-key map "\C-c\C-w" #'wtag-artwork-write)
+    (define-key map "\C-x\C-q" #'wtag-different-cover-go-writable)
+    (define-key map "F"        #'wtag-open-frame)
+    (define-key map "\C-c\C-o" #'wtag-open-frame)
+    (define-key map [menu-bar wtag-diffcover] (cons "Wtag-DiffCover" menu))
+    (define-key menu [wtag-artwork-write] '("Artwork Write" . wtag-artwork-write))
+    (define-key menu [wtag-different-cover-go-writable]
+                '("Writable Mode" . wtag-different-cover-go-writable))
+    (define-key menu [wtag-open-frame]
+                '("View Other Frame" . wtag-open-frame))
+    (define-key menu [wtag-different-cover-mode-quit]
+                '("Close" . wtag-different-cover-mode-quit))
+    map))
+    
 (define-minor-mode wtag-different-cover-mode
   "wtag different alert cover mode."
   :lighter (:eval wtag-different-cover-mode-lighter)
-  :init    nil
-  :keymap  '(("q"       . wtag-different-cover-mode-quit)
-            ([mouse-1] . wtag-different-cover-mode-quit)))
+  :init    nil)
 ;;
 ;;
-
 (defun wtag-mode-name-alias (mode)
   (or (assoc-default mode wtag-mode-name-alias #'string-match-p) mode))
 
@@ -1913,8 +1990,8 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
                    (or force (not (string-equal new-comment old-comment))))
           (push (wtag-cons 'comment new-comment) tags))
         ;; Album cover artwork.
-        (when (or (and force (wtag-get :artwork-buffer)) (wtag-image-filename-exist))
-          (let ((file (if force (wtag-tmp-artwork) (wtag-image-filename-exist))))
+        (when (or force modify-cover (wtag-image-filename-exist))
+          (let ((file (or (wtag-image-filename-exist) (wtag-tmp-artwork))))
             (push (wtag-cons 'cover file) tags)))
         ;; File re-write.
         (when tags
@@ -2007,7 +2084,7 @@ PREFIX が在れば未変更でも強制的に表示データに書換る."
                 (with-temp-buffer
                   (insert (format "%s" tags))
                   (goto-char (point-min))
-                  (while (re-search-forward "(\\([a-z*-]+\\) " nil t)
+                  (while (re-search-forward "(\\([a-z*-]+\\) .+?)" nil t)
                     (put-text-property (match-beginning 1)
                                        (match-end 1) 'face 'wtag-stat-alias))
                   (buffer-string)))))
@@ -2804,7 +2881,8 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
       (insert cover)
       (set-buffer-multibyte nil)
       (set-buffer-modified-p nil)
-      (wtag-image-mode))))
+      (wtag-image-mode)
+      (image-transform-fit-to-window))))
 
 (defun wtag-image-filename-exist ()
   (let ((buff (wtag-get :artwork-buffer)))
@@ -2814,7 +2892,10 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
 
 (defun wtag-open-frame ()
   (interactive)
-  (let ((buff (wtag-get :artwork-buffer)))
+  (let ((buff
+         (if (equal (buffer-name (current-buffer)) wtag-different-buffer-name)
+             (current-buffer)
+           (wtag-get :artwork-buffer))))
     (set-buffer buff)
     (wtag-set :frame
               (make-frame `((name . ,wtag-sub-frame-name)
@@ -2868,25 +2949,35 @@ NO-MODIFIED が NON-NIL なら表示後に立つモデファイフラグをク�
 
 (defun wtag-make-artwork-name ()
   (let ((tmp (if (wtag-get :base-name)
-                 (cons default-directory (wtag-get :base-name))
+                 (cons (wtag-get :directory) (wtag-get :base-name))
                (with-current-buffer (wtag-get :parent-buffer)
-                 (cons default-directory (wtag-get :base-name))))))
-    (let ((default-directory (car tmp)))
-      (wtag-safe-keep-name
-       (wtag-add-image-suffix
-        (wtag-regular-file-name (cdr tmp)))))))
+                 (cons (wtag-get :directory) (wtag-get :base-name))))))
+    (expand-file-name
+     (wtag-safe-keep-name
+      (wtag-add-image-suffix
+       (wtag-regular-file-name (cdr tmp))))
+     (car tmp))))
 
 (defun wtag-artwork-write (prefix)
   (interactive "P")
   (with-current-buffer (or (wtag-get :artwork-buffer) (current-buffer))
-    (write-region (point-min) (point-max)
-                  (wtag-add-image-suffix
-                   (if prefix
-                       (read-string "File name: "
-                                    nil 'wtag-readline-history
-                                    (wtag-make-artwork-name))
-                     (or (wtag-get :image-filename)
-                         (eval wtag-artwork-write-file-name)))))))
+    (let ((range
+           (if (get-text-property (point-min) 'display)
+               (list
+                (image-property (get-text-property (point-min) 'display) :data)
+                nil)
+             (list (point-min) (point-max))))
+          (coding-system-for-write 'no-conversion))
+      (apply #'write-region
+             (append range
+                     (list
+                      (wtag-add-image-suffix
+                       (if prefix
+                           (read-string "File name: "
+                                        nil 'wtag-readline-history
+                                        (wtag-make-artwork-name))
+                         (or (wtag-get :image-filename)
+                             (eval wtag-artwork-write-file-name))))))))))
 
 (defun wtag-frame-quit ()
   (interactive)
@@ -3935,6 +4026,7 @@ winカカシが漢字ASCII混合の場合、
     (define-key map "f"               'wtag-fit-artwork-toggle)
     (define-key map "\C-c\C-f"        'wtag-fit-artwork-toggle)
     (define-key map "F"               'wtag-open-frame)
+    (define-key map "\C-c\C-o"        'wtag-open-frame)
     (define-key map "\C-c\C-a"        'wtag-popup-artwark)
     (define-key map "g"               'wtag-reload-buffer)
     (define-key map "m"               'wtag-mark-file-forward)

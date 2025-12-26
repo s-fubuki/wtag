@@ -1,7 +1,59 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Dec 27 08:48:56 2025
+** wtag.el:. 4.16
+ 4.15 で実装した アルバム名、ジャンル、年、コメント、アートワークが
+ コモン・データ(トラック1のデータ)と違う場合、
+ それらを見る機能を拡張をしました.
+
+ `wtag-view-mode' のときコモンとデータの違うトラックの行末に
+ cagym 等とアラートをインバート表示します.
+ それら各文字をマウス・クリックするとエコー・エリアにその内容が表示されます.
+ アートワークは一時バッファに表示されます.
+ そのときのモードは `wtag-different-cover-mode' です.
+ このモード(一時バッファ)でのキーバインドは
+
+ | q              | 一時バッファを閉じる (左マウスクリックでも閉じます)      |
+ | C-x C-q        | アートワークをコモンにコピーしてライタブル・モードにする |
+ | C-c C-o  (`F') | 別フレームにアートワークを表示する                       |
+ | C-c C-w'       | アートワークをファイルに書き出す                         |
+
+ `wtag-writable-mode' 時もアラート文字は生きていて
+ マウス・クリックすると、そのデータをコモンにコピーします.
+ 問い合わせが入りますが `wtag-without-query' のリストに
+ `wtag-different-info', `wtag-different-cover'(アートワーク用) を加えるこで
+ 入らないよう制御できます.
+
+*** 廃止 カスタム変数 `wtag-different-cover-height'
+ `F' を実装するため表示法を変え自動的にカレントバッファの半分の高さで表示するようになりました.
+
+ 高さを変更したい場合、
+ カスタム変数 `wtag-different-cover-display-action' の中の
+ `window-height' を指定している CDR の `fit-window-to-buffer' の部分を
+ 表示したい行数に変更することによりできます.
+
+*** chnage: face `wtag-different-alert' インバート表示にする
+
+*** change: カスタム変数 `wtag-different-alert-separator' を " ; " -> " "
+ 表示先で face 設定していたのもやめたので
+ 色付が必要な場合はここでしてください.
+
+*** add: 挙動を統一するため `wtag-view-mode-map' の `C-c C-o' にも `wtag-open-frame' を追加
+ `wtag-writable-mode' では `C-c C-o' なのに `wtag-view-mode' では `F' のみだったため.
+
+*** fix: `wtag-artwork-write'(`wtag-make-artwork-name')
+ 親ディレクトリ(起動ディレクトリ)に書き出しされていたのを
+ アルバム・ディレクトリ内になるよう修正.
+
+*** fix: `wtag-stat-view' タイトル等の中のカッコにも反応して着色してしまっていたのを修正
+ 最初の閉じカッコまでをパターンとしただけなので、 複数カッコが含まれている場合には対応できない.
+
+*** fix: `wtag-flush-tag':
+ force 実行しなくともアートワーク・バッファが変更されていれば書換するようにする.
+ (バグなのか理由があって敢えてそのようにしたものなのか思い出せない)
+
 * Sat Nov 29 08:19:46 2025
-** mf-tag-write.el: head: 2.2
+** mf-tag-write.el: 2.2
 *** change: 別途入用になったため 関数 `mf-image-type'の
  コメントアウトしてあった webp, gif のチェックを生かし
  影響ある呼び元はクッション関数 `mf-jpg-or-png-p' から呼ぶ.
