@@ -1,5 +1,25 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Apr 25 08:06:38 2026
+** wtag.el:. 4.17
+*** new: `wtag-artwork-load' (マウスでなく)キーボードから起動するとき
+ 擬似的にプレビューできるようにした(表示してからロードするかどうか問い合わせる).
+ カスタム変数 `wtag-artwork-load-preview' non-nil で有効(デフォルト t).
+
+*** new: face `wtag-track-number-shadow' トラックナンバー分母部分.
+ デフォルトは `wtag-disk-number-other' をベースに使う.
+
+*** chnage: face `wtag-time-other' ベースを dired-ignored から shadow に変更.
+
+*** fix: `wtag-buffer-name' バッファ名の長さ計測を length から string-width に変更.
+ 日本語と ascii文字 の配分によっては切り詰め効果が薄いため.
+
+*** fix: `wtag-different-cover-mode' image-mode で表示される wtag menu を隠す.
+
+*** delete: `wtag-image-mode-map'
+ `C-c C-i' (wtag-artwork-load) カレントバッファが image buffer で実行したとき
+ 対になるインデックス・バッファが view mode だと最後にエラーになるので削除.
+
 * Sat Dec 27 08:48:56 2025
 ** wtag.el:. 4.16
  4.15 で実装した アルバム名、ジャンル、年、コメント、アートワークが
@@ -16,7 +36,7 @@
  | q              | 一時バッファを閉じる (左マウスクリックでも閉じます)      |
  | C-x C-q        | アートワークをコモンにコピーしてライタブル・モードにする |
  | C-c C-o  (`F') | 別フレームにアートワークを表示する                       |
- | C-c C-w'       | アートワークをファイルに書き出す                         |
+ | C-c C-w        | アートワークをファイルに書き出す                         |
 
  `wtag-writable-mode' 時もアラート文字は生きていて
  マウス・クリックすると、そのデータをコモンにコピーします.
