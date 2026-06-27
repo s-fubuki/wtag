@@ -1,9 +1,9 @@
 ;;; mf-lib-var.el --- -*- lexical-binding:t -*-
 
-;; Copyright (C) 2020-2025 fubuki
+;; Copyright (C) 2020-2026 fubuki
 
 ;; Author:  fubuki at frill.org
-;; Version: $Revision: 2.1 $$Name:  $
+;; Version: $Revision: 2.2 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 
 (require 'rx)
 
-(defconst mf-lib-var-version "$Revision: 2.1 $$Name:  $")
+(defconst mf-lib-var-version "$Revision: 2.2 $$Name:  $")
 
 (defvar mf-function-list  nil)
 (defvar mf-lib-suffix-all nil)
@@ -379,7 +379,7 @@ once ならバックアップがあればバックアップしない."
 リストで括られている場合でも、意識せず値を得るためのクッション関数."
   (if (consp elt)
       (mf-indirect-car (car elt))
-    (round elt)))
+    (round (or elt 0))))
 
 (defcustom mf-read-size
   '(("\\.oma\\'" . 30) ("\\.\\(m4a\\|wma\\)\\'" . 10) ("\\.mp3\\'" . 40)

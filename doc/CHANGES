@@ -1,7 +1,48 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Jun 27 18:58:55 2026
+** mf-lib-mp4.el: 3.2
+*** change: `mf-mp4-reload-margin' で出る警告でアドバイスする値を 1 に変更.
+ 1 なら CD の曲収録最短時間 4秒でジャケの無いデータでもセーフティ維持できる.
+ コードの変更はなし.
+
+** mf-lib-var.el: 2.2
+*** fix: `mf-indirect-car': 最終的値が nil なら 0 を戻すようにする.
+ ヘッダの読み込み不足などで nil になると round できずエラーになっていた.
+
+** wtag.el: 4.18
+*** add: `wtag-image-mode-map' のメニューに `#'wtag-frame-quit' を追加.
+
+*** add: 決め撃ちで `mf-mp4-reload-margin' を一時的に 0.5 に変更していたが
+ カスタム変数化する -> `wtag-mp4-reload-margin' でオーバーライドするようにする.
+ lib-mp4 側の警告を活かしたいので、デフォルトは nil でオーバーライドしない.
+ 0.5 にすると以前と同じになる.
+
+*** new: `wtag-cache.el' を require することでキャッシュ対応.
+ `load-path' 上に `wtag-cache.el' があれば勝手に require されデフォルトで有効化する.
+ 無効化したい場合はカスタム変数 `wtag-cache' を nil にする.
+
+*** change: `wtag-digit-width':
+ トラック・プレフィクス表示桁を最大トラックに合わせていたが
+ 一般的には2桁なので最大10トラックに満たない場合でも 2桁とする.
+
+** wtag-cache.el: 1.1
+ wtag にキャッシュ機能を追加します. これがなくても wtag は動作します.
+ `load-path' 上に置いておけば `wtag 1.18 が勝手に load しアクティブになります.
+ インアクティブにしたい場合はカスタム変数 `wtag-cache' に nil をセットします.
+ またこの変数が org-time なら アルバムのタイムスタンプを維持します.
+
+: (require ''wtag)
+: (setq wtag-cache 'org-time)
+
+ 動作としてはアルバム・ディレクトリの下に ".wtag-cache" というディレクトリを作り
+ その中にキャッシュ・ファイルを作ります.
+ "index" がタグのリスト・ファイル "*.bin" がアートワークです.
+ アートワークはたいてい jpg ですが png である可能性もゼロではないので bin としています.
+ アートワークは違うものがセットされていれば別々に取り出します.
+
 * Sat Apr 25 08:06:38 2026
-** wtag.el:. 4.17
+** wtag.el: 4.17
 *** new: `wtag-artwork-load' (マウスでなく)キーボードから起動するとき
  擬似的にプレビューできるようにした(表示してからロードするかどうか問い合わせる).
  カスタム変数 `wtag-artwork-load-preview' non-nil で有効(デフォルト t).

@@ -1,8 +1,8 @@
 ;;; mf-lib-mp4.el --- This library for mf-tag-write.el -*- lexical-binding:t -*-
-;; Copyright (C) 2018-2025 fubuki
+;; Copyright (C) 2018-2026 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: $Revision: 3.1 $$Name:  $
+;; Version: $Revision: 3.2 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst mf-lib-mp4-version "$Revision: 3.1 $$Name:  $")
+(defconst mf-lib-mp4-version "$Revision: 3.2 $$Name:  $")
 
 (require 'mf-lib-var)
 (require 'cl-lib)
@@ -717,8 +717,7 @@ NO-BINARY が非NIL ならイメージタグは含めない."
           ilst  (mf-get-ilst atoms)
           sec   (if (mp4-flat-scan "mdat") (mp4-get-time atoms)))
     (unless sec
-      (message
-       "`mf-mp4-reload-margin' に 0.5 以上をセットすると時間情報の獲得ができるかも."))
+      (message "`mf-mp4-reload-margin' を 1 にすると時間情報の獲得ができるかも."))
     (goto-char (point-min))
     (setq origin (buffer-substring (+ (point) 8) (+ (point) 8 4)))
     (setq tags (mf-mp4-tag-analyze ilst no-binary))

@@ -7,7 +7,7 @@
 - [[https://gpl.mhatta.org/gpl.ja.md][GPL3 和訳]]
   
 * このセットのバージョン
-  番号で管理する能力がないので [Apr 25 2026] 版とします.
+  番号で管理する能力がないので [Jun 27 2026] 版とします.
 
 * 基本ライブラリ(必須)
 1. mf-tag-write.el   - タグの書き換えバックエンド関数
@@ -25,6 +25,7 @@
 3. mf-lib-mp3v1.el   - mp3(ID3.1) ライブラリ(書き戻しは ID3.2v3 で可能)
 4. mf-lib-ogg.el     - Vorbis(ogg) ライブラリ (読み出し専用)
 5. mf-lib-aiff.el    - aiff ライブラリ (読み出し専用)
+6. wtag-cache.el     - wtag にリードキャッシュ機能を追加
 
 * ドキュメント
 1. mf-tag-write.org - wtag.org の中に加え, 内容が古いのでいずれ削除します.

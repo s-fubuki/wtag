@@ -2,7 +2,7 @@
 ;; Copyright (C) 2019 .. 2026 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 4.17 $$Name:  $
+;; Version: @(#)$Revision: 4.18 $$Name:  $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -39,6 +39,7 @@
 (require 'cursor-sensor)
 (require 'keymap)
 (require 'seq)
+(require 'wtag-cache nil 'noerror)
 
 (defgroup wtag nil
   "Writable music file tag."
@@ -73,7 +74,7 @@
 (defun wtag-set (prop val)
   (setq wtag-works (plist-put wtag-works prop val)))
 
-(defconst wtag-version "@(#)$Revision: 4.17 $$Name:  $")
+(defconst wtag-version "@(#)$Revision: 4.18 $$Name:  $")
 (defconst wtag-emacs-version "GNU Emacs 30.0.50 (build 1, x86_64-w64-mingw32) of 2023-04-16")
 
 (defcustom wtag-without-query '()
@@ -312,6 +313,11 @@ force なら元データにソートタグが含まれていなくても追加�
 (defcustom wtag-vbr nil
   "mp3 で VBR のとき non-nil ならビットレートで正しい平均値を表示します."
   :type  '(choice (const nil) (const t) function)
+  :group 'wtag)
+
+(defcustom wtag-mp4-reload-margin nil
+  "`mf-mp4-reload-margin' をオーバーライドする."
+  :type '(choice number (const nil))
   :group 'wtag)
 
 (defvar wtag-mode-links
@@ -924,7 +930,7 @@ INDEX-NAME は index buffer name."
 (defun wtag-directory-set (files)
   "FILES からタグを読み読み込みリストにして返す.
 参照するときここでの順序が影響する."
-  (let ((mf-mp4-reload-margin 0.5) ;; 11秒等 非常に短かいデータに対処するため
+  (let ((mf-mp4-reload-margin (or wtag-mp4-reload-margin mf-mp4-reload-margin))
         (total (length files)) (c 0)
         result message-log-max)
     (dolist (f files (reverse result))
@@ -1003,6 +1009,8 @@ INDEX-NAME は index buffer name."
       (and tmp (setcdr tmp (number-to-string i)))
       (setq i (1+ i)))))
 
+(defvar wtag-directory-files-list-func #'wtag-directory-files-list)
+
 (defun wtag-directory-files-list (dir)
   "DIRECTORY の中のファイルのタグリストを返す."
   (let ((cmp (or wtag-sort-track #'wtag-sort-track-w/ad))
@@ -1055,7 +1063,7 @@ INDEX-NAME は index buffer name."
     arg))
 
 (defun wtag-track-max (lst)
-  "`wtag-directory-files-list' の戻値から以下のリストを戻す.
+  "`wtag-directory-files-list-func' の戻値から以下のリストを戻す.
 \(総曲数 総ディスク枚数 最高トラック番号)"
   (let ((disk 0) (track 0) tmp)
     (dolist (a lst (list (length lst) disk track))
@@ -1084,7 +1092,7 @@ See: `wtag-view-mode', `wtag-writable-mode', `wtag-image-mode'."
          (kill-read-only-ok t)
          (dir (file-name-as-directory dir))
          result buff art-buff obj base)
-    (setq result (wtag-directory-files-list dir))
+    (setq result (funcall wtag-directory-files-list-func dir))
     (unless result (error "No music file"))
     (wtag-already-exists-buffer-kill dir)
     (setq base (or (mf-alias-get 'album (car result)) "*NULL*")
@@ -1488,36 +1496,6 @@ wtag-writable-mode のときはその情報に置き換えるか問い合わせ�
       (kill-buffer buff)
       (with-current-buffer (wtag-get :artwork-buffer)
         (image-transform-fit-to-window)))))
-
-(defvar wtag-different-cover-mode-map
-  (let ((map (make-sparse-keymap))
-        (menu (make-sparse-keymap "-df")))
-    (define-key map "q"        #'wtag-different-cover-mode-quit)
-    (define-key map [mouse-1]  #'wtag-different-cover-mode-quit)
-    (define-key map "\C-c\C-w" #'wtag-artwork-write)
-    (define-key map "\C-x\C-q" #'wtag-different-cover-go-writable)
-    (define-key map "F"        #'wtag-open-frame)
-    (define-key map "\C-c\C-o" #'wtag-open-frame)
-    ;; (define-key map "\C-c\C-i" #'undefined)
-    (define-key map [menu-bar wtag-diffcover] (cons "Wtag-DiffCover" menu))
-    (define-key menu [wtag-artwork-write] '("Artwork Write" . wtag-artwork-write))
-    (define-key menu [wtag-different-cover-go-writable]
-                '("Writable Mode" . wtag-different-cover-go-writable))
-    (define-key menu [wtag-open-frame]
-                '("View Other Frame" . wtag-open-frame))
-    (define-key menu [wtag-different-cover-mode-quit]
-                '("Close" . wtag-different-cover-mode-quit))
-    map))
-    
-(define-minor-mode wtag-different-cover-mode
-  "wtag different alert cover mode."
-  :lighter (:eval wtag-different-cover-mode-lighter)
-  :init    nil
-  (use-local-map
-   (let ((map (make-sparse-keymap)))
-     (set-keymap-parent map wtag-image-mode-map)
-     (define-key map [menu-bar wtag] #'undefined)
-     map)))
 ;;
 ;;
 (defun wtag-mode-name-alias (mode)
@@ -1866,7 +1844,8 @@ DISK が nil または `:trackmax' を見て 1枚ものならディスク番号�
          (wdisk (and (nth 1 max)
                      (not (= (nth 1 max) 1))
                      (length (number-to-string (nth 1 max)))))
-         (wtrack (length (number-to-string (nth 2 max)))))
+         (wtrack (let ((len (length (number-to-string (nth 2 max)))))
+                   (if (= 1 len) 2 len))))
     (if (and disk wdisk)
         (format
          (concat "%0" (format "%d" wdisk) "d"
@@ -3482,7 +3461,7 @@ REN が non-nil ならアルバム名を元にバッファ名を更新(リネー
     (set-buffer buff)
     (setq buffer-read-only nil inhibit-read-only t)
     (erase-buffer)
-    (setq result (wtag-directory-files-list dir))
+    (setq result (funcall wtag-directory-files-list-func dir))
     (wtag-set :trackmax (wtag-track-max result))
     (wtag-insert-index result dir)
     (wtag-set :base-name (setq album (wtag-get-common-property-value 'old-album)))
@@ -4233,6 +4212,8 @@ winカカシが漢字ASCII混合の場合、
     ;; (define-key map "o"             'wtag-frame-quit)
     (define-key map [drag-n-drop]   'wtag-mouse-load)
     (define-key map [menu-bar wtag] (cons "Wtag" menu-map))
+    (define-key menu-map [wtag-frame-quit]
+                '(menu-item "Frame Quit" wtag-frame-quit))
     (define-key menu-map [wtag-artwork-write]
       '("Write Artwork" . wtag-artwork-write))
     (define-key menu-map [wtag-fit-artwork-toggle]
@@ -4248,6 +4229,36 @@ winカカシが漢字ASCII混合の場合、
   (setq-local image-transform-resize wtag-image-auto-resize)
   (setq-local mode-name '("" wtag-image-mode-name (:eval wtag-image-mode-line)))
   (setq-local mode-line-compact wtag-mode-line-compact))
+
+(defvar wtag-different-cover-mode-map
+  (let ((map (make-sparse-keymap))
+        (menu (make-sparse-keymap "-df")))
+    (define-key map "q"        #'wtag-different-cover-mode-quit)
+    (define-key map [mouse-1]  #'wtag-different-cover-mode-quit)
+    (define-key map "\C-c\C-w" #'wtag-artwork-write)
+    (define-key map "\C-x\C-q" #'wtag-different-cover-go-writable)
+    (define-key map "F"        #'wtag-open-frame)
+    (define-key map "\C-c\C-o" #'wtag-open-frame)
+    ;; (define-key map "\C-c\C-i" #'undefined)
+    (define-key map [menu-bar wtag-diffcover] (cons "Wtag-DiffCover" menu))
+    (define-key menu [wtag-artwork-write] '("Artwork Write" . wtag-artwork-write))
+    (define-key menu [wtag-different-cover-go-writable]
+                '("Writable Mode" . wtag-different-cover-go-writable))
+    (define-key menu [wtag-open-frame]
+                '("View Other Frame" . wtag-open-frame))
+    (define-key menu [wtag-different-cover-mode-quit]
+                '("Close" . wtag-different-cover-mode-quit))
+    map))
+    
+(define-minor-mode wtag-different-cover-mode
+  "wtag different alert cover mode."
+  :lighter (:eval wtag-different-cover-mode-lighter)
+  :init    nil
+  (use-local-map
+   (let ((map (make-sparse-keymap)))
+     (set-keymap-parent map wtag-image-mode-map)
+     (define-key map [menu-bar wtag] #'undefined)
+     map)))
 
 (provide 'wtag)
 ;; fin.
