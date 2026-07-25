@@ -2,7 +2,7 @@
 ;; Copyright (C) 2026 fubuki
 
 ;; Author: fubuki at frill.org
-;; Version: @(#)$Revision: 1.1 $
+;; Version: @(#)$Revision: 1.2 $
 ;; Keywords: multimedia
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -46,6 +46,12 @@ org-time ならキャッシュを作り
   :type '(choice (const :tag "Enable" t) (const :tag "Disable" nil) (const org-time))
   :group 'wtag)
 
+(defcustom wtag-cache-ignore-directory nil
+  "キャッシュしないディレクトリを正規表現で指定.
+nil なら機能しない."
+  :type '(choice (const nil) regexp)
+  :group 'wtag)
+  
 (with-no-warnings
   (and wtag-cache
        (setq wtag-directory-files-list-func #'wtag-cache-directory-files-list)))
@@ -54,18 +60,20 @@ org-time ならキャッシュを作り
   "DIRECTORY の中のファイルのタグリストを返す.
 カスタム変数 `wtag-cache' が non-nil ならキャッシュ・データを使う."
   (let* ((cache-dir (expand-file-name wtag-cache-directory dir))
-         (cache
-          (and wtag-cache
-               (file-exists-p cache-dir)
-               (time-less-p
-                (cdar (wtag-cache-directory-files-modtimes dir))
-                (file-attribute-modification-time (file-attributes cache-dir))))))
+         (ignore (and wtag-cache-ignore-directory
+                      (string-match wtag-cache-ignore-directory dir)))
+         (cache (and (null ignore)
+                     wtag-cache
+                     (file-exists-p cache-dir)
+                     (time-less-p
+                      (cdar (wtag-cache-directory-files-modtimes dir))
+                      (file-attribute-modification-time (file-attributes cache-dir))))))
     (if cache
         (wtag-cache-read dir)
       (let* ((result
               (and (fboundp 'wtag-directory-files-list) ; for Byte-Compile.
                    (wtag-directory-files-list dir))))
-        (and wtag-cache result (wtag-cache-write result dir))
+        (and (null ignore) wtag-cache result (wtag-cache-write result dir))
         result))))
 
 (defun wtag-cache-directory-files-modtimes (dir)

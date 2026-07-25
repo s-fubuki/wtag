@@ -1,5 +1,10 @@
 # -*- mode: org -*-
 #+OPTIONS: H:1
+* Sat Jul 25 14:56:07 2026
+** wtag-cache.el: 1.2
+*** add: カスタム変数 `wtag-cache-ignore-directory'
+ キャッシュから除外するパスを正規表現で指定. nil なら除外なし. デフォルト nil.
+
 * Sat Jun 27 18:58:55 2026
 ** mf-lib-mp4.el: 3.2
 *** change: `mf-mp4-reload-margin' で出る警告でアドバイスする値を 1 に変更.
@@ -28,7 +33,7 @@
 
 ** wtag-cache.el: 1.1
  wtag にキャッシュ機能を追加します. これがなくても wtag は動作します.
- `load-path' 上に置いておけば `wtag 1.18 が勝手に load しアクティブになります.
+ `load-path' 上に置いておけば `wtag 4.18 が勝手に load しアクティブになります.
  インアクティブにしたい場合はカスタム変数 `wtag-cache' に nil をセットします.
  またこの変数が org-time なら アルバムのタイムスタンプを維持します.
 
